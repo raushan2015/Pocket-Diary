@@ -8,5 +8,27 @@
 .memo-attachment-name { overflow-wrap: anywhere; font-size: .875rem; color: var(--text-primary, inherit); }
 .memo-attachment-size { font-size: .75rem; color: var(--text-muted, #6b7280); }
 .memo-attachment-remove { white-space: nowrap; }
+.memo-attachment-insert { white-space: nowrap; font-size: 0.8rem; font-weight: 500; }
+.memo-attachment-actions { display: flex; gap: 0.4rem; align-items: center; }
 .attachments-error { color: var(--color-red, #b91c1c); margin: 0; font-size: .875rem; }
-@media (max-width: 480px) { .editor-attachments-panel { padding: .7rem; } .memo-attachment-item { grid-template-columns: 64px minmax(0,1fr); gap: .6rem; } .memo-attachment-preview-link img { height: 64px; } .memo-attachment-remove { grid-column: 2; justify-self: start; } }
+.editor-canvas-container.drop-target-active {
+  outline: 2px dashed var(--color-primary-500, #3b82f6);
+  outline-offset: -8px;
+  background-color: rgba(59, 130, 246, 0.04);
+}
+.md-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 0.65rem 0;
+  display: block;
+  cursor: pointer;
+  border: 1px solid var(--border-color, rgba(128,128,128,0.15));
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.md-image:hover {
+  transform: scale(1.008);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+@media (max-width: 480px) { .editor-attachments-panel { padding: .7rem; } .memo-attachment-item { grid-template-columns: 64px minmax(0,1fr); gap: .6rem; } .memo-attachment-preview-link img { height: 64px; } .memo-attachment-actions { grid-column: 2; flex-wrap: wrap; } }
+

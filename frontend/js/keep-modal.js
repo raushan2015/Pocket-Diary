@@ -486,7 +486,12 @@ export function setupKeepModalListeners(callbacks = {}) {
   });
 
   async function uploadFilesToActiveMemo(files) {
-    if (!activeKeepModalMemo || !activeKeepModalMemo.id || !files.length) return;
+    if (!activeKeepModalMemo || !files.length) return;
+    if (!activeKeepModalMemo.id) {
+      await saveKeepModalNote(true);
+    }
+    if (!activeKeepModalMemo.id) return;
+    let uploadedCount = 0;
     for (const file of files) {
       if (!file.type.startsWith('image/')) continue;
       showToast(`Uploading ${file.name}…`, 'info', 1800);
@@ -496,12 +501,25 @@ export function setupKeepModalListeners(callbacks = {}) {
           activeKeepModalMemo.attachments = activeKeepModalMemo.attachments || [];
           activeKeepModalMemo.attachments.push(res.attachment);
           renderKeepModalAttachments(activeKeepModalMemo);
-          showToast('Image uploaded', 'success', 1800);
+
+          const contentTextarea = document.getElementById('keep-modal-content');
+          if (activeKeepModalMemo.noteType === 'text' && contentTextarea) {
+            const cleanName = (file.name || 'image').replace(/[\[\]\(\)]/g, '_');
+            const imgMd = `\n![${cleanName}](${res.attachment.url})\n`;
+            contentTextarea.value += (contentTextarea.value ? '\n' : '') + imgMd;
+            activeKeepModalMemo.content = contentTextarea.value;
+            scheduleKeepModalAutosave(true);
+          }
+
+          uploadedCount++;
           if (typeof callbacks.onRefresh === 'function') callbacks.onRefresh();
         }
       } catch (err) {
         showToast(err.message || 'Image upload failed', 'error');
       }
+    }
+    if (uploadedCount > 0) {
+      showToast(`${uploadedCount} image(s) attached inside note`, 'success', 2000);
     }
   }
 

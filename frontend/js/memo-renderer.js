@@ -379,6 +379,17 @@ export function attachMemoItemInteractions(container, memos) {
     });
   });
 
+  // Lightbox click on markdown inline images
+  container.querySelectorAll('.md-image').forEach((img) => {
+    img.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const memoEl = img.closest('[data-memo-id]');
+      const memoId = memoEl?.getAttribute('data-memo-id');
+      const memo = memos.find((m) => m.id === memoId);
+      openLightbox({ url: img.src, fileName: img.alt || 'Image' }, memo);
+    });
+  });
+
   // Card hover action buttons
   container.querySelectorAll('[data-action]').forEach((btn) => {
     btn.addEventListener('click', async (e) => {

@@ -6,7 +6,8 @@
 import { api } from './api.js';
 import { state } from './state.js';
 import { renderMarkdown, toggleChecklistItem, escapeHtml } from './markdown.js';
-import { showToast, openModal, closeModal } from './utils.js';
+import { showToast, openModal, closeModal, extractImageFilesFromEvent } from './utils.js';
+import { openLightbox } from './keep-lightbox.js';
 
 let editorAutosaveTimer = null;
 let editorSaveInFlight = null;
@@ -222,10 +223,27 @@ export function insertWhiteboardIntoMemo() {
   updateMarkdownLivePreview(); scheduleEditorAutosave(); toggleWhiteboard(); showToast('Whiteboard added to note', 'success');
 }
 
-export async function handleMemoImageFiles(event) {
-  const files = Array.from(event.target.files || []);
-  event.target.value = '';
-  if (!files.length) return;
+export function insertTextAtCursor(textarea, textToInsert) {
+  if (!textarea) return;
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? textarea.value.length;
+  const val = textarea.value;
+  const before = val.slice(0, start);
+  const after = val.slice(end);
+  const prefix = (before.length > 0 && !before.endsWith('\n')) ? '\n\n' : '';
+  const suffix = (after.length > 0 && !after.startsWith('\n')) ? '\n\n' : '\n';
+  const insertion = `${prefix}${textToInsert}${suffix}`;
+  textarea.value = before + insertion + after;
+  const newPos = start + insertion.length;
+  textarea.focus();
+  textarea.setSelectionRange(newPos, newPos);
+  updateMarkdownLivePreview();
+  scheduleEditorAutosave();
+}
+
+export async function uploadAndInsertImages(files) {
+  if (!files || !files.length) return;
+  const textarea = document.getElementById('editor-body-textarea');
   if (!state.get('activeMemo')?.id) {
     await saveActiveMemo({ quiet: true });
   }
@@ -234,16 +252,40 @@ export async function handleMemoImageFiles(event) {
     showToast('Save the note before adding images, then try again.', 'error');
     return;
   }
+  let uploadedCount = 0;
   for (const file of files) {
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { showToast(`${file.name}: use PNG, JPEG, or WebP`, 'error'); continue; }
-    if (file.size > 5 * 1024 * 1024) { showToast(`${file.name}: maximum image size is 5 MB`, 'error'); continue; }
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type) && !file.type.startsWith('image/')) {
+      showToast(`${file.name}: only image formats (PNG, JPEG, WebP, GIF) are supported`, 'error');
+      continue;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast(`${file.name}: maximum image size is 5 MB`, 'error');
+      continue;
+    }
     try {
-      await api.uploadAttachment(memo.id, file);
+      showToast(`Uploading ${file.name}…`, 'info', 1500);
+      const res = await api.uploadAttachment(memo.id, file);
+      const att = res?.attachment;
+      if (att && att.url) {
+        const cleanName = (file.name || 'image').replace(/[\[\]\(\)]/g, '_');
+        insertTextAtCursor(textarea, `![${cleanName}](${att.url})`);
+        uploadedCount++;
+      }
     } catch (error) {
       showToast(error.message || `Unable to upload ${file.name}`, 'error', 5000);
     }
   }
+  if (uploadedCount > 0) {
+    showToast(`${uploadedCount} image(s) attached inside note`, 'success', 2500);
+  }
   await renderMemoAttachments(memo.id);
+}
+
+export async function handleMemoImageFiles(event) {
+  const files = Array.from(event.target.files || []);
+  event.target.value = '';
+  if (!files.length) return;
+  await uploadAndInsertImages(files);
 }
 
 export async function renderMemoAttachments(memoId) {
@@ -258,17 +300,19 @@ export async function renderMemoAttachments(memoId) {
     if (!attachments.length) return;
     const heading = document.createElement('h3');
     heading.className = 'attachments-heading';
-    heading.textContent = `Images (${attachments.length})`;
+    heading.textContent = `Attached Images (${attachments.length})`;
     panel.append(heading);
     for (const attachment of attachments) {
       const item = document.createElement('article');
       item.className = 'memo-attachment-item';
       const link = document.createElement('a');
       link.href = attachment.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
       link.className = 'memo-attachment-preview-link';
-      link.title = `Open ${attachment.fileName}`;
+      link.title = `View ${attachment.fileName} in lightbox`;
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        openLightbox(attachment, state.get('activeMemo'));
+      });
       const image = document.createElement('img');
       image.src = attachment.url;
       image.alt = attachment.fileName;
@@ -284,6 +328,26 @@ export async function renderMemoAttachments(memoId) {
       size.className = 'memo-attachment-size';
       size.textContent = `${(attachment.fileSize / 1024).toFixed(0)} KB`;
       meta.append(name, size);
+
+      const actions = document.createElement('div');
+      actions.className = 'memo-attachment-actions';
+      actions.style.display = 'flex';
+      actions.style.gap = '0.35rem';
+      actions.style.alignItems = 'center';
+
+      const insertBtn = document.createElement('button');
+      insertBtn.type = 'button';
+      insertBtn.className = 'btn btn-secondary btn-sm memo-attachment-insert';
+      insertBtn.textContent = 'Insert';
+      insertBtn.title = `Insert ${attachment.fileName} into note body`;
+      insertBtn.setAttribute('aria-label', `Insert ${attachment.fileName} into note`);
+      insertBtn.addEventListener('click', () => {
+        const textarea = document.getElementById('editor-body-textarea');
+        const cleanName = (attachment.fileName || 'image').replace(/[\[\]\(\)]/g, '_');
+        insertTextAtCursor(textarea, `![${cleanName}](${attachment.url})`);
+        showToast(`Inserted ${attachment.fileName} inside note`, 'success', 1800);
+      });
+
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'btn btn-ghost btn-sm memo-attachment-remove';
@@ -300,7 +364,9 @@ export async function renderMemoAttachments(memoId) {
           showToast(error.message || 'Unable to remove image', 'error');
         }
       });
-      item.append(link, meta, remove);
+
+      actions.append(insertBtn, remove);
+      item.append(link, meta, actions);
       panel.append(item);
     }
   } catch (error) {
@@ -332,6 +398,44 @@ export function setupEditorEnhancements() {
   document.getElementById('whiteboard-insert-btn')?.addEventListener('click', insertWhiteboardIntoMemo);
   document.getElementById('editor-attach-btn')?.addEventListener('click', () => document.getElementById('memo-image-input')?.click());
   document.getElementById('memo-image-input')?.addEventListener('change', handleMemoImageFiles);
+
+  // Drag and drop images into editor
+  const canvasContainer = document.getElementById('editor-canvas-container');
+  const bodyTextarea = document.getElementById('editor-body-textarea');
+  const onDragOver = (e) => {
+    e.preventDefault();
+    canvasContainer?.classList.add('drop-target-active');
+  };
+  const onDragLeave = (e) => {
+    if (!canvasContainer?.contains(e.relatedTarget)) {
+      canvasContainer?.classList.remove('drop-target-active');
+    }
+  };
+  const onDrop = async (e) => {
+    e.preventDefault();
+    canvasContainer?.classList.remove('drop-target-active');
+    const files = extractImageFilesFromEvent(e);
+    if (files.length > 0) {
+      await uploadAndInsertImages(files);
+    }
+  };
+
+  canvasContainer?.addEventListener('dragover', onDragOver);
+  canvasContainer?.addEventListener('dragleave', onDragLeave);
+  canvasContainer?.addEventListener('drop', onDrop);
+  bodyTextarea?.addEventListener('dragover', onDragOver);
+  bodyTextarea?.addEventListener('dragleave', onDragLeave);
+  bodyTextarea?.addEventListener('drop', onDrop);
+
+  // Paste image directly from clipboard (screenshots, copied images)
+  bodyTextarea?.addEventListener('paste', async (e) => {
+    const files = extractImageFilesFromEvent(e);
+    if (files.length > 0) {
+      e.preventDefault();
+      await uploadAndInsertImages(files);
+    }
+  });
+
   setupMobileTags(); setupWhiteboard();
   window.addEventListener('pagehide', () => { if (editorHasUnsavedChanges) { try { sessionStorage.setItem('memo-pending-editor-draft', editorSnapshot()); } catch {} } });
   window.addEventListener('keydown', (event) => {
@@ -717,6 +821,9 @@ export function setupFormattingToolbar() {
         case 'blockquote':
           replacement = `\n> ${selected || 'Quote'}\n`;
           break;
+        case 'image':
+          document.getElementById('memo-image-input')?.click();
+          return;
         case 'undo':
           document.execCommand('undo');
           return;

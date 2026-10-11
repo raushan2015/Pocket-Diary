@@ -204,14 +204,15 @@ function formatInline(text = '') {
   // Strikethrough: ~~text~~
   result = result.replace(/~~(.+?)~~/g, '<s>$1</s>');
 
-  // Images: ![alt](data:image/... or https://...)
+  // Images: ![alt](url)
   result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, altText, imageUrl) => {
-    const allowed = imageUrl.startsWith('data:image/png;base64,')
-      || imageUrl.startsWith('data:image/jpeg;base64,')
-      || imageUrl.startsWith('data:image/webp;base64,')
-      || imageUrl.startsWith('https://');
-    if (!allowed) return escapeHtml(match);
-    return `<img src="${imageUrl}" alt="${altText}" loading="lazy" decoding="async" class="md-image" style="max-width:100%;height:auto;border-radius:10px;" />`;
+    const trimmedUrl = imageUrl.trim();
+    const isSafe = /^https?:\/\//i.test(trimmedUrl)
+      || /^\/api\//i.test(trimmedUrl)
+      || /^blob:/i.test(trimmedUrl)
+      || /^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,/i.test(trimmedUrl);
+    if (!isSafe) return match;
+    return `<img src="${trimmedUrl}" alt="${altText}" title="${altText || 'Attached Image'}" loading="lazy" decoding="async" class="md-image" style="max-width:100%;height:auto;border-radius:10px;margin:0.5rem 0;display:block;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.1);" />`;
   });
 
   // Links: [title](url). Avoid reprocessing Markdown image syntax.
