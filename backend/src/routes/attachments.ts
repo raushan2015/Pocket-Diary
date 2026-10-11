@@ -12,6 +12,10 @@ const ALLOWED_TYPES = new Map([
   ['image/jpeg', '.jpg'],
   ['image/png', '.png'],
   ['image/webp', '.webp'],
+  ['image/gif', '.gif'],
+  ['application/pdf', '.pdf'],
+  ['text/plain', '.txt'],
+  ['text/markdown', '.md'],
 ]);
 const STORAGE_ROOT = process.env.ATTACHMENTS_DIR || path.resolve(process.cwd(), '../data/attachments');
 
@@ -65,12 +69,12 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
       if (!request.isMultipart()) {
         return reply.status(415).send({ error: 'Unsupported Media Type', message: 'Upload an image using multipart/form-data' });
       }
-      const part = await request.file({ limits: { fileSize: MAX_FILE_BYTES, files: 1, fields: 0 } });
+      const part = await request.file({ limits: { fileSize: MAX_FILE_BYTES, files: 1, fields: 10 } });
       if (!part) return reply.status(400).send({ error: 'Bad Request', message: 'Choose an image to upload' });
       const ext = ALLOWED_TYPES.get(part.mimetype);
       if (!ext) {
         part.file.resume();
-        return reply.status(415).send({ error: 'Unsupported Media Type', message: 'Only JPEG, PNG, and WebP images are supported' });
+        return reply.status(415).send({ error: 'Unsupported Media Type', message: 'Only images (JPEG, PNG, WebP, GIF) and documents (PDF, TXT, Markdown) are supported' });
       }
       const id = crypto.randomUUID();
       const now = Date.now();
@@ -82,9 +86,20 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
       await pipeline(part.file, fs.createWriteStream(storedPath, { flags: 'wx', mode: 0o640 }));
       if (part.file.truncated) throw new Error('Uploaded image exceeds the 5 MB limit');
 
+      const fileSize = fs.statSync(storedPath).size;
+
+      // Workspace storage quota enforcement (10 GB default per workspace)
+      const currentStorage = fastify.dbCtx.sqlite.prepare(
+        'SELECT COALESCE(SUM(file_size), 0) AS total FROM attachments WHERE workspace_id = ?'
+      ).get(workspaceId) as { total: number } | undefined;
+      const MAX_WORKSPACE_STORAGE = 10 * 1024 * 1024 * 1024;
+      if ((currentStorage?.total || 0) + fileSize > MAX_WORKSPACE_STORAGE) {
+        throw new Error('Workspace attachment storage quota exceeded');
+      }
+
       fastify.dbCtx.sqlite.prepare(
         'INSERT INTO attachments (id, memo_id, workspace_id, file_name, file_size, mime_type, storage_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      ).run(id, memo.id, workspaceId, fileName, fs.statSync(storedPath).size, part.mimetype, storedPath, now);
+      ).run(id, memo.id, workspaceId, fileName, fileSize, part.mimetype, storedPath, now);
       const row = fastify.dbCtx.sqlite.prepare(
         'SELECT id, memo_id, file_name, file_size, mime_type, created_at FROM attachments WHERE id = ?'
       ).get(id);
@@ -93,6 +108,9 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
       if (storedPath) { try { fs.unlinkSync(storedPath); } catch {} }
       if (error instanceof MemoNotFoundError) return reply.status(404).send({ error: 'Not Found', message: 'Memo not found' });
       if (error instanceof WorkspaceAccessError) return reply.status(error.statusCode).send({ error: 'Forbidden', message: error.message });
+      if (/storage quota exceeded/i.test(error?.message || '')) {
+        return reply.status(413).send({ error: 'Payload Too Large', message: 'Workspace storage quota exceeded. Upgrade storage or delete unused attachments.' });
+      }
       if (error?.code === 'FST_REQ_FILE_TOO_LARGE' || /exceeds the 5 MB limit/i.test(error?.message || '')) {
         return reply.status(413).send({ error: 'Payload Too Large', message: 'Images must be 5 MB or smaller' });
       }

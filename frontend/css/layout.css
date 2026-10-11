@@ -703,7 +703,7 @@ body {
 }
 
 /* Notes-first workspace and label management controls. */
-#view-dashboard .kpi-cards-grid,#view-dashboard .quick-capture-card,#view-dashboard .dashboard-main-grid > div:nth-child(2),#view-dashboard #view-mode-list-btn { display:none !important; }
+#view-dashboard .kpi-cards-grid,#view-dashboard .quick-capture-card,#view-dashboard .dashboard-main-grid > div:nth-child(2) { display:none !important; }
 #view-dashboard .dashboard-hero-header { display:none !important; }
 #view-dashboard .dashboard-main-grid { display:block !important; }
 #view-dashboard .dashboard-main-grid > .surface-card { width:100%; }

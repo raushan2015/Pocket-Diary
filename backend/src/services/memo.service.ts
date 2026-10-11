@@ -45,6 +45,58 @@ export class ValidationError extends Error {
   }
 }
 
+export const VALID_MEMO_COLORS = [
+  'default',
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'teal',
+  'blue',
+  'darkblue',
+  'purple',
+  'pink',
+  'brown',
+  'gray',
+] as const;
+
+export const VALID_THEMES = [
+  'default',
+  'none',
+  'grocery',
+  'food',
+  'music',
+  'recipes',
+  'notes',
+  'places',
+  'travel',
+  'celebration',
+] as const;
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+export interface LinkPreview {
+  url: string;
+  title?: string;
+  description?: string;
+  imageUrl?: string;
+  faviconUrl?: string;
+}
+
+export interface MemoAttachmentDto {
+  id: string;
+  memoId: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  createdAt: number;
+  url: string;
+}
+
 export interface FormattedMemo {
   id: string;
   workspaceId: string;
@@ -52,11 +104,21 @@ export interface FormattedMemo {
   title: string;
   content: string;
   color: string;
+  theme: string;
   priority: MemoPriority;
   status: MemoStatus;
   isFavorite: boolean;
   isPinned: boolean;
+  isArchived: boolean;
+  noteType: string;
+  sortOrder: number;
   dueDate: number | null;
+  reminderTime: number | null;
+  reminderLocation: string | null;
+  collaborators: string[];
+  checklistData: ChecklistItem[];
+  linkPreviews: LinkPreview[];
+  attachments: MemoAttachmentDto[];
   categoryId: string | null;
   category: { id: string; name: string; color: string | null; icon: string | null } | null;
   tags: string[];
@@ -77,6 +139,8 @@ export interface ListMemosOptions {
   folderId?: string;
   isFavorite?: boolean | string;
   isPinned?: boolean | string;
+  isArchived?: boolean | string;
+  hasReminder?: boolean | string;
   includeDeleted?: boolean | string;
   search?: string;
   page?: number;
@@ -92,11 +156,20 @@ export interface CreateMemoInput {
   title?: string;
   content?: string;
   color?: string;
+  theme?: string;
   priority?: MemoPriority;
   status?: MemoStatus;
   isFavorite?: boolean;
   isPinned?: boolean;
+  isArchived?: boolean;
+  noteType?: string;
+  sortOrder?: number;
   dueDate?: number | null;
+  reminderTime?: number | null;
+  reminderLocation?: string | null;
+  collaborators?: string[];
+  checklistData?: ChecklistItem[];
+  linkPreviews?: LinkPreview[];
   tags?: string[];
 }
 
@@ -106,11 +179,20 @@ export interface UpdateMemoInput {
   title?: string;
   content?: string;
   color?: string;
+  theme?: string;
   priority?: MemoPriority;
   status?: MemoStatus;
   isFavorite?: boolean;
   isPinned?: boolean;
+  isArchived?: boolean;
+  noteType?: string;
+  sortOrder?: number;
   dueDate?: number | null;
+  reminderTime?: number | null;
+  reminderLocation?: string | null;
+  collaborators?: string[];
+  checklistData?: ChecklistItem[];
+  linkPreviews?: LinkPreview[];
   tags?: string[];
   version?: number;
 }
@@ -176,8 +258,55 @@ function hydrateMemos(
     }
   }
 
+  // Fetch attachments for memos
+  const attachmentsMap = new Map<string, MemoAttachmentDto[]>();
+  if (memoIds.length > 0) {
+    const placeholders = memoIds.map(() => '?').join(',');
+    const attRows = sqlite
+      .prepare(`
+        SELECT id, memo_id, file_name, file_size, mime_type, created_at
+        FROM attachments
+        WHERE memo_id IN (${placeholders})
+        ORDER BY created_at ASC, id ASC
+      `)
+      .all(...memoIds) as any[];
+
+    for (const ar of attRows) {
+      if (!attachmentsMap.has(ar.memo_id)) {
+        attachmentsMap.set(ar.memo_id, []);
+      }
+      attachmentsMap.get(ar.memo_id)!.push({
+        id: ar.id,
+        memoId: ar.memo_id,
+        fileName: ar.file_name,
+        fileSize: ar.file_size,
+        mimeType: ar.mime_type,
+        createdAt: ar.created_at,
+        url: `/api/v1/attachments/${encodeURIComponent(ar.id)}/file`,
+      });
+    }
+  }
+
+  const parseJson = (val: any, fallback: any) => {
+    if (!val) return fallback;
+    if (typeof val !== 'string') return Array.isArray(val) ? val : fallback;
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
   return rawMemos.map((m) => {
     const catId = m.category_id !== undefined ? m.category_id : m.categoryId;
+    const isArchived = Boolean(
+      m.is_archived !== undefined
+        ? m.is_archived
+        : m.isArchived !== undefined
+        ? m.isArchived
+        : (m.status || '') === 'archived'
+    );
     return {
       id: m.id,
       workspaceId: m.workspace_id !== undefined ? m.workspace_id : m.workspaceId,
@@ -185,11 +314,21 @@ function hydrateMemos(
       title: m.title ?? '',
       content: m.content ?? '',
       color: m.color ?? 'default',
+      theme: m.theme ?? 'default',
       priority: (m.priority ?? 'medium') as MemoPriority,
       status: (m.status ?? 'pending') as MemoStatus,
       isFavorite: Boolean(m.is_favorite !== undefined ? m.is_favorite : m.isFavorite),
       isPinned: Boolean(m.is_pinned !== undefined ? m.is_pinned : m.isPinned),
+      isArchived,
+      noteType: m.note_type !== undefined ? m.note_type : (m.noteType || 'text'),
+      sortOrder: Number(m.sort_order !== undefined ? m.sort_order : (m.sortOrder || 0)),
       dueDate: m.due_date !== undefined ? m.due_date : m.dueDate,
+      reminderTime: m.reminder_time !== undefined ? m.reminder_time : (m.reminderTime || null),
+      reminderLocation: m.reminder_location !== undefined ? m.reminder_location : (m.reminderLocation || null),
+      collaborators: parseJson(m.collaborators, []),
+      checklistData: parseJson(m.checklist_data !== undefined ? m.checklist_data : m.checklistData, []),
+      linkPreviews: parseJson(m.link_previews !== undefined ? m.link_previews : m.linkPreviews, []),
+      attachments: attachmentsMap.get(m.id) ?? [],
       categoryId: catId ?? null,
       category: catId ? categoryMap.get(catId) ?? null : null,
       tags: tagsMap.get(m.id) ?? [],
@@ -219,6 +358,8 @@ export function listMemos(
     folderId,
     isFavorite,
     isPinned,
+    isArchived,
+    hasReminder,
     includeDeleted,
     search,
     page = 1,
@@ -241,6 +382,26 @@ export function listMemos(
   if (status) {
     conditions.push('m.status = ?');
     params.push(status);
+  }
+
+  // Archive filter
+  if (isArchived !== undefined && isArchived !== '') {
+    const archBool = isArchived === true || isArchived === 'true';
+    if (archBool) {
+      conditions.push('(m.is_archived = 1 OR m.status = ?)');
+      params.push('archived');
+    } else {
+      conditions.push('(m.is_archived = 0 AND m.status != ?)');
+      params.push('archived');
+    }
+  }
+
+  // Reminder filter
+  if (hasReminder !== undefined && hasReminder !== '') {
+    const remBool = hasReminder === true || hasReminder === 'true';
+    if (remBool) {
+      conditions.push('(m.reminder_time IS NOT NULL OR m.due_date IS NOT NULL)');
+    }
   }
 
   // Priority filter
@@ -298,6 +459,10 @@ export function listMemos(
     created_at: 'm.created_at',
     dueDate: 'm.due_date',
     due_date: 'm.due_date',
+    reminderTime: 'm.reminder_time',
+    reminder_time: 'm.reminder_time',
+    sortOrder: 'm.sort_order',
+    sort_order: 'm.sort_order',
     title: 'm.title',
     priority: 'm.priority',
     status: 'm.status',
@@ -419,8 +584,8 @@ export function createMemo(
   if (status && !VALID_STATUSES.includes(status)) {
     throw new ValidationError(`Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}`);
   }
-  const validMemoColors = ['default', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'darkblue', 'purple', 'pink'];
-  if (!validMemoColors.includes(color)) throw new ValidationError('Invalid memo color');
+  if (!VALID_MEMO_COLORS.includes(color as any)) throw new ValidationError('Invalid memo color');
+  if (data.theme && !VALID_THEMES.includes(data.theme as any)) throw new ValidationError('Invalid memo theme');
 
   if (categoryId && !sqlite.prepare('SELECT id FROM categories WHERE id = ? AND workspace_id = ?').get(categoryId, workspaceId)) {
     throw new ValidationError('Category must belong to the same workspace as the memo');
@@ -443,11 +608,20 @@ export function createMemo(
       title: title ?? '',
       content: content ?? '',
       color,
+      theme: data.theme && VALID_THEMES.includes(data.theme as any) ? data.theme : 'default',
       priority: priority || 'medium',
       status: status || 'pending',
       isFavorite: isFavorite ? 1 : 0,
       isPinned: isPinned ? 1 : 0,
+      isArchived: data.isArchived !== undefined ? (data.isArchived ? 1 : 0) : (status === 'archived' ? 1 : 0),
+      noteType: data.noteType || 'text',
+      sortOrder: data.sortOrder || 0,
       dueDate: dueDate ?? null,
+      reminderTime: data.reminderTime ?? null,
+      reminderLocation: data.reminderLocation ?? null,
+      collaborators: JSON.stringify(data.collaborators || []),
+      checklistData: JSON.stringify(data.checklistData || []),
+      linkPreviews: JSON.stringify(data.linkPreviews || []),
       version: initialVersion,
       createdBy: userId,
       createdAt: now,
@@ -540,14 +714,25 @@ export function updateMemo(
 
   const newTitle = data.title !== undefined ? data.title : existing.title;
   const newContent = data.content !== undefined ? data.content : existing.content;
-  const validMemoColors = ['default', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'darkblue', 'purple', 'pink'];
   const newColor = data.color !== undefined ? data.color : (existing.color || 'default');
-  if (!validMemoColors.includes(newColor)) throw new ValidationError('Invalid memo color');
+  if (!VALID_MEMO_COLORS.includes(newColor as any)) throw new ValidationError('Invalid memo color');
+  const newTheme = data.theme !== undefined ? data.theme : (existing.theme || 'default');
+  if (!VALID_THEMES.includes(newTheme as any)) throw new ValidationError('Invalid memo theme');
   const newPriority = data.priority !== undefined ? data.priority : existing.priority;
   const newStatus = data.status !== undefined ? data.status : existing.status;
   const newFolderId = data.folderId !== undefined ? data.folderId : existing.folder_id;
   const newCategoryId = data.categoryId !== undefined ? data.categoryId : existing.category_id;
   const newDueDate = data.dueDate !== undefined ? data.dueDate : existing.due_date;
+  const newReminderTime = data.reminderTime !== undefined ? data.reminderTime : existing.reminder_time;
+  const newReminderLocation = data.reminderLocation !== undefined ? data.reminderLocation : existing.reminder_location;
+  const newIsArchived = data.isArchived !== undefined
+    ? (data.isArchived ? 1 : 0)
+    : (data.status === 'archived' ? 1 : (existing.is_archived || (existing.status === 'archived' ? 1 : 0)));
+  const newNoteType = data.noteType !== undefined ? data.noteType : (existing.note_type || 'text');
+  const newSortOrder = data.sortOrder !== undefined ? data.sortOrder : (existing.sort_order || 0);
+  const newCollaborators = data.collaborators !== undefined ? JSON.stringify(data.collaborators) : (existing.collaborators || '[]');
+  const newChecklistData = data.checklistData !== undefined ? JSON.stringify(data.checklistData) : (existing.checklist_data || '[]');
+  const newLinkPreviews = data.linkPreviews !== undefined ? JSON.stringify(data.linkPreviews) : (existing.link_previews || '[]');
 
   if (newCategoryId && !sqlite.prepare('SELECT id FROM categories WHERE id = ? AND workspace_id = ?').get(newCategoryId, workspaceId)) {
     throw new ValidationError('Category must belong to the same workspace as the memo');
@@ -565,13 +750,22 @@ export function updateMemo(
         title: newTitle,
         content: newContent,
         color: newColor,
+        theme: newTheme,
         priority: newPriority,
         status: newStatus,
         folderId: newFolderId,
         categoryId: newCategoryId,
         dueDate: newDueDate,
+        reminderTime: newReminderTime,
+        reminderLocation: newReminderLocation,
         isFavorite: newIsFavorite,
         isPinned: newIsPinned,
+        isArchived: newIsArchived,
+        noteType: newNoteType,
+        sortOrder: newSortOrder,
+        collaborators: newCollaborators,
+        checklistData: newChecklistData,
+        linkPreviews: newLinkPreviews,
         version: nextVersion,
         updatedAt: now,
       })
@@ -718,3 +912,21 @@ export function getMemoVersions(
     .orderBy(memoVersions.versionNumber)
     .all();
 }
+
+/**
+ * Reorder memos in a workspace (Google Keep drag and drop).
+ */
+export function reorderMemos(
+  dbCtx: DatabaseContext,
+  workspaceId: string,
+  memoIds: string[]
+): void {
+  const { db, sqlite } = dbCtx;
+  const updateStmt = sqlite.prepare('UPDATE memos SET sort_order = ? WHERE id = ? AND workspace_id = ?');
+  db.transaction(() => {
+    memoIds.forEach((id, index) => {
+      updateStmt.run(index, id, workspaceId);
+    });
+  });
+}
+

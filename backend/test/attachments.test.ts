@@ -60,6 +60,12 @@ describe('Memo attachment API', () => {
     expect(list.statusCode).toBe(200);
     expect(list.json().attachments).toHaveLength(1);
 
+    const memosList = await app.inject({ method: 'GET', url: `/api/v1/memos?workspaceId=${workspace.id}`, headers: { cookie: cookieHeader } });
+    expect(memosList.statusCode).toBe(200);
+    const foundMemo = memosList.json().memos.find((m: any) => m.id === memo.id);
+    expect(foundMemo.attachments).toHaveLength(1);
+    expect(foundMemo.attachments[0].id).toBe(attachment.id);
+
     const file = await app.inject({ method: 'GET', url: attachment.url, headers: { cookie: cookieHeader } });
     expect(file.statusCode).toBe(200);
     expect(file.headers['content-type']).toBe('image/png');
@@ -101,7 +107,7 @@ describe('Memo attachment API', () => {
     const { workspace, cookieHeader } = await createTestUser(app);
     const memo = await createMemoFor(cookieHeader, workspace.id);
     const boundary = 'memo-test-boundary-3';
-    const body = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="note.txt"\r\nContent-Type: text/plain\r\n\r\nhello\r\n--${boundary}--\r\n`);
+    const body = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="archive.zip"\r\nContent-Type: application/zip\r\n\r\nPK123\r\n--${boundary}--\r\n`);
     const response = await app.inject({
       method: 'POST', url: `/api/v1/attachments/memo/${memo.id}`,
       headers: { cookie: cookieHeader, 'content-type': `multipart/form-data; boundary=${boundary}` },

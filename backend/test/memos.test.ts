@@ -371,4 +371,105 @@ describe('Memos Management API (/api/v1/memos)', () => {
     });
     expect(checkRes.statusCode).toBe(404);
   });
+
+  it('supports Google Keep attributes, colors, themes, checklists, archiving, and reordering', async () => {
+    const { workspace, cookieHeader } = await createTestUser(app);
+
+    // 1. Create note with Google Keep checklist & color
+    const createRes1 = await app.inject({
+      method: 'POST',
+      url: '/api/v1/memos',
+      headers: { cookie: cookieHeader },
+      payload: {
+        workspaceId: workspace.id,
+        title: 'Grocery List',
+        noteType: 'checklist',
+        color: 'yellow',
+        theme: 'grocery',
+        checklistData: [
+          { id: '1', text: 'Oat Milk', checked: false, sortOrder: 0 },
+          { id: '2', text: 'Organic Eggs', checked: true, sortOrder: 1 },
+        ],
+        reminderTime: Date.now() + 3600000,
+        collaborators: [{ email: 'partner@example.com', name: 'Partner' }],
+      },
+    });
+    expect(createRes1.statusCode).toBe(201);
+    const memo1 = createRes1.json().memo;
+    expect(memo1.color).toBe('yellow');
+    expect(memo1.theme).toBe('grocery');
+    expect(memo1.noteType).toBe('checklist');
+    expect(memo1.checklistData).toHaveLength(2);
+    expect(memo1.collaborators).toHaveLength(1);
+    expect(memo1.reminderTime).toBeDefined();
+
+    // 2. Create second note (archived)
+    const createRes2 = await app.inject({
+      method: 'POST',
+      url: '/api/v1/memos',
+      headers: { cookie: cookieHeader },
+      payload: {
+        workspaceId: workspace.id,
+        title: 'Archived Reference',
+        content: 'Old notes',
+        color: 'teal',
+        isArchived: true,
+      },
+    });
+    expect(createRes2.statusCode).toBe(201);
+    const memo2 = createRes2.json().memo;
+    expect(memo2.isArchived).toBe(true);
+
+    // 3. List active memos (excludes archived by default)
+    const listActive = await app.inject({
+      method: 'GET',
+      url: `/api/v1/memos?workspaceId=${workspace.id}&isArchived=false`,
+      headers: { cookie: cookieHeader },
+    });
+    expect(listActive.statusCode).toBe(200);
+    const activeIds = listActive.json().memos.map((m: any) => m.id);
+    expect(activeIds).toContain(memo1.id);
+    expect(activeIds).not.toContain(memo2.id);
+
+    // 4. List archived memos
+    const listArchived = await app.inject({
+      method: 'GET',
+      url: `/api/v1/memos?workspaceId=${workspace.id}&isArchived=true`,
+      headers: { cookie: cookieHeader },
+    });
+    expect(listArchived.statusCode).toBe(200);
+    const archivedIds = listArchived.json().memos.map((m: any) => m.id);
+    expect(archivedIds).toContain(memo2.id);
+    expect(archivedIds).not.toContain(memo1.id);
+
+    // 5. Reorder memos atomically
+    const reorderRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/memos/reorder',
+      headers: { cookie: cookieHeader },
+      payload: {
+        workspaceId: workspace.id,
+        memoIds: [memo2.id, memo1.id],
+      },
+    });
+    expect(reorderRes.statusCode).toBe(200);
+    expect(reorderRes.json().success).toBe(true);
+  });
+
+  it('provides link preview endpoint', async () => {
+    const { cookieHeader } = await createTestUser(app);
+
+    const previewRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/memos/link-preview',
+      headers: { cookie: cookieHeader },
+      payload: {
+        url: 'https://example.com/test-article',
+      },
+    });
+    expect(previewRes.statusCode).toBe(200);
+    const data = previewRes.json();
+    expect(data.url).toBe('https://example.com/test-article');
+    expect(data.title).toBeDefined();
+  });
 });

@@ -249,4 +249,67 @@ describe('Workspace Tenant Isolation & RBAC Protection', () => {
     });
     expect(importRes.statusCode).toBe(403);
   });
+
+  it('provides workspace activity audit trail for members while blocking non-members', async () => {
+    const owner = await createTestUser(app, 'audit-owner@test.com', 'Audit Owner');
+    const member = await createTestUser(app, 'audit-member@test.com', 'Audit Member');
+    const outsider = await createTestUser(app, 'audit-outsider@test.com', 'Audit Outsider');
+
+    // Add member to owner workspace
+    const addRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/workspaces/${owner.workspace.id}/members`,
+      headers: { cookie: owner.cookieHeader },
+      payload: { email: 'audit-member@test.com', role: 'editor' },
+    });
+    expect(addRes.statusCode).toBe(201);
+
+    // Create a memo
+    const createMemoRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/memos',
+      headers: { cookie: owner.cookieHeader },
+      payload: {
+        workspaceId: owner.workspace.id,
+        title: 'Audit Note 1',
+        content: 'Initial content',
+      },
+    });
+    expect(createMemoRes.statusCode).toBe(201);
+    const memoId = createMemoRes.json().memo.id;
+
+    // Member updates memo
+    const updateRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/memos/${memoId}`,
+      headers: { cookie: member.cookieHeader },
+      payload: {
+        title: 'Audit Note Updated',
+        content: 'Revised content',
+        version: 1,
+      },
+    });
+    expect(updateRes.statusCode).toBe(200);
+
+    // Outsider cannot access activities -> 403
+    const outsiderRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/workspaces/${owner.workspace.id}/activities`,
+      headers: { cookie: outsider.cookieHeader },
+    });
+    expect(outsiderRes.statusCode).toBe(403);
+
+    // Member can access activities -> 200 with recorded events
+    const memberRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/workspaces/${owner.workspace.id}/activities`,
+      headers: { cookie: member.cookieHeader },
+    });
+    expect(memberRes.statusCode).toBe(200);
+    const activities = memberRes.json().activities;
+    expect(Array.isArray(activities)).toBe(true);
+    expect(activities.length).toBeGreaterThanOrEqual(2);
+    expect(activities.some((a: any) => a.type === 'note_edited')).toBe(true);
+    expect(activities.some((a: any) => a.type === 'member_joined')).toBe(true);
+  });
 });

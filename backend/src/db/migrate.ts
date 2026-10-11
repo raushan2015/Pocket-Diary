@@ -77,11 +77,20 @@ CREATE TABLE IF NOT EXISTS memos (
   title TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL DEFAULT 'default',
+  theme TEXT NOT NULL DEFAULT 'default',
   priority TEXT NOT NULL DEFAULT 'medium',
   status TEXT NOT NULL DEFAULT 'pending',
   is_favorite INTEGER NOT NULL DEFAULT 0,
   is_pinned INTEGER NOT NULL DEFAULT 0,
+  is_archived INTEGER NOT NULL DEFAULT 0,
+  note_type TEXT NOT NULL DEFAULT 'text',
+  sort_order INTEGER NOT NULL DEFAULT 0,
   due_date INTEGER,
+  reminder_time INTEGER,
+  reminder_location TEXT,
+  collaborators TEXT NOT NULL DEFAULT '[]',
+  checklist_data TEXT NOT NULL DEFAULT '[]',
+  link_previews TEXT NOT NULL DEFAULT '[]',
   version INTEGER NOT NULL DEFAULT 1,
   created_by TEXT NOT NULL REFERENCES users(id),
   created_at INTEGER NOT NULL,
@@ -144,12 +153,32 @@ END;
 
 export function runMigrations(sqlite: Database.Database): void {
   sqlite.exec(SCHEMA_SQL);
-  // Safe additive migration for existing databases. Fresh installs already have this column.
+  // Safe additive migrations for existing databases
   const memoColumns = sqlite.prepare('PRAGMA table_info(memos)').all() as Array<{ name: string }>;
-  if (!memoColumns.some((column) => column.name === 'color')) {
-    sqlite.exec("ALTER TABLE memos ADD COLUMN color TEXT NOT NULL DEFAULT 'default'");
+  const existingNames = new Set(memoColumns.map((col) => col.name));
+
+  const additiveColumns: Array<{ name: string; def: string }> = [
+    { name: 'color', def: "ALTER TABLE memos ADD COLUMN color TEXT NOT NULL DEFAULT 'default'" },
+    { name: 'theme', def: "ALTER TABLE memos ADD COLUMN theme TEXT NOT NULL DEFAULT 'default'" },
+    { name: 'is_archived', def: "ALTER TABLE memos ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0" },
+    { name: 'note_type', def: "ALTER TABLE memos ADD COLUMN note_type TEXT NOT NULL DEFAULT 'text'" },
+    { name: 'sort_order', def: "ALTER TABLE memos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0" },
+    { name: 'reminder_time', def: "ALTER TABLE memos ADD COLUMN reminder_time INTEGER" },
+    { name: 'reminder_location', def: "ALTER TABLE memos ADD COLUMN reminder_location TEXT" },
+    { name: 'collaborators', def: "ALTER TABLE memos ADD COLUMN collaborators TEXT NOT NULL DEFAULT '[]'" },
+    { name: 'checklist_data', def: "ALTER TABLE memos ADD COLUMN checklist_data TEXT NOT NULL DEFAULT '[]'" },
+    { name: 'link_previews', def: "ALTER TABLE memos ADD COLUMN link_previews TEXT NOT NULL DEFAULT '[]'" },
+  ];
+
+  for (const col of additiveColumns) {
+    if (!existingNames.has(col.name)) {
+      sqlite.exec(col.def);
+    }
   }
+
   try {
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_memos_is_archived ON memos(workspace_id, is_archived);");
+    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_memos_sort_order ON memos(workspace_id, sort_order);");
     sqlite.exec("INSERT INTO memos_fts(memos_fts) VALUES('rebuild');");
   } catch {
     // Rebuild may be unnecessary or no-op on fresh databases

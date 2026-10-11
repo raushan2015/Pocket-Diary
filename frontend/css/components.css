@@ -855,9 +855,14 @@ button.calendar-day-num {
 .toast-item.toast-error .toast-icon { color: var(--color-red); }
 .toast-item.toast-info .toast-icon { color: var(--color-primary-600); }
 
+.toast-message,
 .toast-msg {
   flex: 1;
   line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .toast-close-btn {
@@ -1027,55 +1032,197 @@ button.calendar-day-num {
 }
 
 /* Keep-inspired fast capture composer */
-.quick-capture-card {
-  max-width: 720px; margin: 0.25rem auto 1.25rem; padding: 0.9rem 1rem 0.65rem;
-  background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 14px;
-  box-shadow: var(--shadow-sm); transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
-}
-.quick-capture-card:focus-within { border-color: var(--color-primary-300); box-shadow: var(--shadow-md); }
-.quick-capture-card input, .quick-capture-card textarea {
-  display: block; width: 100%; border: 0; outline: 0; resize: vertical; padding: 0.45rem 0;
-  background: transparent; color: var(--text-primary); font: inherit; min-width: 0;
-}
-.quick-capture-card input { font-weight: 600; font-size: 1rem; }
-.quick-capture-card textarea { min-height: 42px; max-height: 240px; line-height: 1.55; }
-.quick-capture-card input::placeholder, .quick-capture-card textarea::placeholder { color: var(--text-muted); }
-.quick-capture-footer { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; border-top:1px solid var(--border-color); padding-top:0.55rem; margin-top:0.35rem; }
-.quick-capture-footer > span { color:var(--text-muted); font-size:0.7rem; }
-.quick-capture-footer > div { display:flex; align-items:center; gap:0.35rem; }
-@media (max-width: 520px) {
-  .quick-capture-card { padding:0.7rem 0.8rem 0.55rem; margin-bottom:1rem; }
-  .quick-capture-footer { align-items:flex-start; flex-direction:column; }
-  .quick-capture-footer > div { width:100%; justify-content:flex-end; }
+/* Google Keep style quick capture composer */
+.keep-capture-container {
+  max-width: 600px;
+  margin: 0.5rem auto 1.75rem;
+  width: 100%;
+  position: relative;
 }
 
-/* ==========================================================================
-   Memo Card Grid View
-   ========================================================================== */
-.memo-grid-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1.25rem;
+.keep-capture-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 1rem;
+  box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 2px 6px 2px rgba(60,64,67,0.15);
+  cursor: text;
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.keep-capture-collapsed:hover {
+  box-shadow: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 8px 3px rgba(60,64,67,0.15);
+}
+
+.keep-capture-placeholder {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+  flex: 1;
+  user-select: none;
+}
+
+.keep-capture-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.keep-action-btn,
+.keep-tool-btn,
+.keep-pin-btn {
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.keep-action-btn:hover,
+.keep-tool-btn:hover,
+.keep-pin-btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.keep-pin-btn.active,
+.keep-tool-btn.active {
+  color: var(--color-primary-600);
+}
+
+.keep-capture-expanded {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem 0.5rem;
+  box-shadow: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 8px 3px rgba(60,64,67,0.15);
+  transition: background-color var(--transition-fast);
+}
+
+.keep-composer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.keep-composer-header input,
+.keep-modal-title-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  outline: none;
+  padding: 0.35rem 0;
+}
+
+.keep-capture-expanded textarea,
+.keep-modal-textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+  min-height: 48px;
   padding: 0.25rem 0;
 }
 
-.memo-card {
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  padding: 1.25rem;
+.keep-capture-expanded input::placeholder,
+.keep-capture-expanded textarea::placeholder,
+.keep-modal-title-input::placeholder,
+.keep-modal-textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.keep-composer-footer,
+.keep-modal-footer {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  margin-top: 0.4rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="dark"] .keep-composer-footer,
+[data-theme="dark"] .keep-modal-footer {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.keep-footer-tools,
+.keep-modal-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-wrap: wrap;
+}
+
+.keep-footer-actions,
+.keep-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ==========================================================================
+   Google Keep True Masonry Column Layout
+   ========================================================================== */
+.memo-grid-container {
+  column-count: 3;
+  column-gap: 16px;
+  padding: 0.5rem 0;
+}
+
+@media (max-width: 1100px) {
+  .memo-grid-container { column-count: 2; }
+}
+
+@media (max-width: 640px) {
+  .memo-grid-container { column-count: 1; }
+}
+
+.memo-card {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 16px;
+  display: inline-block;
+  width: 100%;
+  box-sizing: border-box;
+  background-color: var(--memo-card-bg, var(--bg-surface));
+  border: 1px solid var(--memo-card-border, var(--border-color));
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.15rem;
   transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
   cursor: pointer;
   position: relative;
-  min-height: 220px;
+  vertical-align: top;
 }
 
 .memo-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--color-primary-300);
+  box-shadow: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 8px 3px rgba(60,64,67,0.15);
+}
+
+.memo-card.pinned {
+  border-top: 3px solid var(--color-primary-600);
 }
 
 .memo-card.pinned {
@@ -1202,9 +1349,15 @@ button.calendar-day-num {
   color: var(--text-secondary);
 }
 
-/* Note card color palette, inspired by Keep's quick color control */
-.memo-card { overflow: hidden; }
-.memo-card[class*="memo-color-"] { background-color: var(--memo-card-bg, var(--bg-surface)); border-color: var(--memo-card-border, var(--border-color)); }
+/* Google Keep 12-color palette system (applied to cards, composers, modals) */
+.memo-card,
+.keep-capture-expanded,
+.keep-modal-card {
+  overflow: hidden;
+  background-color: var(--memo-card-bg, var(--bg-surface));
+  border-color: var(--memo-card-border, var(--border-color));
+}
+
 .memo-color-default { --memo-card-bg: var(--bg-surface); --memo-card-border: var(--border-color); }
 .memo-color-red { --memo-card-bg: #fce8e6; --memo-card-border: #f3c5c0; }
 .memo-color-orange { --memo-card-bg: #fef0e1; --memo-card-border: #f4d4b0; }
@@ -1215,30 +1368,544 @@ button.calendar-day-num {
 .memo-color-darkblue { --memo-card-bg: #e3e8f7; --memo-card-border: #c0cbe8; }
 .memo-color-purple { --memo-card-bg: #f0e5fa; --memo-card-border: #d9c2ef; }
 .memo-color-pink { --memo-card-bg: #fbe4ef; --memo-card-border: #efc4d9; }
-[data-theme="dark"] .memo-color-red { --memo-card-bg:#382523; --memo-card-border:#65403b; }
-[data-theme="dark"] .memo-color-orange { --memo-card-bg:#3b2d20; --memo-card-border:#654b32; }
-[data-theme="dark"] .memo-color-yellow { --memo-card-bg:#38331c; --memo-card-border:#61572b; }
-[data-theme="dark"] .memo-color-green { --memo-card-bg:#20372a; --memo-card-border:#365d43; }
-[data-theme="dark"] .memo-color-teal { --memo-card-bg:#1d3735; --memo-card-border:#315b57; }
-[data-theme="dark"] .memo-color-blue { --memo-card-bg:#202f45; --memo-card-border:#3c567b; }
-[data-theme="dark"] .memo-color-darkblue { --memo-card-bg:#252b43; --memo-card-border:#424c73; }
-[data-theme="dark"] .memo-color-purple { --memo-card-bg:#32253e; --memo-card-border:#5a416e; }
-[data-theme="dark"] .memo-color-pink { --memo-card-bg:#3a2632; --memo-card-border:#674257; }
-.memo-card-color-picker { display:flex; gap:0.35rem; flex-wrap:wrap; padding:0.25rem 0 0.6rem; }
-.memo-color-swatch { width:18px; height:18px; padding:0; border-radius:50%; border:1px solid rgba(60,60,60,.25); cursor:pointer; background:#fff; }
-.memo-color-swatch[data-color="red"] { background:#f28b82; }
-.memo-color-swatch[data-color="orange"] { background:#fbbc04; }
-.memo-color-swatch[data-color="yellow"] { background:#fff475; }
-.memo-color-swatch[data-color="green"] { background:#ccff90; }
-.memo-color-swatch[data-color="teal"] { background:#a7ffeb; }
-.memo-color-swatch[data-color="blue"] { background:#cbf0f8; }
-.memo-color-swatch[data-color="darkblue"] { background:#aecbfa; }
-.memo-color-swatch[data-color="purple"] { background:#d7aefb; }
-.memo-color-swatch[data-color="pink"] { background:#fdcfe8; }
-.memo-color-swatch.selected { outline:2px solid var(--text-primary); outline-offset:2px; }
-.memo-card-title { overflow-wrap:anywhere; }
-.memo-card-snippet { overflow-wrap:anywhere; white-space:pre-wrap; }
-.memo-card-tags { min-width:0; }
+.memo-color-brown { --memo-card-bg: #f4eae0; --memo-card-border: #e0cbba; }
+.memo-color-gray { --memo-card-bg: #f1f3f4; --memo-card-border: #dadce0; }
+
+[data-theme="dark"] .memo-color-red { --memo-card-bg: #382523; --memo-card-border: #65403b; }
+[data-theme="dark"] .memo-color-orange { --memo-card-bg: #3b2d20; --memo-card-border: #654b32; }
+[data-theme="dark"] .memo-color-yellow { --memo-card-bg: #38331c; --memo-card-border: #61572b; }
+[data-theme="dark"] .memo-color-green { --memo-card-bg: #20372a; --memo-card-border: #365d43; }
+[data-theme="dark"] .memo-color-teal { --memo-card-bg: #1d3735; --memo-card-border: #315b57; }
+[data-theme="dark"] .memo-color-blue { --memo-card-bg: #202f45; --memo-card-border: #3c567b; }
+[data-theme="dark"] .memo-color-darkblue { --memo-card-bg: #252b43; --memo-card-border: #424c73; }
+[data-theme="dark"] .memo-color-purple { --memo-card-bg: #32253e; --memo-card-border: #5a416e; }
+[data-theme="dark"] .memo-color-pink { --memo-card-bg: #3a2632; --memo-card-border: #674257; }
+[data-theme="dark"] .memo-color-brown { --memo-card-bg: #332722; --memo-card-border: #5a4239; }
+[data-theme="dark"] .memo-color-gray { --memo-card-bg: #2c2f33; --memo-card-border: #464a50; }
+
+/* Google Keep background themes */
+.memo-theme-grocery {
+  background-image: radial-gradient(#d3e3fd 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.memo-theme-food {
+  background-image: radial-gradient(#ffd8d8 1.5px, transparent 1.5px);
+  background-size: 20px 20px;
+}
+.memo-theme-music {
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(160,195,255,0.12) 10px, rgba(160,195,255,0.12) 20px);
+}
+.memo-theme-recipes {
+  background-image: radial-gradient(#ffdfba 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+.memo-theme-places {
+  background-image: repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(100,149,237,0.1) 20px);
+}
+.memo-theme-celebration {
+  background-image: radial-gradient(#fecdd3 2px, transparent 2px), radial-gradient(#fde68a 2px, transparent 2px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* Card hover and action toolbar */
+.memo-card-actions-quick {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.memo-card:hover .memo-card-actions-quick {
+  opacity: 1;
+}
+
+.memo-card-header .keep-pin-btn {
+  width: 28px;
+  height: 28px;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.memo-card:hover .keep-pin-btn,
+.memo-card .keep-pin-btn.active {
+  opacity: 1;
+}
+
+.memo-card-hover-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  margin-top: 0.5rem;
+  padding-top: 0.35rem;
+}
+
+.memo-card:hover .memo-card-hover-toolbar {
+  opacity: 1;
+}
+
+/* Google Keep interactive checklist components */
+.keep-checklist-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0.4rem 0;
+}
+
+.keep-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.keep-checklist-item.completed span.keep-item-text,
+.keep-checklist-item.completed input.keep-item-input {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.keep-checklist-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--color-primary-600);
+}
+
+.keep-item-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.9rem;
+  outline: none;
+  padding: 0.2rem 0;
+}
+
+.keep-item-remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius-xs);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.keep-checklist-item:hover .keep-item-remove-btn {
+  opacity: 1;
+}
+
+.keep-checklist-add-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  color: var(--text-muted);
+}
+
+.keep-checklist-plus {
+  font-size: 1.1rem;
+  font-weight: bold;
+  padding: 0 0.15rem;
+  user-select: none;
+}
+
+.keep-checklist-add-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.keep-checklist-add-input::placeholder {
+  color: var(--text-muted);
+}
+
+.keep-checklist-completed-section {
+  margin-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 0.4rem;
+}
+
+.keep-checklist-completed-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: transparent;
+  border: none;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.3rem 0;
+}
+
+.keep-checklist-completed-toggle .keep-caret-icon {
+  transition: transform var(--transition-fast);
+}
+
+.keep-checklist-completed-toggle.open .keep-caret-icon {
+  transform: rotate(90deg);
+}
+
+.keep-checklist-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  padding: 0.2rem 0;
+}
+
+.keep-checklist-action-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.keep-checklist-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.keep-checklist-action-btn.danger {
+  color: var(--color-red);
+}
+
+.keep-checklist-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--color-red);
+}
+
+/* Chips & Badges */
+.keep-composer-chips,
+.keep-modal-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.keep-chip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+[data-theme="dark"] .keep-chip-pill {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.keep-chip-clear {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Link Previews */
+.keep-links-preview-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.keep-link-card {
+  display: flex;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow var(--transition-fast);
+}
+
+.keep-link-card:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.keep-link-thumb {
+  width: 90px;
+  height: 70px;
+  object-fit: cover;
+  background: var(--bg-subtle);
+  flex-shrink: 0;
+}
+
+.keep-link-info {
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.keep-link-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.keep-link-domain {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+/* Attachments preview grid */
+.keep-attachments-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.keep-attachment-item {
+  position: relative;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  aspect-ratio: 4 / 3;
+}
+
+.keep-attachment-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.keep-attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+/* Floating Popovers */
+.keep-popover {
+  position: fixed;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 14px 0 rgba(0,0,0,0.18);
+  padding: 0.6rem;
+  z-index: calc(var(--z-modal) + 20);
+  animation: dropdownIn 150ms ease-out;
+  min-width: 180px;
+}
+
+.keep-popover-title,
+.keep-popover-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+  padding: 0 0.25rem;
+}
+
+.keep-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  text-align: left;
+}
+
+.keep-popover-item:hover {
+  background-color: var(--bg-hover);
+}
+
+.keep-popover-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.keep-popover-divider {
+  height: 1px;
+  background-color: var(--border-color);
+  margin: 0.4rem 0;
+}
+
+.keep-swatches-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.4rem;
+  padding: 0.25rem;
+}
+
+.keep-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  background: var(--bg-surface);
+  transition: transform var(--transition-fast);
+}
+
+.keep-swatch:hover {
+  transform: scale(1.15);
+}
+
+.keep-swatch.active {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.keep-themes-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.25rem;
+}
+
+.keep-theme-pill {
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.keep-theme-pill:hover {
+  background-color: var(--bg-hover);
+}
+
+.keep-theme-pill.active {
+  border-color: var(--color-primary-600);
+  background-color: var(--color-primary-50);
+  color: var(--color-primary-600);
+}
+
+/* In-Place Note Modal */
+.keep-note-modal-backdrop {
+  z-index: var(--z-modal);
+}
+
+.keep-modal-card {
+  width: 100%;
+  max-width: 600px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 12px 4px rgba(60,64,67,0.25);
+  display: flex;
+  flex-direction: column;
+  animation: modalScaleIn 160ms cubic-bezier(0, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+@keyframes modalScaleIn {
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.keep-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.25rem 0.4rem;
+}
+
+.keep-modal-body {
+  padding: 0.4rem 1.25rem;
+  max-height: 68vh;
+  overflow-y: auto;
+}
+
+.keep-modal-footer {
+  padding: 0.5rem 1.25rem 0.75rem;
+  border-top: none;
+}
+
+.keep-save-status {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Drawing Modal */
+.keep-drawing-card {
+  max-width: 860px;
+}
+
+.keep-drawing-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.keep-drawing-body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #f0f0f0;
+  padding: 1rem;
+}
+
+#keep-drawing-canvas {
+  background: #ffffff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: crosshair;
+  max-width: 100%;
+  height: auto;
+}
 
 /* ==========================================================================
    Modals & Dialogs System
@@ -1543,3 +2210,253 @@ button.calendar-day-num {
 @media (max-width: 480px) {
   .memo-section-grid { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
 }
+
+/* ==========================================================================
+   Google Keep Selection & Bulk Actions Bar
+   ========================================================================== */
+.keep-card-select-btn {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
+  z-index: 10;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.memo-card:hover .keep-card-select-btn,
+.memo-card.is-selected .keep-card-select-btn,
+.keep-card-select-btn.active {
+  opacity: 1;
+}
+
+.keep-card-select-btn:hover {
+  transform: scale(1.1);
+}
+
+.keep-card-select-btn.active,
+.memo-card.is-selected .keep-card-select-btn {
+  background: var(--text-primary);
+  color: var(--bg-surface);
+  border-color: var(--text-primary);
+}
+
+.memo-card.is-selected {
+  outline: 2px solid var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+}
+
+/* Floating bulk selection actions bar */
+.keep-bulk-bar {
+  position: fixed;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.4rem 0.85rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  min-width: 320px;
+  animation: keepSlideDown 0.18s cubic-bezier(0, 0, 0.2, 1);
+}
+
+@keyframes keepSlideDown {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.keep-bulk-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.keep-bulk-count {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.keep-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.keep-bulk-btn {
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.keep-bulk-btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ==========================================================================
+   Google Keep Fullscreen Lightbox Modal
+   ========================================================================== */
+.keep-lightbox-backdrop {
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.keep-lightbox-container {
+  display: flex;
+  flex-direction: column;
+  max-width: 90vw;
+  max-height: 90vh;
+  width: 1000px;
+}
+
+.keep-lightbox-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  color: #fff;
+}
+
+.keep-lightbox-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.keep-lightbox-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.keep-lightbox-actions button {
+  color: #e5e7eb;
+}
+
+.keep-lightbox-actions button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.keep-lightbox-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  max-height: calc(90vh - 60px);
+}
+
+.keep-lightbox-img {
+  max-width: 100%;
+  max-height: calc(90vh - 60px);
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* ==========================================================================
+   Google Keep Edit Labels Dialog
+   ========================================================================== */
+.keep-labels-card {
+  max-width: 320px;
+  width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.keep-labels-body {
+  padding: 0.75rem 1rem;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.keep-label-create-row,
+.keep-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.keep-label-new-input,
+.keep-label-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  padding: 0.35rem 0.25rem;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--transition-fast);
+}
+
+.keep-label-new-input:focus,
+.keep-label-input:focus {
+  border-bottom-color: var(--color-primary-600);
+}
+
+.keep-label-btn-icon {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.keep-label-btn-icon:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-hover);
+}
+
+.keep-label-trash-btn:hover {
+  color: var(--color-red);
+}
+
+/* Hover attachments in cards */
+.keep-attachments-preview-grid .keep-attachment-item {
+  cursor: pointer;
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+
+.keep-attachments-preview-grid .keep-attachment-item:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+

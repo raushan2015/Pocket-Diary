@@ -81,10 +81,32 @@ class ApiClient {
    * Log in user
    * POST /api/v1/auth/login
    */
-  async login({ email, password }) {
+  async login({ email, password, rememberMe }) {
     return this.request('/api/v1/auth/login', {
       method: 'POST',
-      body: { email, password },
+      body: { email, password, rememberMe },
+    });
+  }
+
+  /**
+   * Request password recovery
+   * POST /api/v1/auth/forgot-password
+   */
+  async forgotPassword(email) {
+    return this.request('/api/v1/auth/forgot-password', {
+      method: 'POST',
+      body: { email },
+    });
+  }
+
+  /**
+   * Update current user profile
+   * PATCH /api/v1/auth/profile
+   */
+  async updateProfile(data) {
+    return this.request('/api/v1/auth/profile', {
+      method: 'PATCH',
+      body: data,
     });
   }
 
@@ -130,6 +152,58 @@ class ApiClient {
     return this.request('/api/v1/workspaces', {
       method: 'POST',
       body: { name, slug },
+    });
+  }
+
+  /**
+   * Update workspace name
+   * PATCH /api/v1/workspaces/:id
+   */
+  async updateWorkspace(workspaceId, { name }) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}`, {
+      method: 'PATCH',
+      body: { name },
+    });
+  }
+
+  /**
+   * Get workspace storage quota
+   * GET /api/v1/workspaces/:id/storage
+   */
+  async getStorageQuota(workspaceId) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/storage`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * List workspace members
+   * GET /api/v1/workspaces/:id/members
+   */
+  async getWorkspaceMembers(workspaceId) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * Add / invite workspace member
+   * POST /api/v1/workspaces/:id/members
+   */
+  async addWorkspaceMember(workspaceId, { email, role }) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`, {
+      method: 'POST',
+      body: { email, role },
+    });
+  }
+
+  /**
+   * Get workspace activity audit trail
+   * GET /api/v1/workspaces/:id/activities
+   */
+  async getWorkspaceActivities(workspaceId) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/activities`, {
+      method: 'GET',
     });
   }
 
@@ -210,6 +284,28 @@ class ApiClient {
     });
   }
 
+  /**
+   * Batch update memo sort order (Google Keep drag & drop)
+   * POST /api/v1/memos/reorder
+   */
+  async reorderMemos(workspaceId, memoIds) {
+    return this.request('/api/v1/memos/reorder', {
+      method: 'POST',
+      body: { workspaceId, memoIds },
+    });
+  }
+
+  /**
+   * Fetch link preview metadata
+   * POST /api/v1/memos/link-preview
+   */
+  async getLinkPreview(url) {
+    return this.request('/api/v1/memos/link-preview', {
+      method: 'POST',
+      body: { url },
+    });
+  }
+
   // ==========================================
   // Server-backed memo attachments
   // ==========================================
@@ -253,11 +349,23 @@ class ApiClient {
   }
 
   /**
-   * Delete category
-   * DELETE /api/v1/categories/:id
+   * Update category
+   * PATCH /api/v1/categories/:id
    */
-  async deleteCategory(id) {
+  async updateCategory(id, categoryData) {
     return this.request(`/api/v1/categories/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: categoryData,
+    });
+  }
+
+  /**
+   * Delete category
+   * DELETE /api/v1/categories/:id?workspaceId=...
+   */
+  async deleteCategory(id, workspaceId) {
+    const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
+    return this.request(`/api/v1/categories/${encodeURIComponent(id)}${query}`, {
       method: 'DELETE',
     });
   }

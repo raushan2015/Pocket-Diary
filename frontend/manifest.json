@@ -1,0 +1,19 @@
+{
+  "name": "Notes - Google Keep Alternative",
+  "short_name": "Notes",
+  "description": "Capture, organize, and find your ideas in one place.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#fbbc04",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

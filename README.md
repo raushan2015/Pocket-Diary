@@ -59,7 +59,6 @@ The project is organized into three main areas:
 | `frontend/` | Single-page web interface, CSS, client-side state, API client, editor enhancements, and Markdown rendering. |
 | `backend/` | Fastify server, authentication, authorization, workspace logic, note services, database schema/migrations, and API routes. |
 | `tests/` | Playwright browser-based end-to-end regression suite. |
-| `system-design.md` | System design notes and API/data architecture documentation. |
 | `Dockerfile` | Multi-stage container build for the application. |
 | `docker-compose.yml` | Local and self-hosted container deployment. |
 

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import { chromium } from 'playwright';
 
 const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:8080';
-const CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/chromium';
+const CHROME_PATH = process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH) ? process.env.CHROME_PATH : undefined;
 const SCREENSHOT_DIR = path.resolve(process.cwd().endsWith('tests') ? '../.agents/browser' : '.agents/browser');
 
 if (!fs.existsSync(SCREENSHOT_DIR)) {
@@ -18,9 +18,9 @@ if (!fs.existsSync(SCREENSHOT_DIR)) {
 let browser;
 
 test.before(async () => {
-  console.log(`[QA Test Suite] Launching headless browser with ${CHROME_PATH} targeting ${BASE_URL}...`);
+  console.log(`[QA Test Suite] Launching headless browser targeting ${BASE_URL}...`);
   browser = await chromium.launch({
-    executablePath: CHROME_PATH,
+    ...(CHROME_PATH ? { executablePath: CHROME_PATH } : {}),
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
   });

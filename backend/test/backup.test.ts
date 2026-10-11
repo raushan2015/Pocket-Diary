@@ -51,4 +51,38 @@ describe('SQLite online backups', () => {
     ).rejects.toThrow();
     expect(await fs.readdir(path.join(tempDirectory, 'backups'))).toEqual([]);
   });
+
+  it('restores a snapshot and recovers database state with PRAGMA integrity check', async () => {
+    tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'memo-restore-test-'));
+    const sourcePath = path.join(tempDirectory, 'source.db');
+    const backupDirectory = path.join(tempDirectory, 'backups');
+    const source = new Database(sourcePath);
+
+    source.exec('CREATE TABLE notes (id INTEGER PRIMARY KEY, title TEXT, body TEXT NOT NULL)');
+    source.prepare('INSERT INTO notes (title, body) VALUES (?, ?)').run('Important Memo', 'State before disaster');
+    source.pragma('journal_mode = WAL');
+
+    const backupPath = await createDatabaseBackup(source, { directory: backupDirectory });
+
+    // Simulate accidental deletion
+    source.prepare('DELETE FROM notes WHERE id = 1').run();
+    expect(source.prepare('SELECT COUNT(*) as count FROM notes').get()).toEqual({ count: 0 });
+    source.close();
+
+    // Perform disaster recovery restore
+    const restoredDbPath = path.join(tempDirectory, 'restored.db');
+    await fs.copyFile(backupPath, restoredDbPath);
+    const restored = new Database(restoredDbPath);
+
+    try {
+      const integrity = restored.pragma('integrity_check') as [{ integrity_check: string }];
+      expect(integrity[0].integrity_check).toBe('ok');
+
+      const recoveredRow = restored.prepare('SELECT title, body FROM notes WHERE id = 1').get() as { title: string; body: string };
+      expect(recoveredRow.title).toBe('Important Memo');
+      expect(recoveredRow.body).toBe('State before disaster');
+    } finally {
+      restored.close();
+    }
+  });
 });

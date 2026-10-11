@@ -344,7 +344,7 @@
   .editor-save-indicator { font-size: 0.68rem; white-space: normal; }
   .editor-header-actions { gap: 0.25rem; flex-wrap: wrap; justify-content: flex-end; }
   .editor-header-actions .btn-sm { min-height: 38px; padding: 0 0.55rem; }
-  #editor-history-btn-top, #editor-share-btn { display: none; }
+  #editor-history-btn-top, #editor-share-btn { display: inline-flex; }
 
   .editor-body-split { display: flex; flex-direction: column; overflow: visible; min-height: 0; }
   .editor-canvas-container { order: 1; max-width: none; width: 100%; margin: 0; padding: 1rem 1rem 2rem; overflow: visible; }

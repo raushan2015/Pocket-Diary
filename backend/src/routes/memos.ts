@@ -7,6 +7,7 @@ import {
   deleteMemo,
   restoreMemo,
   getMemoVersions,
+  reorderMemos,
   MemoNotFoundError,
   MemoConflictError,
   ValidationError,
@@ -30,6 +31,8 @@ interface MemoQuery {
   folderId?: string;
   isFavorite?: boolean | string;
   isPinned?: boolean | string;
+  isArchived?: boolean | string;
+  hasReminder?: boolean | string;
   includeDeleted?: boolean | string;
   search?: string;
   page?: number;
@@ -113,6 +116,8 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
         folderId: request.query.folderId,
         isFavorite: request.query.isFavorite,
         isPinned: request.query.isPinned,
+        isArchived: request.query.isArchived,
+        hasReminder: request.query.hasReminder,
         includeDeleted: request.query.includeDeleted,
         search: request.query.search,
         page: pageNum,
@@ -357,6 +362,107 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(500).send({
         error: 'Internal Server Error',
         message: 'Failed to retrieve memo versions',
+      });
+    }
+  });
+
+  // POST /api/v1/memos/reorder (Google Keep card drag & drop order)
+  fastify.post<{ Body: { workspaceId: string; memoIds: string[] } }>('/reorder', async (request, reply) => {
+    try {
+      const user = request.user!;
+      const { workspaceId, memoIds } = request.body || {};
+      if (!workspaceId || !Array.isArray(memoIds)) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'workspaceId and memoIds array are required',
+        });
+      }
+      verifyWorkspaceMembership(fastify.dbCtx.db, user.id, workspaceId);
+      reorderMemos(fastify.dbCtx, workspaceId, memoIds);
+      return reply.status(200).send({ success: true, count: memoIds.length });
+    } catch (err: unknown) {
+      if (err instanceof WorkspaceAccessError) {
+        return reply.status(err.statusCode).send({
+          error: 'Forbidden',
+          message: err.message,
+        });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to reorder memos',
+      });
+    }
+  });
+
+  // POST /api/v1/memos/link-preview (Scrape OpenGraph / Metadata for URLs)
+  fastify.post<{ Body: { url: string } }>('/link-preview', async (request, reply) => {
+    try {
+      const { url } = request.body || {};
+      if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Valid http or https URL is required',
+        });
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      try {
+        const res = await fetch(url, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NotesBot/1.0)' },
+        });
+        clearTimeout(timeoutId);
+        const parsed = new URL(url);
+        if (!res.ok) {
+          return reply.send({
+            url,
+            title: parsed.hostname,
+            faviconUrl: `${parsed.origin}/favicon.ico`,
+          });
+        }
+        const html = await res.text();
+        const getMeta = (prop: string) => {
+          const m = html.match(new RegExp(`<meta\\s+[^>]*(?:property|name)=["'](?:og:)?${prop}["'][^>]*content=["']([^"']+)["']`, 'i'))
+            || html.match(new RegExp(`<meta\\s+[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:)?${prop}["']`, 'i'));
+          return m ? m[1].trim() : undefined;
+        };
+
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        const title = getMeta('title') || (titleMatch ? titleMatch[1].trim() : parsed.hostname);
+        const description = getMeta('description');
+        let imageUrl = getMeta('image');
+        if (imageUrl && !imageUrl.startsWith('http')) {
+          try {
+            imageUrl = new URL(imageUrl, parsed.origin).href;
+          } catch {
+            imageUrl = undefined;
+          }
+        }
+        const faviconUrl = `${parsed.origin}/favicon.ico`;
+
+        return reply.send({
+          url,
+          title: title || parsed.hostname,
+          description,
+          imageUrl,
+          faviconUrl,
+        });
+      } catch {
+        clearTimeout(timeoutId);
+        const parsed = new URL(url);
+        return reply.send({
+          url,
+          title: parsed.hostname,
+          faviconUrl: `${parsed.origin}/favicon.ico`,
+        });
+      }
+    } catch (err: unknown) {
+      fastify.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to generate link preview',
       });
     }
   });

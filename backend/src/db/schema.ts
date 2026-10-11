@@ -102,12 +102,21 @@ export const memos = sqliteTable('memos', {
   categoryId: text('category_id').references(() => categories.id, { onDelete: 'set null' }),
   title: text('title').notNull().default(''),
   content: text('content').notNull().default(''),
-  color: text('color').notNull().default('default'), // default, red, orange, yellow, green, teal, blue, darkblue, purple, pink
+  color: text('color').notNull().default('default'), // default, red, orange, yellow, green, teal, blue, darkblue, purple, pink, brown, gray
+  theme: text('theme').notNull().default('default'), // default, grocery, food, music, recipes, notes, places, travel, celebration
   priority: text('priority').notNull().default('medium'), // low, medium, high, urgent
   status: text('status').notNull().default('pending'), // draft, pending, in_progress, completed, archived
   isFavorite: integer('is_favorite').notNull().default(0),
   isPinned: integer('is_pinned').notNull().default(0),
+  isArchived: integer('is_archived').notNull().default(0),
+  noteType: text('note_type').notNull().default('text'), // text, checklist
+  sortOrder: integer('sort_order').notNull().default(0),
   dueDate: integer('due_date'), // Unix epoch ms
+  reminderTime: integer('reminder_time'), // Unix epoch ms for specific alarm
+  reminderLocation: text('reminder_location'), // Location string or geo description
+  collaborators: text('collaborators').notNull().default('[]'), // JSON array of collaborator emails
+  checklistData: text('checklist_data').notNull().default('[]'), // JSON array of items: [{id, text, completed}]
+  linkPreviews: text('link_previews').notNull().default('[]'), // JSON array of {url, title, description, imageUrl, faviconUrl}
   version: integer('version').notNull().default(1), // Optimistic lock counter
   createdBy: text('created_by')
     .notNull()
@@ -118,6 +127,8 @@ export const memos = sqliteTable('memos', {
 }, (table) => [
   index('idx_memos_workspace_id').on(table.workspaceId),
   index('idx_memos_status').on(table.workspaceId, table.status),
+  index('idx_memos_is_archived').on(table.workspaceId, table.isArchived),
+  index('idx_memos_sort_order').on(table.workspaceId, table.sortOrder),
   index('idx_memos_due_date').on(table.workspaceId, table.dueDate),
   index('idx_memos_deleted_at').on(table.workspaceId, table.deletedAt),
 ]);

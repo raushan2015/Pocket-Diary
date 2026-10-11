@@ -30,7 +30,7 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   app.register(fastifyCookie, {
     secret: config.cookieSecret,
   });
-  app.register(fastifyMultipart, { limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 0 }, throwFileSizeLimit: true });
+  app.register(fastifyMultipart, { limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 10 }, throwFileSizeLimit: true });
 
   // Apply a global request budget, with stricter limits on credential endpoints.
   app.register(fastifyRateLimit, {
