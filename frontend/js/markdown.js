@@ -206,13 +206,14 @@ function formatInline(text = '') {
 
   // Images: ![alt](url)
   result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, altText, imageUrl) => {
-    const trimmedUrl = imageUrl.trim();
-    const isSafe = /^https?:\/\//i.test(trimmedUrl)
-      || /^\/api\//i.test(trimmedUrl)
-      || /^blob:/i.test(trimmedUrl)
-      || /^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,/i.test(trimmedUrl);
+    const trimmed = imageUrl.trim();
+    const pureUrl = trimmed.split(/\s+/)[0].replace(/^["']|["']$/g, '');
+    const isSafe = /^https?:\/\//i.test(pureUrl)
+      || /^\/api\//i.test(pureUrl)
+      || /^blob:/i.test(pureUrl)
+      || /^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,/i.test(pureUrl);
     if (!isSafe) return match;
-    return `<img src="${trimmedUrl}" alt="${altText}" title="${altText || 'Attached Image'}" loading="lazy" decoding="async" class="md-image" style="max-width:100%;height:auto;border-radius:10px;margin:0.5rem 0;display:block;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.1);" />`;
+    return `<img src="${pureUrl}" alt="${altText}" title="${altText || 'Attached Image'}" loading="lazy" decoding="async" class="md-image" style="max-width:100%;height:auto;border-radius:10px;margin:0.5rem 0;display:block;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.1);" />`;
   });
 
   // Links: [title](url). Avoid reprocessing Markdown image syntax.

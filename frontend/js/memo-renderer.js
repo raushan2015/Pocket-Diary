@@ -412,11 +412,31 @@ export function attachMemoItemInteractions(container, memos) {
       } else if (action === 'add-image') {
         triggerImagePicker(async (files) => {
           if (!files.length) return;
+          const uploadedImages = [];
           for (const file of files) {
             try {
-              await api.uploadAttachment(memo.id, file);
+              const res = await api.uploadAttachment(memo.id, file);
+              if (res?.attachment?.url) {
+                uploadedImages.push({
+                  name: file.name || 'image',
+                  url: res.attachment.url
+                });
+              }
             } catch (err) {
               showToast('Failed to upload image', 'error');
+            }
+          }
+          if (uploadedImages.length > 0 && (memo.noteType === 'text' || !memo.noteType)) {
+            const imgMarkdown = uploadedImages.map(img => {
+              const cleanName = img.name.replace(/[\[\]\(\)]/g, '_');
+              return `![${cleanName}](${img.url})`;
+            }).join('\n\n');
+            const updatedContent = (memo.content ? `${memo.content}\n\n` : '') + imgMarkdown;
+            try {
+              await api.updateMemo(memo.id, { content: updatedContent });
+              memo.content = updatedContent;
+            } catch (updateErr) {
+              console.error('Failed to update memo content with images:', updateErr);
             }
           }
           await refreshWorkspaceMemos();

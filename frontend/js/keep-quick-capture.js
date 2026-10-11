@@ -183,28 +183,42 @@ export function setupKeepQuickCapture(callbacks = {}) {
     });
   });
 
-  // Clipboard image pasting support
-  form.addEventListener('paste', (e) => {
+  // Clipboard image pasting support (form and container)
+  const onImagePaste = (e) => {
     const files = extractImageFilesFromEvent(e);
     if (files.length > 0) {
       e.preventDefault();
+      expand(false);
       addPendingFilesToQuickCapture(files);
-      showToast(`${files.length} image(s) pasted`, 'info', 1500);
+      showToast(`${files.length} image(s) attached to quick note`, 'info', 1500);
     }
-  });
+  };
+  form.addEventListener('paste', onImagePaste);
+  collapsed.addEventListener('paste', onImagePaste);
 
-  // Drag and drop image file support
-  form.addEventListener('dragover', (e) => {
+  // Drag and drop image file support (form and container)
+  const onDragOver = (e) => {
     e.preventDefault();
-  });
-  form.addEventListener('drop', (e) => {
+    container.classList.add('keep-capture-active');
+  };
+  const onDragLeave = (e) => {
+    if (!container.contains(e.relatedTarget)) {
+      container.classList.remove('keep-capture-active');
+    }
+  };
+  const onImageDrop = (e) => {
+    e.preventDefault();
+    container.classList.remove('keep-capture-active');
     const files = extractImageFilesFromEvent(e);
     if (files.length > 0) {
-      e.preventDefault();
+      expand(false);
       addPendingFilesToQuickCapture(files);
-      showToast(`${files.length} image(s) dropped`, 'info', 1500);
+      showToast(`${files.length} image(s) dropped into quick note`, 'info', 1500);
     }
-  });
+  };
+  container.addEventListener('dragover', onDragOver);
+  container.addEventListener('dragleave', onDragLeave);
+  container.addEventListener('drop', onImageDrop);
 
   document.getElementById('qc-tool-archive')?.addEventListener('click', () => {
     quickCaptureDraft.isArchived = !quickCaptureDraft.isArchived;
@@ -431,14 +445,35 @@ export async function saveQuickCaptureDraft() {
 
     // Upload queued image files if any
     if (newMemo?.id && pendingFiles.length > 0) {
+      const uploadedImages = [];
       for (const item of pendingFiles) {
         try {
-          await api.uploadAttachment(newMemo.id, item.file);
+          const upRes = await api.uploadAttachment(newMemo.id, item.file);
+          if (upRes?.attachment?.url) {
+            uploadedImages.push({
+              name: item.file.name || 'image',
+              url: upRes.attachment.url
+            });
+          }
         } catch (uploadErr) {
           console.error('Failed to upload attachment:', uploadErr);
         }
         if (item.previewUrl) {
           try { URL.revokeObjectURL(item.previewUrl); } catch {}
+        }
+      }
+
+      if (uploadedImages.length > 0 && (newMemo.noteType === 'text' || !newMemo.noteType)) {
+        const imgMarkdown = uploadedImages.map(img => {
+          const cleanName = img.name.replace(/[\[\]\(\)]/g, '_');
+          return `![${cleanName}](${img.url})`;
+        }).join('\n\n');
+        const updatedContent = (newMemo.content ? `${newMemo.content}\n\n` : '') + imgMarkdown;
+        try {
+          await api.updateMemo(newMemo.id, { content: updatedContent });
+          newMemo.content = updatedContent;
+        } catch (updateErr) {
+          console.error('Failed to update memo with markdown images:', updateErr);
         }
       }
     }

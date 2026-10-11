@@ -488,7 +488,30 @@ export function setupKeepModalListeners(callbacks = {}) {
   async function uploadFilesToActiveMemo(files) {
     if (!activeKeepModalMemo || !files.length) return;
     if (!activeKeepModalMemo.id) {
-      await saveKeepModalNote(true);
+      const activeWs = state.get('activeWorkspace');
+      if (!activeWs?.id) {
+        showToast('Please select a workspace first', 'error');
+        return;
+      }
+      const title = document.getElementById('keep-modal-title')?.value.trim() || 'Untitled Note';
+      const content = document.getElementById('keep-modal-content')?.value || '';
+      try {
+        const createRes = await api.createMemo({
+          workspaceId: activeWs.id,
+          title,
+          content,
+          noteType: activeKeepModalMemo.noteType || 'text',
+          color: activeKeepModalMemo.color || 'default',
+          priority: 'medium',
+          status: 'pending'
+        });
+        if (createRes?.memo) {
+          activeKeepModalMemo = { ...createRes.memo };
+        }
+      } catch (err) {
+        showToast('Could not initialize note draft for upload', 'error');
+        return;
+      }
     }
     if (!activeKeepModalMemo.id) return;
     let uploadedCount = 0;

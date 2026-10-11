@@ -245,11 +245,37 @@ export async function uploadAndInsertImages(files) {
   if (!files || !files.length) return;
   const textarea = document.getElementById('editor-body-textarea');
   if (!state.get('activeMemo')?.id) {
-    await saveActiveMemo({ quiet: true });
+    await saveActiveMemo({ quiet: true, force: true });
   }
-  const memo = state.get('activeMemo');
+  let memo = state.get('activeMemo');
   if (!memo?.id) {
-    showToast('Save the note before adding images, then try again.', 'error');
+    const activeWs = state.get('activeWorkspace');
+    if (activeWs?.id) {
+      const titleInput = document.getElementById('editor-title-input');
+      const title = titleInput?.value.trim() || 'Untitled Note';
+      if (titleInput && !titleInput.value.trim()) titleInput.value = title;
+      const categories = state.get('categories') || [];
+      try {
+        const createRes = await api.createMemo({
+          workspaceId: activeWs.id,
+          title,
+          content: textarea?.value || '',
+          categoryId: categories[0]?.id || null,
+          priority: 'medium',
+          status: 'pending'
+        });
+        if (createRes?.memo) {
+          memo = { ...createRes.memo, isFavorite: !!createRes.memo.isFavorite, isPinned: !!createRes.memo.isPinned };
+          state.set('activeMemo', memo);
+          editorLastSavedSnapshot = editorSnapshot();
+        }
+      } catch (err) {
+        console.error('Failed to create draft note for attachment:', err);
+      }
+    }
+  }
+  if (!memo?.id) {
+    showToast('Could not initialize note draft. Select a workspace and try again.', 'error');
     return;
   }
   let uploadedCount = 0;
@@ -607,6 +633,7 @@ export function renderEditorTags(tags) {
 
 export async function saveActiveMemo(options = {}) {
   const quiet = options.quiet === true;
+  const force = options.force === true;
   if (editorSaveInFlight) {
     await editorSaveInFlight;
     if (editorHasUnsavedChanges && editorSnapshot() !== editorLastSavedSnapshot) return saveActiveMemo(options);
@@ -615,7 +642,7 @@ export async function saveActiveMemo(options = {}) {
   const activeMemo = state.get('activeMemo') || {};
   const titleText = document.getElementById('editor-title-input')?.value.trim() || '';
   const bodyText = document.getElementById('editor-body-textarea')?.value.trim() || '';
-  if (!activeMemo.id && !titleText && !bodyText) {
+  if (!force && !activeMemo.id && !titleText && !bodyText) {
     editorHasUnsavedChanges = false;
     editorLastSavedSnapshot = editorSnapshot();
     setEditorSaveState('New note', 'saved');
