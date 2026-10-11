@@ -1,0 +1,41 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# Dependencies and build output
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+coverage/
+playwright-report/
+test-results/
+
+# Runtime data and user content
+data/
+**/data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+uploads/
+attachments/
+
+# Local tools and generated artifacts
+.agents/
+.archify/
+.claude/
+.cache/
+*.png
+*.PNG
+*.jpg
+*.jpeg
+*.webp
+.DS_Store

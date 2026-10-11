@@ -1,0 +1,33 @@
+# Git & version control
+.git
+.gitignore
+
+# Package managers
+node_modules
+*/node_modules
+npm-debug.log*
+
+# Build artifacts & logs
+dist
+*/dist
+*.log
+.system_generated
+
+# Agent internal files & artifacts
+.agents
+.archify
+.claude
+*.PNG
+*.png
+
+# SQLite databases & temp files
+*.db
+*.db-wal
+*.db-shm
+data/*.db*
+backend/data/*.db*
+
+# Runtime secrets must never enter the Docker build context
+.env
+.env.*
+!.env.example

@@ -1,0 +1,343 @@
+/* ==========================================================================
+   Memo Manager SaaS Landing & Marketing Page Styles
+   Matching frontend.PNG
+   ========================================================================== */
+
+.landing-page {
+  padding-bottom: 5rem;
+}
+
+/* Hero Section */
+.hero-section {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 4.5rem 1.5rem 3rem 1.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hero-headline {
+  font-size: clamp(2.5rem, 5vw, 4.25rem);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  max-width: 900px;
+  margin-bottom: 1.5rem;
+}
+
+.hero-gradient-text {
+  background: var(--color-primary-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+.hero-subhead {
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  color: var(--text-secondary);
+  max-width: 680px;
+  line-height: 1.6;
+  margin-bottom: 2.25rem;
+}
+
+.hero-cta-group {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Trust Badges */
+.hero-trust-badges {
+  display: flex;
+  align-items: center;
+  gap: 1.75rem;
+  margin-bottom: 3.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.trust-badge-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.trust-badge-item svg {
+  width: 18px;
+  height: 18px;
+  color: var(--color-green);
+  flex-shrink: 0;
+}
+
+/* Mockup Display Graphic */
+.hero-mockup-container {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto 4rem auto;
+  position: relative;
+  border-radius: var(--radius-xl);
+  padding: 0.75rem;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%);
+  box-shadow: var(--shadow-2xl);
+  border: 1px solid var(--border-color);
+}
+
+.mockup-inner-frame {
+  background-color: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-xl);
+}
+
+.mockup-top-bar {
+  background-color: var(--bg-subtle);
+  padding: 0.65rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.mockup-window-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+}
+.mockup-dot-red { background-color: #ef4444; }
+.mockup-dot-yellow { background-color: #f59e0b; }
+.mockup-dot-green { background-color: #10b981; }
+
+.mockup-preview-screen {
+  padding: 1.5rem;
+  background-color: var(--bg-app);
+}
+
+/* Trust Platforms Row */
+.trust-platforms-section {
+  text-align: center;
+  margin-bottom: 5rem;
+}
+
+.trust-platforms-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 1.5rem;
+}
+
+.platforms-logos-grid {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+}
+
+.platform-logo-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  opacity: 0.85;
+  transition: opacity var(--transition-fast);
+}
+
+.platform-logo-item:hover {
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+.platform-logo-item svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+/* Features Grid Section */
+.features-section {
+  max-width: 1200px;
+  margin: 0 auto 5rem auto;
+  padding: 0 1.5rem;
+  text-align: center;
+}
+
+.features-pill-badge {
+  display: inline-block;
+  padding: 0.35rem 1rem;
+  border-radius: var(--radius-full);
+  background-color: var(--color-primary-50);
+  color: var(--color-primary-600);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
+
+[data-theme="dark"] .features-pill-badge {
+  background-color: rgba(99, 102, 241, 0.2);
+  color: var(--color-primary-400);
+}
+
+.features-heading {
+  font-size: clamp(2rem, 3.5vw, 2.75rem);
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.75rem;
+}
+
+.features-subhead {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin: 0 auto 3.5rem auto;
+}
+
+.feature-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+  text-align: left;
+}
+
+.feature-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.75rem 1.5rem;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--color-primary-300);
+}
+
+.feature-icon-wrapper {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.feature-icon-wrapper svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* 8 Feature Card Icon Color Themes */
+.feature-card:nth-child(1) .feature-icon-wrapper { background-color: var(--color-violet-bg); color: var(--color-violet); }
+.feature-card:nth-child(2) .feature-icon-wrapper { background-color: var(--color-blue-bg); color: var(--color-blue); }
+.feature-card:nth-child(3) .feature-icon-wrapper { background-color: var(--color-green-bg); color: var(--color-green); }
+.feature-card:nth-child(4) .feature-icon-wrapper { background-color: var(--color-amber-bg); color: var(--color-amber); }
+.feature-card:nth-child(5) .feature-icon-wrapper { background-color: var(--color-red-bg); color: var(--color-red); }
+.feature-card:nth-child(6) .feature-icon-wrapper { background-color: var(--color-blue-bg); color: var(--color-blue); }
+.feature-card:nth-child(7) .feature-icon-wrapper { background-color: var(--bg-subtle); color: var(--text-primary); }
+.feature-card:nth-child(8) .feature-icon-wrapper { background-color: var(--color-primary-50); color: var(--color-primary-600); }
+
+.feature-card-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.feature-card-desc {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Bottom CTA Conversion Banner */
+.bottom-cta-section {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.bottom-cta-banner {
+  background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+  border-radius: var(--radius-2xl);
+  padding: 3.5rem 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  color: #ffffff;
+  box-shadow: var(--shadow-2xl);
+  position: relative;
+  overflow: hidden;
+}
+
+.bottom-cta-banner::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.3) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.bottom-cta-content {
+  max-width: 600px;
+}
+
+.bottom-cta-title {
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 0.75rem;
+  color: #ffffff;
+}
+
+.bottom-cta-subtitle {
+  font-size: var(--font-size-base);
+  color: #94a3b8;
+}
+
+@media (max-width: 1024px) {
+  .feature-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .hero-section {
+    padding: 2.5rem 1rem 2rem 1rem;
+  }
+  .feature-cards-grid {
+    grid-template-columns: 1fr;
+  }
+  .bottom-cta-banner {
+    flex-direction: column;
+    text-align: center;
+    padding: 2.5rem 1.5rem;
+  }
+  .platforms-logos-grid {
+    gap: 1.5rem;
+  }
+}

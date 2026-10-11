@@ -1,0 +1,15 @@
+{
+  "name": "memo-manager-qa-tests",
+  "version": "1.0.0",
+  "description": "End-to-End QA Verification and System Certification Test Suite for Memo Manager SaaS",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-timeout=120000 e2e.test.js",
+    "test:e2e": "node --test --test-timeout=120000 e2e.test.js"
+  },
+  "author": "TECHSHAN AI Office - QA Agent",
+  "license": "ISC",
+  "devDependencies": {
+    "playwright": "^1.64.0"
+  }
+}

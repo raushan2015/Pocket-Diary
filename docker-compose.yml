@@ -1,0 +1,31 @@
+# Memo Manager SaaS Docker Compose Orchestration
+# TECHSHAN AI Office
+
+services:
+  memo-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: memo-manager:latest
+    container_name: memo-manager-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - BACKEND_PORT=3000
+      - DATABASE_PATH=/app/data/memo_manager.db
+      - COOKIE_SECRET=${COOKIE_SECRET:?Set a unique COOKIE_SECRET of at least 32 characters in your .env file}
+    volumes:
+      - memo_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  memo_data:
+    name: memo_manager_data

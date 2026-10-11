@@ -1,0 +1,12 @@
+.editor-attachments-panel[hidden] { display: none !important; }
+.editor-attachments-panel { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border-color, #e5e7eb); border-radius: 14px; background: var(--surface-card, rgba(128,128,128,.04)); }
+.attachments-heading { margin: 0 0 .75rem; font-size: .95rem; font-weight: 650; color: var(--text-primary, inherit); }
+.memo-attachment-item { display: grid; grid-template-columns: minmax(72px, 120px) minmax(0, 1fr) auto; align-items: center; gap: .8rem; padding: .65rem 0; border-top: 1px solid var(--border-color, #e5e7eb); }
+.memo-attachment-preview-link { display: block; overflow: hidden; border-radius: 10px; background: rgba(128,128,128,.12); }
+.memo-attachment-preview-link img { display: block; width: 100%; height: 80px; object-fit: cover; }
+.memo-attachment-meta { display: flex; flex-direction: column; min-width: 0; gap: .25rem; }
+.memo-attachment-name { overflow-wrap: anywhere; font-size: .875rem; color: var(--text-primary, inherit); }
+.memo-attachment-size { font-size: .75rem; color: var(--text-muted, #6b7280); }
+.memo-attachment-remove { white-space: nowrap; }
+.attachments-error { color: var(--color-red, #b91c1c); margin: 0; font-size: .875rem; }
+@media (max-width: 480px) { .editor-attachments-panel { padding: .7rem; } .memo-attachment-item { grid-template-columns: 64px minmax(0,1fr); gap: .6rem; } .memo-attachment-preview-link img { height: 64px; } .memo-attachment-remove { grid-column: 2; justify-self: start; } }

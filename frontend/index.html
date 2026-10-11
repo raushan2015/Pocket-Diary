@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Notes - Capture, organize, and find your ideas in one place.">
+  <title>Notes</title>
+
+  <!-- Google Font: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Application Stylesheets -->
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/landing.css">
+  <link rel="stylesheet" href="css/auth.css">
+  <link rel="stylesheet" href="css/editor.css">
+  <link rel="stylesheet" href="css/attachments.css">
+
+  <script>
+    // Ensure relative API requests route seamlessly through dev proxy or same-origin
+    window.__API_BASE__ = '';
+  </script>
+</head>
+<body>
+  <div id="app">
+    <!-- ==========================================================================
+         Top Application Navbar
+         ========================================================================== -->
+    <header class="top-navbar" id="top-navbar">
+      <!-- Mobile drawer toggle stays at the far-left of the app header. -->
+      <button class="btn btn-ghost btn-icon-only mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Toggle Navigation Menu" aria-expanded="false">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      <!-- Left: Logo & Brand -->
+      <div class="navbar-brand-section" id="nav-brand-btn" role="button" tabindex="0" title="Notes Home">
+        <div class="brand-logo-icon">
+          <!-- Folded Memo SVG Icon -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </div>
+        <span class="brand-title">Notes</span>
+      </div>
+
+      <!-- Center: Landing Navigation Links (Visible on Landing View) -->
+      <nav class="nav-links-center" id="nav-landing-links" aria-label="Main Navigation">
+        <a class="nav-link" href="#features" id="nav-features-link">Features</a>
+        <a class="nav-link" href="#pricing" id="nav-pricing-link">Pricing</a>
+        <a class="nav-link" href="#solutions" id="nav-solutions-link">Solutions</a>
+        <a class="nav-link" href="#resources" id="nav-resources-link">Resources</a>
+      </nav>
+
+      <!-- Center: App Search Bar (Visible on Dashboard View) -->
+      <div class="navbar-search-container" id="navbar-search-container" style="display: none;">
+        <span class="navbar-search-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </span>
+        <input type="text" class="navbar-search-input" id="global-search-input" placeholder="Search memos, tags, or content..." aria-label="Search memos">
+        <button type="button" class="navbar-filter-toggle" id="navbar-filter-toggle" aria-expanded="false" aria-controls="navbar-filter-panel" title="Show filters">Filters <span aria-hidden="true">⌄</span></button>
+        <div class="navbar-filter-panel" id="navbar-filter-panel" hidden></div>
+      </div>
+
+      <!-- Right: Action Buttons (Theme Switcher, Auth State, User Menu) -->
+      <div class="navbar-actions">
+        <!-- Theme Toggle Button -->
+        <button class="btn btn-ghost btn-icon-only" id="theme-toggle-btn" aria-label="Toggle dark/light theme" title="Toggle theme">
+          <!-- Sun Icon (shown in dark mode) -->
+          <svg class="theme-icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <!-- Moon Icon (shown in light mode) -->
+          <svg class="theme-icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+
+        <!-- Unauthenticated Actions -->
+        <div class="nav-unauth-actions" id="nav-unauth-actions" style="display: flex; align-items: center; gap: 0.5rem;">
+          <button class="btn btn-outline btn-sm" id="nav-login-btn">Sign In</button>
+          <button class="btn btn-primary btn-sm" id="nav-register-btn">Get Started</button>
+        </div>
+
+        <!-- Authenticated Actions -->
+        <div class="nav-auth-actions" id="nav-auth-actions" style="display: none; align-items: center; gap: 0.75rem;">
+          <!-- Notification Bell -->
+          <button class="btn btn-ghost btn-icon-only" id="nav-notifications-btn" aria-label="Notifications" title="Notifications" style="position: relative;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span style="position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%;"></span>
+          </button>
+
+          <!-- User Menu Pill -->
+          <div class="user-menu-pill" id="user-menu-pill" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false">
+            <div class="user-avatar-circle" id="user-avatar-circle">A</div>
+            <span class="user-menu-name" id="user-menu-name">Alex</span>
+            <svg class="user-menu-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+
+            <!-- User Menu Dropdown -->
+            <div class="user-dropdown-menu" id="user-dropdown-menu">
+              <div class="dropdown-user-header">
+                <div class="dropdown-user-fullname" id="dropdown-user-fullname">Alex Morgan</div>
+                <div class="dropdown-user-email" id="dropdown-user-email">alex@example.com</div>
+              </div>
+              <button class="dropdown-menu-item" id="dropdown-dashboard-btn">
+                <span>Dashboard</span>
+                <span class="badge badge-personal">Active</span>
+              </button>
+              <button class="dropdown-menu-item" id="dropdown-theme-btn">
+                <span>Toggle Dark Mode</span>
+                <span id="dropdown-theme-label" style="font-size: 0.75rem; color: var(--text-muted);">Dark</span>
+              </button>
+              <button class="dropdown-menu-item logout" id="dropdown-logout-btn">
+                <span>Sign Out</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                  <polyline points="16 17 21 12 16 7"></polyline>
+                  <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- ==========================================================================
+         VIEW 1: Marketing / Landing Page
+         Source: frontend.PNG (Hero, Platform Trust, 8 Features, Conversion Banner)
+         ========================================================================== -->
+    <main class="view-container active" id="view-landing">
+      <div class="landing-page">
+        <!-- Hero Section -->
+        <section class="hero-section">
+          <h1 class="hero-headline">
+            Your Ideas, Notes and Tasks <span class="hero-gradient-text">All in One Place</span>
+          </h1>
+          <p class="hero-subhead">
+            A lightning-fast, secure, and beautiful workspace for capturing memos, organizing projects, and syncing effortlessly across all your devices.
+          </p>
+
+          <!-- Call to Actions -->
+          <div class="hero-cta-group">
+            <button class="btn btn-primary btn-lg" id="hero-get-started-btn">
+              Get Started Free &rarr;
+            </button>
+            <button class="btn btn-outline btn-lg" id="hero-live-demo-btn">
+              Live Demo
+            </button>
+          </div>
+
+          <!-- Trust Badges -->
+          <div class="hero-trust-badges">
+            <div class="trust-badge-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>Free Plan Available</span>
+            </div>
+            <div class="trust-badge-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>Works on All Devices</span>
+            </div>
+            <div class="trust-badge-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>Your Data is Private</span>
+            </div>
+          </div>
+
+          <!-- Interactive Mockup Graphic Frame -->
+          <div class="hero-mockup-container">
+            <div class="mockup-inner-frame">
+              <div class="mockup-top-bar">
+                <div class="mockup-window-dot mockup-dot-red"></div>
+                <div class="mockup-window-dot mockup-dot-yellow"></div>
+                <div class="mockup-window-dot mockup-dot-green"></div>
+                <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 0.5rem; font-family: var(--font-mono);">memo-manager.app</span>
+              </div>
+              <div class="mockup-preview-screen">
+                <div style="display: flex; gap: 1rem; align-items: center; justify-content: space-between; background: var(--bg-surface); padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                  <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 32px; height: 32px; border-radius: 6px; background: var(--color-primary-50); color: var(--color-primary-600); display: flex; align-items: center; justify-content: center; font-weight: bold;">📝</div>
+                    <div style="text-align: left;">
+                      <div style="font-size: 0.9rem; font-weight: 600;">Q4 Product Architecture & Roadmap</div>
+                      <div style="font-size: 0.75rem; color: var(--text-muted);">Updated 2 hours ago • Work • High Priority</div>
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: 0.5rem;">
+                    <span class="badge badge-work">Work</span>
+                    <span class="badge badge-priority-high">High</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Trust Platforms Row -->
+        <section class="trust-platforms-section">
+          <div class="trust-platforms-title">TRUSTED ACROSS MODERN PLATFORMS</div>
+          <div class="platforms-logos-grid">
+            <div class="platform-logo-item">
+              <svg viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.802"/></svg>
+              <span>Windows</span>
+            </div>
+            <div class="platform-logo-item">
+              <svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.63 1.35-.55.63-1.03 1.69-.9 2.73 1.01.08 2.02-.49 2.61-1.23z"/></svg>
+              <span>macOS</span>
+            </div>
+            <div class="platform-logo-item">
+              <svg viewBox="0 0 24 24"><path d="M12.002 0c-2.33 0-4.324 1.83-4.324 4.225 0 .97.35 1.87.95 2.58C5.2 7.77 2.54 11.02 2.54 14.93c0 2.58 1.15 4.93 2.98 6.54L4.7 23.47c-.2.43.08.92.54.92h13.52c.46 0 .74-.49.54-.92l-.82-2c1.83-1.61 2.98-3.96 2.98-6.54 0-3.91-2.66-7.16-6.088-8.125.6-.71.95-1.61.95-2.58C16.326 1.83 14.332 0 12.002 0z"/></svg>
+              <span>Linux</span>
+            </div>
+            <div class="platform-logo-item">
+              <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-4.5a1 1 0 0 1-2 0V7a1 1 0 0 1 2 0z"/></svg>
+              <span>iOS</span>
+            </div>
+            <div class="platform-logo-item">
+              <svg viewBox="0 0 24 24"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.551 0 .9993.4482.9993.9993.0001.5511-.4483.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.4116 13.8533 8.12 12 8.12s-3.5902.2916-5.1367.8307L4.841 5.4477a.416.416 0 00-.5676-.1521.416.416 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3432-4.1021-2.6889-7.5743-6.1185-9.4396"/></svg>
+              <span>Android</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8 Feature Cards Grid Section -->
+        <section class="features-section" id="features">
+          <div class="features-pill-badge">POWERFUL FEATURES</div>
+          <h2 class="features-heading">Everything You Need to Stay Productive</h2>
+          <p class="features-subhead">
+            Engineered with modern SaaS reliability, full-text search, and frictionless memo organization.
+          </p>
+
+          <div class="feature-cards-grid">
+            <!-- 1. Rich Text Editor -->
+            <div class="feature-card">
+              <div class="feature-icon-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                </svg>
+              </div>
+              <h3 class="feature-card-title">Rich Text Editor</h3>
+              <p class="feature-card-desc">Markdown support, interactive checklists, code blocks, and intuitive typography controls.</p>
+            </div>
+
+            <!-- 2. Categories & Tags -->
+            <div class="feature-card">
+              <div class="feature-icon-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+                  <line x1="7" y1="7" x2="7.01" y2="7"></line>
+                </svg>
+              </div>
+              <h3 class="feature-card-title">Categories & Tags</h3>
+              <p class="feature-card-desc">Organize your thoughts into custom workspaces, color-coded categories, and multi-tags.</p>
+            </div>
+
+            <!-- 3. Reminders & Alerts -->
+            <div class="feature-card">
+              <div class="feature-icon-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+              </div>
+              <h3 class="feature-card-title">Reminders</h3>
+              <p class="feature-card-desc">Set due dates, alerts, and time-sensitive reminders to never miss critical deadlines.</p>
+            </div>
+
+            <!-- 4. Attachments -->
+            <div class="feature-card">
+              <div class="feature-icon-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                </svg>
+              </div>
+              <h3 class="feature-card-title">Attachments</h3>
+              <p class="feature-card-desc">Attach documents, screenshots, and assets with dedicated workspace storage quota.</p>
+            </div>
+
+            <!-- 5. Interactive Calendar -->
+            <div class="feature-card">
+              <div class="feature-icon-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+              </div>
+              <h3 class="feature-card-title">Calendar View</h3>
+              <p class="feature-card-desc">Visualize memo schedules, upcoming events, and milestone checklists on a clean monthly grid.</p>
+            </div>
+
+            <!-- 6. Instant Search -->
+            <div class="feature-card">
+              <div class="feature-icon-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </div>
+              <h3 class="feature-card-title">Search & Filters</h3>
+              <p class="feature-card-desc">Instant SQLite FTS5 full-text search with sub-millisecond filtering across titles and notes.</p>
+            </div>
+
+            <!-- 7. Dark & Light Mode -->
+            <div class="feature-card">
+              <div class="feature-icon-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+              </div>
+              <h3 class="feature-card-title">Dark Mode</h3>
+              <p class="feature-card-desc">Carefully crafted dark and light themes designed for visual focus and eye comfort.</p>
+            </div>
+
+            <!-- 8. Multi-Device Sync -->
+            <div class="feature-card">
+              <div class="feature-icon-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+              </div>
+              <h3 class="feature-card-title">Multi-Device</h3>
+              <p class="feature-card-desc">Cloud-synchronized workspaces with responsive layouts optimized for desktop, tablet, and mobile.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Bottom CTA Conversion Banner -->
+        <section class="bottom-cta-section">
+          <div class="bottom-cta-banner">
+            <div class="bottom-cta-content">
+              <h2 class="bottom-cta-title">Start organizing your ideas today</h2>
+              <p class="bottom-cta-subtitle">Join thousands of creators, engineers, and teams boosting productivity with Notes.</p>
+            </div>
+            <button class="btn btn-primary btn-lg" id="bottom-cta-btn">
+              Create Free Account &rarr;
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ==========================================================================
+         VIEW 2: Authentication Screen ("Welcome Back" Split Card)
+         Source: frontend.PNG (Split Card, Form, Brand Hero Column)
+         ========================================================================== -->
+    <main class="view-container" id="view-auth">
+      <div class="auth-view-container">
+        <div class="auth-split-card">
+          <!-- Left Column: Form Container -->
+          <div class="auth-form-column">
+            <div class="auth-form-header">
+              <h2 class="auth-title" id="auth-title">Welcome Back</h2>
+              <p class="auth-subtitle" id="auth-subtitle">Sign in to your Notes account</p>
+            </div>
+
+            <!-- Alert Notification Banner inside Form -->
+            <div class="auth-alert" id="auth-alert" role="alert"></div>
+
+            <form class="auth-form" id="auth-form" novalidate>
+              <!-- Full Name (Only for Registration Mode) -->
+              <div class="form-group" id="auth-name-group" style="display: none;">
+                <label class="form-label" for="auth-name-input">Full Name</label>
+                <div class="input-icon-wrapper">
+                  <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                  <input type="text" class="form-input" id="auth-name-input" placeholder="Alex Morgan" autocomplete="name">
+                </div>
+                <div class="form-error-msg" id="auth-name-error">Please enter your full name</div>
+              </div>
+
+              <!-- Email Address -->
+              <div class="form-group">
+                <label class="form-label" for="auth-email-input">Email Address</label>
+                <div class="input-icon-wrapper">
+                  <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                    <polyline points="22,6 12,13 2,6"></polyline>
+                  </svg>
+                  <input type="email" class="form-input" id="auth-email-input" placeholder="alex@example.com" autocomplete="email" required>
+                </div>
+                <div class="form-error-msg" id="auth-email-error">Please enter a valid email address</div>
+              </div>
+
+              <!-- Password -->
+              <div class="form-group">
+                <label class="form-label" for="auth-password-input">Password</label>
+                <div class="input-icon-wrapper">
+                  <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                  <input type="password" class="form-input" id="auth-password-input" placeholder="••••••••" autocomplete="current-password" required>
+                  <button type="button" class="password-toggle-btn" id="password-toggle-btn" aria-label="Toggle password visibility">
+                    <!-- Eye Icon -->
+                    <svg class="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                  </button>
+                </div>
+                <div class="form-error-msg" id="auth-password-error">Password must be at least 6 characters</div>
+              </div>
+
+              <!-- Remember Me & Forgot Password (Login Mode) -->
+              <div class="auth-options-row" id="auth-options-row">
+                <label class="form-checkbox-wrapper">
+                  <input type="checkbox" class="form-checkbox" id="remember-me-checkbox" checked>
+                  <span>Remember me</span>
+                </label>
+                <a href="#forgot" class="auth-forgot-link" id="auth-forgot-link">Forgot password?</a>
+              </div>
+
+              <!-- Submit Button -->
+              <button type="submit" class="btn btn-primary btn-full auth-submit-btn" id="auth-submit-btn">
+                <span class="auth-btn-text">Sign In</span>
+              </button>
+            </form>
+
+            <!-- Social Divider -->
+            <div class="auth-divider">or continue with</div>
+
+            <!-- Social OAuth Buttons Row -->
+            <div class="auth-social-row">
+              <button type="button" class="social-auth-btn" id="social-google-btn" title="Continue with Google">
+                <svg viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.8z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.8s.2-2.1.4-2.8L1.9 6.3C.7 8.7 0 10.3 0 12s.7 3.3 1.9 5.7l3.7-2.9z"/><path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"/></svg>
+                <span>Google</span>
+              </button>
+              <button type="button" class="social-auth-btn" id="social-apple-btn" title="Continue with Apple">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.63 1.35-.55.63-1.03 1.69-.9 2.73 1.01.08 2.02-.49 2.61-1.23z"/></svg>
+                <span>Apple</span>
+              </button>
+              <button type="button" class="social-auth-btn" id="social-github-btn" title="Continue with GitHub">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+                <span>GitHub</span>
+              </button>
+            </div>
+
+            <!-- Footer Toggle Prompt -->
+            <div class="auth-switch-prompt">
+              <span id="auth-switch-question">Don't have an account?</span>
+              <a class="auth-switch-link" id="auth-switch-btn" role="button" tabindex="0">Sign up</a>
+            </div>
+          </div>
+
+          <!-- Right Column: Brand Value Proposition Card -->
+          <div class="auth-brand-column">
+            <div class="auth-brand-logo-large">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+            </div>
+            <h3 class="auth-brand-title">Notes</h3>
+            <p class="auth-brand-tagline">
+              Your personal space for better ideas and a more organized life.
+            </p>
+            <div class="auth-brand-features-list">
+              <div class="auth-brand-feature-item">
+                <div class="auth-feature-check-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <span>Secure and private cloud storage</span>
+              </div>
+              <div class="auth-brand-feature-item">
+                <div class="auth-feature-check-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <span>Seamless access on all devices</span>
+              </div>
+              <div class="auth-brand-feature-item">
+                <div class="auth-feature-check-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <span>Free and flexible workspace plans</span>
+              </div>
+              <div class="auth-brand-feature-item">
+                <div class="auth-feature-check-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <span>Easy to use, fast productivity</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==========================================================================
+         VIEW 3: Main Dashboard (SaaS Hub)
+         Source: frontend.PNG (Sidebar, Workspace Switcher, KPIs, Memos, Calendar)
+         ========================================================================== -->
+    <main class="view-container" id="view-dashboard">
+      <div class="dashboard-layout">
+        <!-- Sidebar Navigation Shell -->
+        <aside class="app-sidebar" id="app-sidebar">
+          <div>
+            <!-- Main Navigation Links & Filters -->
+            <nav class="sidebar-nav-section" aria-label="Sidebar Navigation">
+              <a class="sidebar-nav-item active" id="side-nav-dashboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                <span>Dashboard</span>
+              </a>
+              <a class="sidebar-nav-item" id="side-nav-all">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="16" y1="13" x2="8" y2="13"></line>
+                  <line x1="16" y1="17" x2="8" y2="17"></line>
+                </svg>
+                <span>All Memos</span>
+                <span class="badge badge-personal badge-sm" id="sidebar-count-all" style="margin-left: auto; font-size: 0.7rem;">0</span>
+              </a>
+              <a class="sidebar-nav-item" id="side-nav-favorites">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                <span>Favorites</span>
+                <span class="badge badge-sm" id="sidebar-count-fav" style="margin-left: auto; font-size: 0.7rem;">0</span>
+              </a>
+              <a class="sidebar-nav-item" id="side-nav-pinned">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="17" x2="12" y2="22"></line>
+                  <path d="M5 17h14v-2l-3-3V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v7l-3 3v2z"></path>
+                </svg>
+                <span>Pinned</span>
+                <span class="badge badge-sm" id="sidebar-count-pinned" style="margin-left: auto; font-size: 0.7rem;">0</span>
+              </a>
+              <a class="sidebar-nav-item" id="side-nav-due-soon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span>Due Soon</span>
+                <span class="badge badge-sm" id="sidebar-count-due" style="margin-left: auto; font-size: 0.7rem;">0</span>
+              </a>
+              <a class="sidebar-nav-item" id="side-nav-calendar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                <span>Calendar</span>
+              </a>
+              <a class="sidebar-nav-item" id="side-nav-trash">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                <span>Trash</span>
+                <span class="badge badge-sm" id="sidebar-count-trash" style="margin-left: auto; font-size: 0.7rem;">0</span>
+              </a>
+            </nav>
+
+            <!-- Categories Section -->
+            <div class="sidebar-workspace-group" id="sidebar-categories-group">
+              <div class="sidebar-group-header">
+                <span>Categories</span>
+                <button class="btn btn-ghost btn-icon-only btn-sm" id="add-category-btn" title="Add Category" style="width: 22px; height: 22px; padding: 0;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+              </div>
+              <div class="workspace-list" id="sidebar-categories-list">
+                <!-- Dynamically populated from API -->
+              </div>
+            </div>
+
+            <!-- Tags Section -->
+            <div class="sidebar-workspace-group" id="sidebar-tags-group">
+              <div class="sidebar-group-header">
+                <span>Labels</span>
+                <button class="btn btn-ghost btn-icon-only btn-sm" id="add-tag-btn" title="Create Label" style="width: 22px; height: 22px; padding: 0;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+              </div>
+              <div class="workspace-list" id="sidebar-tags-list">
+                <!-- Dynamically populated from API -->
+              </div>
+            </div>
+
+            <!-- Folders Section -->
+            <div class="sidebar-workspace-group" id="sidebar-folders-group">
+              <div class="sidebar-group-header">
+                <span>Folders</span>
+                <button class="btn btn-ghost btn-icon-only btn-sm" id="add-folder-btn" title="Add Folder" style="width: 22px; height: 22px; padding: 0;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><line x1="12" y1="10" x2="12" y2="16"></line><line x1="9" y1="13" x2="15" y2="13"></line></svg>
+                </button>
+              </div>
+              <div class="workspace-list" id="sidebar-folders-list">
+                <span style="font-size: 0.75rem; color: var(--text-muted); padding: 0.25rem 0.5rem;">No folders yet</span>
+              </div>
+            </div>
+
+            <!-- Workspace Switcher Section -->
+            <div class="sidebar-workspace-group">
+              <div class="sidebar-group-header">
+                <span>Workspace</span>
+              </div>
+              <div class="workspace-list" id="sidebar-workspace-list">
+                <div class="workspace-item active" data-workspace-id="personal" id="ws-personal-item">
+                  <div class="workspace-item-info">
+                    <span class="workspace-bullet"></span>
+                    <span class="ws-item-name">Personal</span>
+                  </div>
+                  <svg class="workspace-check-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </div>
+              </div>
+              <button class="add-workspace-btn" id="add-workspace-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Create Workspace</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Bottom: Migration & Storage Quota Widget -->
+          <div>
+            <button class="btn btn-secondary btn-sm btn-full" id="sidebar-migration-btn" style="margin-bottom: 0.75rem; justify-content: flex-start; gap: 0.65rem;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <span>Migration & Backup</span>
+            </button>
+            <div class="sidebar-storage-card" style="margin-top: 0;">
+              <div class="storage-header">
+                <span>Storage Used</span>
+                <span id="storage-percent-text">24%</span>
+              </div>
+              <div class="storage-detail" id="storage-detail-text">2.4 GB of 10 GB</div>
+              <div class="storage-progress-bar-track">
+                <div class="storage-progress-bar-fill" id="storage-progress-fill" style="width: 24%;"></div>
+              </div>
+              <button class="btn btn-outline btn-sm btn-full" id="storage-upgrade-btn">
+                Upgrade Plan
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Main Dashboard Content Area -->
+        <section class="dashboard-content-area">
+          <!-- Hero Greeting Row -->
+          <div class="dashboard-hero-header">
+            <div>
+              <h1 class="dashboard-greeting-title" id="dashboard-greeting-title">Good Morning, Alex! ☀️</h1>
+              <p class="dashboard-greeting-subtitle">Here's your memo overview for today.</p>
+              <div class="dashboard-date-badge" id="dashboard-date-badge">Wednesday, October 10, 2026</div>
+            </div>
+            <div>
+
+            </div>
+          </div>
+
+          <!-- 4 KPI Metric Cards -->
+          <div class="kpi-cards-grid">
+            <!-- 1. Total Memos -->
+            <div class="kpi-card total">
+              <div class="kpi-icon-container">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+              </div>
+              <div class="kpi-data-container">
+                <span class="kpi-label">Total Memos</span>
+                <span class="kpi-value" id="kpi-total">24</span>
+              </div>
+            </div>
+
+            <!-- 2. Favorites -->
+            <div class="kpi-card favorites">
+              <div class="kpi-icon-container">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+              </div>
+              <div class="kpi-data-container">
+                <span class="kpi-label">Favorites</span>
+                <span class="kpi-value" id="kpi-favorites">5</span>
+              </div>
+            </div>
+
+            <!-- 3. Pending -->
+            <div class="kpi-card pending">
+              <div class="kpi-icon-container">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+              </div>
+              <div class="kpi-data-container">
+                <span class="kpi-label">Pending</span>
+                <span class="kpi-value" id="kpi-pending">8</span>
+              </div>
+            </div>
+
+            <!-- 4. Completed -->
+            <div class="kpi-card completed">
+              <div class="kpi-icon-container">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+              </div>
+              <div class="kpi-data-container">
+                <span class="kpi-label">Completed</span>
+                <span class="kpi-value" id="kpi-completed">11</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Two-Column Grid: Recent Memos (Left) + Calendar & Reminders (Right) -->
+          <div class="dashboard-main-grid">
+            <!-- Left: Productivity Memos Workspace -->
+            <div class="surface-card" style="padding: 1.25rem 1.5rem;">
+              <div class="card-header-row" style="padding: 0 0 1rem 0;">
+                <div>
+                  <h3 class="card-title" id="memos-view-heading">All notes</h3>
+                  <span style="font-size: 0.75rem; color: var(--text-muted);" id="memos-count-indicator">Showing 0 memos</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                  <button class="btn btn-outline btn-sm" id="dashboard-refresh-btn" title="Refresh notes">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                    <span>Refresh</span>
+                  </button>
+                  <a href="#memos" class="card-link" id="recent-memos-view-all">View All &rarr;</a>
+                  <button class="btn btn-primary btn-sm" id="dashboard-new-memo-btn" type="button">+ New note</button>
+                </div>
+              </div>
+
+              <!-- Active Filter Banner (Visible when filtered) -->
+              <div class="active-filter-banner" id="active-filter-banner" style="display: none;">
+                <span id="active-filter-text">Filtered by: Favorites</span>
+                <button type="button" id="clear-filter-btn">Clear Filter ✕</button>
+              </div>
+
+              <!-- Keep-style quick capture -->
+              <form class="quick-capture-card" id="quick-capture-form" aria-label="Quick note capture">
+                <input id="quick-capture-title" type="text" maxlength="200" placeholder="Take a note…" aria-label="Note title (optional)" autocomplete="off">
+                <textarea id="quick-capture-content" rows="1" maxlength="100000" placeholder="Write your thoughts…" aria-label="Note content"></textarea>
+                <div class="quick-capture-footer">
+                  <span>Quick capture</span>
+                  <div>
+                    <button type="button" class="btn btn-ghost btn-sm" id="quick-capture-expand">More options</button>
+                    <button type="submit" class="btn btn-primary btn-sm" id="quick-capture-save">Create note</button>
+                  </div>
+                </div>
+              </form>
+
+              <!-- Filter Bar & Controls -->
+              <div class="memos-filter-bar">
+                <div class="filter-left-controls">
+                  <!-- Status Filter -->
+                  <select class="filter-select" id="filter-status-select" aria-label="Filter by Status">
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="draft">Draft</option>
+                    <option value="archived">Archived</option>
+                  </select>
+
+                  <!-- Priority Filter -->
+                  <select class="filter-select" id="filter-priority-select" aria-label="Filter by Priority">
+                    <option value="">All Priorities</option>
+                    <option value="urgent">Urgent</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+
+                  <!-- Sort Order -->
+                  <select class="filter-select" id="sort-memos-select" aria-label="Sort Memos">
+                    <option value="updatedAt:desc">Recently updated</option>
+                    <option value="createdAt:desc">Recently created</option>
+                    <option value="updatedAt:asc">Least recently updated</option>
+                    <option value="dueDate:asc">Due date (soonest)</option>
+                    <option value="dueDate:desc">Due date (latest)</option>
+                    <option value="priority:desc">Priority (highest first)</option>
+                    <option value="title:asc">Title (A–Z)</option>
+                    <option value="title:desc">Title (Z–A)</option>
+                  </select>
+                </div>
+
+                <div class="filter-right-controls">
+                  <!-- View Mode Switcher: Grid vs List -->
+                  <div class="view-mode-btn-group" role="group" aria-label="View mode">
+                    <button class="view-mode-btn active" id="view-mode-grid-btn" title="Card Grid View" aria-label="Card Grid View">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    </button>
+
+                  </div>
+                </div>
+              </div>
+
+              <!-- Memos Empty State -->
+              <div id="memos-empty-state" style="display: none; padding: 3rem 1.5rem; text-align: center; color: var(--text-muted);">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;" id="empty-state-icon">📝</div>
+                <h4 style="font-size: 1rem; color: var(--text-primary); margin-bottom: 0.25rem;" id="empty-state-title">No memos found</h4>
+                <p style="font-size: 0.85rem; margin-bottom: 1.25rem;" id="empty-state-desc">Get started by creating your first memo or clearing current filters.</p>
+                <button class="btn btn-primary btn-sm" id="empty-state-action-btn">+ Create Memo</button>
+              </div>
+
+              <!-- Container for grid items -->
+              <div class="memo-grid-container" id="memos-grid-container"></div>
+              <!-- Container for list items -->
+              <div class="memo-list-container" id="recent-memos-list" style="display: none;"></div>
+            </div>
+
+            <!-- Right (40%): Mini-Calendar Widget & Upcoming Reminders -->
+            <div>
+              <!-- Mini-Calendar -->
+              <div class="surface-card calendar-widget-card">
+                <div class="calendar-header-nav">
+                  <span class="calendar-month-title" id="calendar-month-title">October 2026</span>
+                  <div class="calendar-nav-arrows">
+                    <button class="calendar-arrow-btn" id="calendar-prev-btn" aria-label="Previous Month">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    </button>
+                    <button class="calendar-arrow-btn" id="calendar-next-btn" aria-label="Next Month">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="calendar-grid" id="calendar-grid">
+                  <!-- Weekday headers -->
+                  <div class="calendar-day-name">S</div>
+                  <div class="calendar-day-name">M</div>
+                  <div class="calendar-day-name">T</div>
+                  <div class="calendar-day-name">W</div>
+                  <div class="calendar-day-name">T</div>
+                  <div class="calendar-day-name">F</div>
+                  <div class="calendar-day-name">S</div>
+                  <!-- Days rendered via app.js -->
+                </div>
+              </div>
+
+              <!-- Upcoming Reminders -->
+              <div class="surface-card">
+                <div class="card-header-row">
+                  <h3 class="card-title">Upcoming Reminders</h3>
+                  <a href="#reminders" class="card-link">See All</a>
+                </div>
+                <div class="reminders-list" id="upcoming-reminders-list">
+                  <div class="reminders-empty-state">Sign in to see reminders from your memos.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- ==========================================================================
+         VIEW 4: Memo Editor View
+         Source: frontend.PNG (Toolbar, Markdown Checklist, Details Inspector)
+         ========================================================================== -->
+    <main class="view-container" id="view-editor">
+      <div class="editor-layout-container" id="editor-layout-container">
+        <!-- Editor Header Bar -->
+        <div class="editor-top-bar">
+          <div class="editor-header-left">
+            <button class="editor-back-btn" id="editor-back-btn" title="Back to Dashboard">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            </button>
+            <input type="text" class="editor-title-input" id="editor-title-input" value="Untitled Memo" placeholder="Untitled Memo" aria-label="Memo title">
+            <span class="badge badge-work" id="editor-workspace-badge">Work</span>
+            <span class="editor-save-indicator" id="editor-save-indicator" role="status" aria-live="polite">Ready to save automatically</span>
+          </div>
+          <div class="editor-header-actions">
+            <button class="btn btn-outline btn-sm" id="editor-history-btn-top" type="button">History</button>
+            <!-- Pin Button -->
+            <button class="btn btn-ghost btn-icon-only" id="editor-pin-btn" title="Toggle Pin" aria-label="Pin Memo">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-2l-3-3V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v7l-3 3v2z"></path></svg>
+            </button>
+            <!-- Favorite Button -->
+            <button class="btn btn-ghost btn-icon-only" id="editor-fav-btn" title="Toggle Favorite" aria-label="Favorite Memo">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            </button>
+            <!-- Delete / Trash Button -->
+            <button class="btn btn-ghost btn-icon-only" id="editor-delete-btn" title="Move to Trash" aria-label="Delete Memo" style="color: var(--color-red);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+            <button class="btn btn-outline btn-sm" id="editor-whiteboard-btn" type="button">Draw</button>
+            <button class="btn btn-outline btn-sm" id="editor-attach-btn" type="button">Image</button>
+            <button class="btn btn-outline btn-sm" id="editor-share-btn" type="button">Share</button>
+            <button class="btn btn-primary btn-sm" id="editor-save-btn" type="button" title="Save now. Notes also save automatically.">Save now</button>
+          </div>
+        </div>
+
+        <!-- Optimistic Concurrency Conflict Alert -->
+        <div class="editor-conflict-alert" id="editor-conflict-alert">
+          <div style="display: flex; align-items: center; gap: 0.65rem;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span id="editor-conflict-msg"><strong>Version Conflict:</strong> This memo was updated by another session.</span>
+          </div>
+          <button class="btn btn-sm btn-outline" id="editor-conflict-reload-btn" style="color: white; border-color: white;">Reload Latest</button>
+        </div>
+
+        <!-- Formatting Toolbar -->
+        <div class="editor-toolbar" role="toolbar" aria-label="Formatting options">
+          <button class="toolbar-btn" data-action="bold" title="Bold (⌘B)"><strong>B</strong></button>
+          <button class="toolbar-btn" data-action="italic" title="Italic (⌘I)"><em>I</em></button>
+          <button class="toolbar-btn" data-action="underline" title="Underline (⌘U)"><u>U</u></button>
+          <button class="toolbar-btn" data-action="strike" title="Strikethrough"><s>S</s></button>
+          <span class="toolbar-divider"></span>
+          <button class="toolbar-btn" data-action="h1" title="Heading 1">H1</button>
+          <button class="toolbar-btn" data-action="h2" title="Heading 2">H2</button>
+          <button class="toolbar-btn" data-action="code" title="Code Block">&lt;/&gt;</button>
+          <span class="toolbar-divider"></span>
+          <button class="toolbar-btn" data-action="bullet" title="Bulleted List">•</button>
+          <button class="toolbar-btn" data-action="numbered" title="Numbered List">1.</button>
+          <button class="toolbar-btn" data-action="checklist" title="Checklist">☑</button>
+          <button class="toolbar-btn" data-action="blockquote" title="Blockquote">”</button>
+          <span class="toolbar-divider"></span>
+          <button class="toolbar-btn" data-action="undo" title="Undo (⌘Z)">⤺</button>
+          <button class="toolbar-btn" data-action="redo" title="Redo (⌘Y)">⤻</button>
+
+          <!-- Tabs: Write / Preview / Split -->
+          <div class="editor-tabs-group" id="editor-tabs-group">
+            <button type="button" class="editor-tab-btn active" id="tab-write-btn">Write</button>
+            <button type="button" class="editor-tab-btn" id="tab-preview-btn">Preview</button>
+            <button type="button" class="editor-tab-btn" id="tab-split-btn">Split</button>
+          </div>
+        </div>
+
+        <!-- Main Body: Editor Canvas + Details Inspector -->
+        <div class="editor-body-split">
+          <!-- Canvas Area (Write mode) -->
+          <div class="editor-canvas-container" id="editor-canvas-container">
+            <!-- Checklist items interactive preview -->
+            <div class="checklist-container" id="editor-checklist-container"></div>
+
+            <!-- Markdown Textarea Canvas -->
+            <textarea class="editor-textarea-canvas" id="editor-body-textarea" placeholder="Start typing your memo content here... (Markdown supported)"></textarea>
+          </div>
+
+          <!-- Live Markdown Preview Canvas -->
+          <div class="editor-preview-canvas markdown-preview" id="editor-preview-canvas"></div>
+
+          <!-- Touch-friendly whiteboard canvas. The drawing is inserted into the memo as an image. -->
+          <section class="whiteboard-panel" id="whiteboard-panel" aria-label="Memo whiteboard">
+            <div class="whiteboard-tools">
+              <label for="whiteboard-color">Pen</label><input id="whiteboard-color" type="color" value="#222222" aria-label="Pen color">
+              <label for="whiteboard-width">Width</label><input id="whiteboard-width" type="range" min="1" max="20" value="3" aria-label="Pen width">
+              <button class="btn btn-secondary btn-sm" id="whiteboard-undo-btn" type="button">Undo</button>
+              <button class="btn btn-secondary btn-sm" id="whiteboard-clear-btn" type="button">Clear</button>
+              <button class="btn btn-primary btn-sm" id="whiteboard-insert-btn" type="button">Insert into note</button>
+              <button class="btn btn-ghost btn-sm" id="whiteboard-close-btn" type="button">Close</button>
+            </div>
+            <canvas id="memo-whiteboard-canvas" aria-label="Draw with touch or mouse"></canvas>
+            <p>Draw with your finger or mouse. Insert saves the drawing inside this memo.</p>
+          </section>
+          <input type="file" id="memo-image-input" accept="image/jpeg,image/png,image/webp" multiple hidden>
+          <section id="editor-attachments-panel" class="editor-attachments-panel" aria-label="Attached images"></section>
+
+          <!-- Mobile metadata tray. The desktop inspector is kept for wide screens. -->
+          <div class="mobile-editor-metadata" id="mobile-editor-metadata">
+            <label for="mobile-memo-folder-select">Folder</label>
+            <select id="mobile-memo-folder-select" class="inspector-select"><option value="">No Folder</option></select>
+            <label for="mobile-memo-category-select">Category</label>
+            <select id="mobile-memo-category-select" class="inspector-select"><option value="">No Category</option></select>
+            <label for="mobile-memo-status-select">Status</label>
+            <select id="mobile-memo-status-select" class="inspector-select"><option value="draft">Draft</option><option value="pending">Pending</option><option value="in_progress">In Progress</option><option value="completed">Completed</option><option value="archived">Archived</option></select>
+            <label for="mobile-memo-priority-select">Priority</label>
+            <select id="mobile-memo-priority-select" class="inspector-select"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select>
+            <label for="mobile-memo-due-date-input">Due date</label>
+            <input id="mobile-memo-due-date-input" class="inspector-input" type="date">
+            <label for="mobile-editor-new-tag-input">Tags</label>
+            <div id="mobile-editor-tags-chips" class="tags-chip-container"></div>
+            <div class="mobile-tag-add-row"><input id="mobile-editor-new-tag-input" class="inspector-input" type="text" placeholder="Add a tag"><button id="mobile-editor-add-tag-btn" class="btn btn-secondary btn-sm" type="button">Add</button></div>
+          </div>
+
+          <!-- Right: Details Metadata Inspector -->
+          <aside class="editor-details-inspector">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+              <h4 class="inspector-title">Details</h4>
+              <button type="button" class="btn btn-secondary btn-sm" id="editor-history-btn-side">History</button>
+            </div>
+
+            <div class="inspector-item">
+              <label class="inspector-label" for="memo-category-select">Category</label>
+              <select class="inspector-select" id="memo-category-select">
+                <option value="">No Category</option>
+              </select>
+            </div>
+
+            <div class="inspector-item">
+              <label class="inspector-label" for="memo-folder-select">Folder</label>
+              <select class="inspector-select" id="memo-folder-select">
+                <option value="">No Folder</option>
+              </select>
+            </div>
+
+            <div class="inspector-item">
+              <label class="inspector-label" for="memo-priority-select">Priority</label>
+              <select class="inspector-select" id="memo-priority-select">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+
+            <div class="inspector-item">
+              <label class="inspector-label" for="memo-status-select">Status</label>
+              <select class="inspector-select" id="memo-status-select">
+                <option value="draft">Draft</option>
+                <option value="pending" selected>Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+
+            <div class="inspector-item">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.4rem;">
+                <label class="inspector-label" for="memo-due-date-input" style="margin-bottom: 0;">Due Date</label>
+                <button type="button" id="memo-due-date-clear-btn" style="background: none; border: none; font-size: 0.75rem; color: var(--color-primary-600); cursor: pointer;">Clear</button>
+              </div>
+              <input type="date" class="inspector-input" id="memo-due-date-input">
+            </div>
+
+            <div class="inspector-item">
+              <label class="inspector-label">Tags</label>
+              <div class="tags-chip-container" id="editor-tags-chips"></div>
+              <div style="display: flex; gap: 0.35rem; margin-top: 0.5rem;">
+                <input type="text" class="form-input" id="editor-new-tag-input" placeholder="Add tag (Press Enter)..." style="height: 32px; font-size: 0.75rem; padding: 0 0.5rem;">
+                <button class="btn btn-secondary btn-sm" id="editor-add-tag-btn" type="button" style="padding: 0 0.65rem; height: 32px;">Add</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==========================================================================
+         MODALS & DIALOGS
+         ========================================================================== -->
+
+    <!-- Modal 1: Local Data Migration & Backup Wizard -->
+    <div class="modal-backdrop" id="modal-migration" role="dialog" aria-modal="true" aria-labelledby="modal-migration-title">
+      <div class="modal-card" style="max-width: 640px;">
+        <div class="modal-header">
+          <h3 class="modal-title" id="modal-migration-title">Local Data Migration & Backup</h3>
+          <button type="button" class="modal-close-btn" id="modal-migration-close-btn" aria-label="Close modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <!-- Navigation Tabs -->
+          <div class="migration-tabs-nav">
+            <button type="button" class="migration-tab-btn active" id="mig-tab-import-btn">Import Data</button>
+            <button type="button" class="migration-tab-btn" id="mig-tab-export-btn">Export Backup</button>
+          </div>
+
+          <!-- Tab 1: Import Content -->
+          <div id="mig-tab-import-content">
+            <!-- Detected LocalStorage Alert Card -->
+            <div class="migration-detected-card" id="migration-detected-card">
+              <div>
+                <div style="font-weight: 600; font-size: 0.9rem;" id="mig-detected-title">Checking browser storage...</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);" id="mig-detected-desc">Scans localStorage for legacy memos.</div>
+              </div>
+              <button class="btn btn-primary btn-sm" id="mig-import-detected-btn" style="display: none;">
+                Import Detected Data
+              </button>
+            </div>
+
+            <!-- Drag & Drop Zone -->
+            <div class="migration-dropzone" id="migration-dropzone">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--color-primary-600); margin: 0 auto 0.5rem;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.25rem;">Upload or Drop JSON Backup File</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Select a Notes JSON export or legacy backup file</div>
+              <input type="file" id="migration-file-input" accept=".json,application/json" style="display: none;">
+              <button type="button" class="btn btn-outline btn-sm" style="margin-top: 0.75rem;" id="mig-browse-file-btn">Browse Files</button>
+            </div>
+
+            <!-- Paste Raw JSON Option -->
+            <div style="margin-bottom: 1rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                <label class="form-label" for="mig-json-textarea" style="margin: 0; font-size: 0.75rem;">Or Paste JSON Data Directly:</label>
+                <button type="button" id="mig-clear-json-btn" style="background: none; border: none; font-size: 0.75rem; color: var(--color-primary-600); cursor: pointer;">Clear</button>
+              </div>
+              <textarea class="form-input" id="mig-json-textarea" placeholder='[{"title":"My Note","content":"Sample note...","category":"Work"}]' style="height: 90px; font-family: var(--font-mono); font-size: 0.75rem; padding: 0.5rem;"></textarea>
+            </div>
+
+            <!-- Preview Breakdown Grid -->
+            <div id="migration-preview-container" style="display: none;">
+              <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); margin-bottom: 0.25rem;">Data Preview:</div>
+              <div class="migration-stats-grid">
+                <div class="migration-stat-box">
+                  <div class="migration-stat-val" id="mig-stat-memos">0</div>
+                  <div class="migration-stat-lbl">Memos</div>
+                </div>
+                <div class="migration-stat-box">
+                  <div class="migration-stat-val" id="mig-stat-categories">0</div>
+                  <div class="migration-stat-lbl">Categories</div>
+                </div>
+                <div class="migration-stat-box">
+                  <div class="migration-stat-val" id="mig-stat-tags">0</div>
+                  <div class="migration-stat-lbl">Tags</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Status Alert Message -->
+            <div class="auth-alert" id="migration-alert" style="margin-top: 0.75rem;"></div>
+          </div>
+
+          <!-- Tab 2: Export Content -->
+          <div id="mig-tab-export-content" style="display: none;">
+            <div style="padding: 1.5rem; text-align: center; background-color: var(--bg-subtle); border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 1rem;">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--color-green); margin: 0 auto 0.75rem;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <h4 style="font-size: 1rem; margin-bottom: 0.25rem;">Download Workspace Backup</h4>
+              <p style="font-size: 0.8rem; color: var(--text-secondary); max-width: 420px; margin: 0 auto 1.25rem;">
+                Exports all memos, categories, tags, and folders from your current workspace into an offline JSON backup.
+              </p>
+              <button type="button" class="btn btn-primary" id="migration-export-download-btn">
+                Download JSON Backup
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" id="migration-modal-footer">
+          <button type="button" class="btn btn-secondary" id="modal-migration-cancel-btn">Cancel</button>
+          <button type="button" class="btn btn-primary" id="modal-migration-import-btn" disabled>Import Data</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 2: Create Workspace -->
+    <div class="modal-backdrop" id="modal-workspace" role="dialog" aria-modal="true" aria-labelledby="modal-ws-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title" id="modal-ws-title">Create Workspace</h3>
+          <button type="button" class="modal-close-btn" id="modal-ws-close-btn" aria-label="Close modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <form id="create-workspace-form">
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label" for="ws-name-input">Workspace Name</label>
+              <input type="text" class="form-input" id="ws-name-input" placeholder="e.g. Engineering, Marketing, Side Projects" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ws-slug-input">Workspace Slug (URL Identifier)</label>
+              <input type="text" class="form-input" id="ws-slug-input" placeholder="e.g. engineering" required>
+            </div>
+            <div class="auth-alert" id="workspace-modal-alert"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="modal-ws-cancel-btn">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="modal-ws-submit-btn">Create Workspace</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal 3: Create Category -->
+    <div class="modal-backdrop" id="modal-category" role="dialog" aria-modal="true" aria-labelledby="modal-cat-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title" id="modal-cat-title">Create Category</h3>
+          <button type="button" class="modal-close-btn" id="modal-cat-close-btn" aria-label="Close modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <form id="create-category-form">
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label" for="cat-name-input">Category Name</label>
+              <input type="text" class="form-input" id="cat-name-input" placeholder="e.g. Work, Research, Finance" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Category Color</label>
+              <div style="display: flex; gap: 0.5rem; align-items: center;" id="cat-color-swatches">
+                <label style="cursor: pointer;"><input type="radio" name="cat-color" value="#3b82f6" checked style="accent-color: #3b82f6;"> <span style="display: inline-block; width: 16px; height: 16px; background: #3b82f6; border-radius: 50%; vertical-align: middle;"></span></label>
+                <label style="cursor: pointer;"><input type="radio" name="cat-color" value="#8b5cf6" style="accent-color: #8b5cf6;"> <span style="display: inline-block; width: 16px; height: 16px; background: #8b5cf6; border-radius: 50%; vertical-align: middle;"></span></label>
+                <label style="cursor: pointer;"><input type="radio" name="cat-color" value="#10b981" style="accent-color: #10b981;"> <span style="display: inline-block; width: 16px; height: 16px; background: #10b981; border-radius: 50%; vertical-align: middle;"></span></label>
+                <label style="cursor: pointer;"><input type="radio" name="cat-color" value="#f59e0b" style="accent-color: #f59e0b;"> <span style="display: inline-block; width: 16px; height: 16px; background: #f59e0b; border-radius: 50%; vertical-align: middle;"></span></label>
+                <label style="cursor: pointer;"><input type="radio" name="cat-color" value="#ef4444" style="accent-color: #ef4444;"> <span style="display: inline-block; width: 16px; height: 16px; background: #ef4444; border-radius: 50%; vertical-align: middle;"></span></label>
+                <label style="cursor: pointer;"><input type="radio" name="cat-color" value="#06b6d4" style="accent-color: #06b6d4;"> <span style="display: inline-block; width: 16px; height: 16px; background: #06b6d4; border-radius: 50%; vertical-align: middle;"></span></label>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="modal-cat-cancel-btn">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="modal-cat-submit-btn">Create Category</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal 4: Create Tag -->
+    <div class="modal-backdrop" id="modal-tag" role="dialog" aria-modal="true" aria-labelledby="modal-tag-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title" id="modal-tag-title">Create Label</h3>
+          <button type="button" class="modal-close-btn" id="modal-tag-close-btn" aria-label="Close modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <form id="create-tag-form">
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label" for="tag-name-input">Label Name</label>
+              <input type="text" class="form-input" id="tag-name-input" placeholder="e.g. roadmap, sprint, ideas" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="modal-tag-cancel-btn">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="modal-tag-submit-btn">Create Label</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal 5: Create Folder -->
+    <div class="modal-backdrop" id="modal-folder" role="dialog" aria-modal="true" aria-labelledby="modal-folder-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title" id="modal-folder-title">Create Folder</h3>
+          <button type="button" class="modal-close-btn" id="modal-folder-close-btn" aria-label="Close modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <form id="create-folder-form">
+          <div class="modal-body">
+            <div class="form-group">
+              <label class="form-label" for="folder-name-input">Folder Name</label>
+              <input type="text" class="form-input" id="folder-name-input" maxlength="80" placeholder="e.g. Projects, Study, Personal" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="modal-folder-cancel-btn">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="modal-folder-submit-btn">Create Folder</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal 6: Confirm Irreversible Action -->
+    <div class="modal-backdrop" id="modal-confirm" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-title">
+      <div class="modal-card" style="max-width: 440px;">
+        <div class="modal-header">
+          <h3 class="modal-title" id="modal-confirm-title">Confirm Action</h3>
+          <button type="button" class="modal-close-btn" id="modal-confirm-close-btn" aria-label="Close modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p id="modal-confirm-msg" style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.5;">Are you sure you want to proceed?</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="modal-confirm-cancel-btn">Cancel</button>
+          <button type="button" class="btn btn-primary" id="modal-confirm-ok-btn" style="background: var(--color-red); border-color: var(--color-red);">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile Drawer Overlay -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- Mobile floating create action. Navigation stays in the existing drawer/sidebar. -->
+    <button class="mobile-create-fab" id="mob-nav-create" type="button" aria-label="Create note" title="Create note">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    </button>
+
+    <!-- Global Toasts Container -->
+    <div class="toast-container" id="toast-container" aria-live="polite"></div>
+  </div>
+
+  <!-- Main JavaScript Application Bootstrap -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
