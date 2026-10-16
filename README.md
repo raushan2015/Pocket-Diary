@@ -35,16 +35,34 @@ Repository: [github.com/raushan2015/notes](https://github.com/raushan2015/notes)
 
 ### Accounts and workspaces
 
-- User registration and sign-in.
-- Password hashing and cookie-based sessions.
-- Workspace membership and role-aware authorization.
+- User registration and sign-in with password strength meter and confirmation.
+- Password hashing and cookie-based sessions, with active-session management
+  (sign out of all other devices) and password change in Account Settings.
+- Workspace membership and role-aware authorization (owner, admin, editor, viewer).
+- Email invitations with shareable invite links: invite by email, copy or revoke
+  pending invitations, change member roles, and remove members.
 - Tenant-aware data access to help prevent cross-workspace data exposure.
-- Import legacy browser-stored notes through the migration workflow.
+- Import legacy browser-stored notes through the migration workflow, and import
+  notes from Google Keep (Google Takeout ZIP) or Markdown (.md) files directly in
+  Account Settings — each Markdown file becomes a new note carrying the full
+  document contents, with frontmatter title/tags applied.
+
+### Reminders
+
+- Keep-style reminder popover (later today, tomorrow, next week, custom time) on notes.
+- Server-side reminder scanning creates persistent in-app notifications with
+  unread badge and dropdown, so reminders fire even when the note list is not loaded.
+- Optional email delivery (SMTP) and Web Push (VAPID) so reminders reach users
+  outside the app; both degrade gracefully to in-app notifications when unconfigured.
 
 ### Operations
 
 - Docker image and Docker Compose deployment.
 - Persistent SQLite database and attachment storage in the application data volume.
+- Scheduled SQLite online backups with retention, plus optional off-host
+  replication (`BACKUP_REPLICATION_DIR`) outside the data volume.
+- Backup status (last snapshot, replication state) visible in Account Settings.
+- Request schema validation at all API boundaries and global rate limiting.
 - Health endpoint for container health checks.
 - Backend unit/integration tests and browser-based end-to-end tests.
 
@@ -58,7 +76,7 @@ The project is organized into three main areas:
 | --- | --- |
 | `frontend/` | Single-page web interface, CSS, client-side state, API client, editor enhancements, and Markdown rendering. |
 | `backend/` | Fastify server, authentication, authorization, workspace logic, note services, database schema/migrations, and API routes. |
-| `tests/` | Playwright browser-based end-to-end regression suite. |
+| `tests/` | Playwright e2e regression suite, split into independent journey files under `tests/e2e/` plus the shared harness in `tests/e2e/_helpers.js`. |
 | `Dockerfile` | Multi-stage container build for the application. |
 | `docker-compose.yml` | Local and self-hosted container deployment. |
 
@@ -179,6 +197,13 @@ Run the suite against a running test instance:
 BASE_URL=http://127.0.0.1:8080 npm test
 ```
 
+The suite is split into independent journey files (`tests/e2e/*.test.js`) that run
+in parallel (up to 4 at a time). Each file launches its own isolated Chromium
+instance and registers its own timestamped test accounts, except
+`01-alice-core-journey.test.js`, whose journeys 1–9 form one continuous story in
+a single browser. Shared helpers — browser launch, screenshot directory and the
+in-memory ZIP builder — live in `tests/e2e/_helpers.js`.
+
 Set `BASE_URL` to the URL of the instance under test. The suite creates and modifies test accounts and notes. **Do not point it at a production instance or a database containing real user data.**
 
 ## Configuration
@@ -201,6 +226,46 @@ Docker Compose creates a named volume called `memo_manager_data` and mounts it a
 - Restrict filesystem and backup access because notes and uploaded files may contain private information.
 - The repository ignores local data, environment files, dependency folders, and build artifacts to reduce the risk of committing private or generated content.
 
+## Backup and restore
+
+The backend takes automatic online snapshots of the SQLite database (default every
+24 hours, newest 7 kept) into `/app/data/backups`. When `BACKUP_REPLICATION_DIR` is
+configured and mounted, every fresh snapshot is also copied to that off-volume
+location with its own retention (`BACKUP_REPLICATION_RETENTION`). Account Settings →
+Backups shows the last snapshot time and the replication state.
+
+### Full restore procedure (tested in `backend/test/backup.test.ts`)
+
+1. Stop the application so no new writes race the restore:
+
+   ```bash
+   docker compose stop memo-manager
+   ```
+
+2. Copy the newest snapshot out of the data volume to a working file:
+
+   ```bash
+   docker run --rm -v memo_manager_data:/data -v "$PWD":/out alpine \
+     sh -c "cp /data/backups/$(ls -t /data/backups | head -1) /out/restored.db"
+   ```
+
+3. Replace the live database with the snapshot (keep the original aside):
+
+   ```bash
+   docker run --rm -v memo_manager_data:/data -v "$PWD":/out alpine \
+     sh -c "mv /data/memo_manager.db /data/memo_manager.db.pre-restore && cp /out/restored.db /data/memo_manager.db && rm -f /data/memo_manager.db-wal /data/memo_manager.db-shm"
+   ```
+
+4. Restart and verify: notes are back, and the health endpoint responds.
+
+   ```bash
+   docker compose up -d memo-manager
+   curl -f http://localhost:8080/health
+   ```
+Snapshots are consistent SQLite backups; the automated test restores one, runs
+`PRAGMA integrity_check`, and confirms the data round-trips. If attachments matter,
+back up `/app/data/attachments` alongside the database volume.
+
 ## Security notes
 
 - Use a long, random `COOKIE_SECRET` and keep it out of source control.
@@ -214,11 +279,43 @@ This documentation is not a security certification. Review the implementation an
 
 ## Known limitations
 
-- Authentication providers such as social login are not configured by default.
-- Password recovery and external email/push reminders require additional integration; the current reminder experience is in-app.
-- Secure sharing and external notification delivery may require future implementation.
+- This deployment is a **self-hosted community edition**: every feature is
+  enabled and there is no billing backend or paid tier.
+- Authentication is email/password with session cookies. Social/OAuth provider
+  sign-in is not integrated; the placeholder buttons were removed from the UI.
+- Password recovery requires SMTP (`SMTP_HOST`) to be configured so reset
+  emails can be delivered. Without SMTP, users should ask the instance
+  administrator for help (the first registered account is the instance admin).
+- Email reminders and browser push require SMTP / VAPID configuration; without
+  them, reminders surface as in-app notifications while the app is open.
+- Google Keep imports convert titles, text, checklists, labels, and inline
+  images; note colors and pinned state are not included in Google's export format.
+- The notes grid paginates 100 notes at a time via a "Load more" control; very
+  large workspaces load incrementally rather than all at once.
 - Attachment storage is local to the application data volume. Object storage and per-workspace quota management are not configured by default.
 - This project is under active development; behavior and APIs can change between revisions.
+
+### Operational limits and horizontal scaling (ARCH-02)
+
+The application intentionally runs as a **single active instance**:
+
+- **SQLite (WAL mode) is embedded in the application container.** Spreading
+  traffic across replicas that share one database file will corrupt it or
+  deadlock on `SQLITE_BUSY` locks. Do **not** scale this service with multiple
+  replicas against the same data volume.
+- **Attachments are stored on the container filesystem** (`/app/data/attachments`),
+  so uploads and downloads must hit the same node that owns the data volume.
+- Use a single container (as provided by `docker-compose.yml`) and scale
+  vertically: SQLite in WAL mode comfortably serves small teams and personal
+  instances with thousands of notes.
+- For high availability, rely on the **backup scheduler with off-host
+  replication** (`BACKUP_REPLICATION_DIR`) and container restart policy, not on
+  replica count. See [Backup and restore](#backup-and-restore).
+- If you later need multi-node horizontal scaling, the migration path is:
+  1. Swap the Drizzle SQLite adapter for the PostgreSQL adapter.
+  2. Move attachment storage to S3/MinIO-compatible object storage.
+  3. Run multiple stateless app replicas behind a load balancer.
+  These changes are deliberate non-goals of the current self-hosted edition.
 
 ## Contributing
 

@@ -17,7 +17,32 @@ services:
       - BACKEND_PORT=3000
       - DATABASE_PATH=/app/data/memo_manager.db
       - COOKIE_SECRET=${COOKIE_SECRET:?Set a unique COOKIE_SECRET of at least 32 characters in your .env file}
+      # Public URL used in reminder emails and invitation links
+      - APP_URL=${APP_URL:-}
+      # Server-side reminder scanning (default 30s)
+      - REMINDER_SCAN_INTERVAL_MS=${REMINDER_SCAN_INTERVAL_MS:-}
+      # Optional SMTP email delivery for reminders and invitations
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-Notes <no-reply@notes.local>}
+      # Optional Web Push (VAPID) credentials for browser push reminders
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@notes.local}
+      # Backups: local cadence + optional off-host replication directory
+      - BACKUP_INTERVAL_HOURS=${BACKUP_INTERVAL_HOURS:-24}
+      - BACKUP_RETENTION=${BACKUP_RETENTION:-7}
+      - BACKUP_REPLICATION_DIR=${BACKUP_REPLICATION_DIR:-}
+      - BACKUP_REPLICATION_RETENTION=${BACKUP_REPLICATION_RETENTION:-7}
+      # Global request budget per minute
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-300}
     volumes:
+      # Mount the replication directory when configured so snapshots are
+      # copied outside the data volume:
+      # - /mnt/backups/notes-replica:/app/backup-replica
       - memo_data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/health || exit 1"]

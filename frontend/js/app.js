@@ -4,10 +4,17 @@
  */
 
 import { state } from './state.js';
-import { initTheme } from './utils.js';
+import { initTheme, showToast } from './utils.js';
 import { initMigrationModal } from './migration.js';
 import { currentCalYear, currentCalMonth, renderInteractiveCalendar } from './calendar.js';
-import { detectSession } from './auth.js';
+import {
+  detectSession,
+  consumeInviteFromUrl,
+  loadInviteContext,
+  setupAuthFormEnhancements,
+  handleIncomingResetToken,
+} from './auth.js';
+import { api } from './api.js';
 import { refreshWorkspaceMemos } from './workspace-data.js';
 import { setupSearchInput, setFilter, filterAndRenderMemos } from './search-filter.js';
 import { renderWorkspacesList } from './sidebar.js';
@@ -51,7 +58,17 @@ function bindStateToUI() {
       if (menuName) menuName.textContent = name;
       if (fullnameEl) fullnameEl.textContent = user.name;
       if (emailEl) emailEl.textContent = user.email;
-      if (greetingTitle) greetingTitle.textContent = `Good Morning, ${name}! ☀️`;
+      if (greetingTitle) {
+        const hour = new Date().getHours();
+        let greeting = 'Good Morning';
+        let emoji = '☀️';
+        if (hour < 5) { greeting = 'Good Night'; emoji = '🌙'; }
+        else if (hour < 12) { greeting = 'Good Morning'; emoji = '☀️'; }
+        else if (hour < 17) { greeting = 'Good Afternoon'; emoji = '🌤️'; }
+        else if (hour < 21) { greeting = 'Good Evening'; emoji = '🌆'; }
+        else { greeting = 'Good Night'; emoji = '🌙'; }
+        greetingTitle.textContent = `${greeting}, ${name}! ${emoji}`;
+      }
     }
   });
 
@@ -73,6 +90,33 @@ function bindStateToUI() {
 }
 
 // ==========================================================================
+// Workspace invitation link flow (#invite=<token>)
+// ==========================================================================
+async function handleIncomingInvite() {
+  const token = consumeInviteFromUrl();
+  if (!token) return false;
+
+  // Already signed in? Accept the invitation right away.
+  if (state.get('isAuthenticated')) {
+    try {
+      const res = await api.acceptInvite(token);
+      const meData = await api.getMe().catch(() => null);
+      if (meData?.workspaces) state.set('workspaces', meData.workspaces);
+      showToast(`You joined “${res.workspace.name}” as ${res.workspace.role}`, 'success', 4000);
+      await refreshWorkspaceMemos();
+      navigateTo('dashboard');
+    } catch (err) {
+      showToast(err.message || 'This invitation could not be accepted', 'warning', 4500);
+    }
+    return true;
+  }
+
+  // Signed out: show the invitation banner on the auth screen and prefill.
+  await loadInviteContext(token);
+  return true;
+}
+
+// ==========================================================================
 // Application Bootstrap
 // ==========================================================================
 async function initApp() {
@@ -80,6 +124,7 @@ async function initApp() {
   bindStateToUI();
   setupEventListeners();
   setupSearchInput();
+  setupAuthFormEnhancements();
   initMigrationModal({ onRefresh: refreshWorkspaceMemos });
 
   renderInteractiveCalendar(currentCalYear, currentCalMonth, (range) => {
@@ -98,7 +143,19 @@ async function initApp() {
 
   await detectSession();
 
-  // Register PWA Service Worker for offline capability
+  // Handle a password recovery link (#reset=<token>) — presents the new
+  // password form. Checked before invites since the two link types are
+  // mutually exclusive.
+  const handledReset = await handleIncomingResetToken();
+
+  // Handle a workspace invitation link (#invite=<token>) for both signed-in
+  // and signed-out visitors. detectSession runs first so signed-in users can
+  // join immediately; signed-out users get the prefilled register screen.
+  if (!handledReset) {
+    await handleIncomingInvite();
+  }
+
+  // Register PWA Service Worker for offline capability + Web Push
   if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js').catch((err) => {

@@ -10,6 +10,46 @@ import { renderMemos } from './memo-renderer.js';
 
 let searchDebounceTimeout = null;
 
+// Trash pagination bookkeeping (server caps pages at 100 memos)
+const trashPagination = { loadedCount: 0, total: 0, loadingMore: false, pagesLoaded: 0 };
+
+export function getTrashPagination() {
+  return { ...trashPagination };
+}
+
+/** Fetch one page of trash (deletedOnly) and merge into the cached trash list. */
+async function fetchTrashPage(page = 1) {
+  const activeWs = state.get('activeWorkspace');
+  if (!activeWs?.id) return [];
+  const res = await api.listMemos({
+    workspaceId: activeWs.id,
+    deletedOnly: 'true',
+    page,
+    limit: 100,
+  });
+  const list = (res.memos || []).filter((m) => m.deletedAt !== null);
+  trashPagination.total = res.total ?? list.length;
+  const prev = page > 1 ? state.get('trashMemos') || [] : [];
+  const seen = new Set(prev.map((m) => m.id));
+  const merged = prev.concat(list.filter((m) => !seen.has(m.id)));
+  trashPagination.loadedCount = merged.length;
+  trashPagination.pagesLoaded = page === 1 ? 1 : Math.max(trashPagination.pagesLoaded, page);
+  state.set('trashMemos', merged);
+  return merged;
+}
+
+/** Load the next page of trash ("Load more" button while viewing Trash). */
+export async function loadMoreTrashMemos() {
+  if (trashPagination.loadingMore) return;
+  if (trashPagination.total <= trashPagination.loadedCount) return;
+  trashPagination.loadingMore = true;
+  try {
+    await fetchTrashPage(Math.floor(trashPagination.loadedCount / 100) + 1);
+  } finally {
+    trashPagination.loadingMore = false;
+  }
+}
+
 export function setupSearchInput() {
   const searchInput = document.getElementById('global-search-input');
   const filterPanel = document.getElementById('navbar-filter-panel');
@@ -110,6 +150,7 @@ export function setFilter(type, value = null) {
 export async function filterAndRenderMemos() {
   const filter = state.get('activeFilter') || { type: 'all', value: null };
   const allMemos = state.get('allWorkspaceMemos') || [];
+  // Status filter
   const statusFilter = document.getElementById('filter-status-select')?.value || '';
   const priorityFilter = document.getElementById('filter-priority-select')?.value || '';
   const typeFilter = document.getElementById('filter-type-select')?.value || '';
@@ -122,13 +163,21 @@ export async function filterAndRenderMemos() {
 
   if (filter.type === 'trash') {
     filterHeading = 'Trash';
-    bannerText = 'Showing items in Trash. Deleted notes can be restored or permanently removed.';
+    // The dedicated trash toolbar (#trash-toolbar) carries the Trash UI — the
+    // generic filter banner stays hidden for this view.
+    bannerText = '';
 
     const activeWs = state.get('activeWorkspace');
     if (activeWs && activeWs.id) {
       try {
-        const res = await api.listMemos({ workspaceId: activeWs.id, includeDeleted: true, limit: 100 });
-        filtered = (res.memos || []).filter((m) => m.deletedAt !== null);
+        // Refresh page 1 on every render (keeps restore/delete in sync), then
+        // re-merge any extra pages the user previously loaded.
+        const pagesToReload = Math.max(1, trashPagination.pagesLoaded || 1);
+        await fetchTrashPage(1);
+        for (let p = 2; p <= pagesToReload; p++) {
+          await fetchTrashPage(p);
+        }
+        filtered = state.get('trashMemos') || [];
       } catch {
         filtered = [];
       }
@@ -213,6 +262,13 @@ export async function filterAndRenderMemos() {
     let valA = a[sortField];
     let valB = b[sortField];
 
+    if (sortField === 'sortOrder') {
+      // Custom (manual) order set via drag & drop. Newer notes win on ties.
+      valA = Number(a.sortOrder || 0);
+      valB = Number(b.sortOrder || 0);
+      if (valA === valB) return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
+      return sortDirection === 'asc' ? valA - valB : valB - valA;
+    }
     if (sortField === 'title') {
       valA = (a.title || '').toLowerCase();
       valB = (b.title || '').toLowerCase();

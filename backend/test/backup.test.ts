@@ -85,4 +85,81 @@ describe('SQLite online backups', () => {
       restored.close();
     }
   });
+  it('replicates snapshots to an off-host directory with independent retention', async () => {
+    tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'memo-replication-test-'));
+    const sourcePath = path.join(tempDirectory, 'source.db');
+    const backupDirectory = path.join(tempDirectory, 'local-backups');
+    const replicationDirectory = path.join(tempDirectory, 'off-host-replica');
+    const source = new Database(sourcePath);
+
+    try {
+      source.exec('CREATE TABLE memos (id INTEGER PRIMARY KEY, title TEXT NOT NULL)');
+      source.prepare('INSERT INTO memos (title) VALUES (?)').run('off-host protected memo');
+      source.pragma('journal_mode = WAL');
+
+      const first = await createDatabaseBackup(source, {
+        directory: backupDirectory,
+        retention: 3,
+        replicationDirectory,
+        replicationRetention: 2,
+      });
+
+      // Snapshot exists in BOTH locations and is a valid SQLite copy
+      const isSnapshot = (name: string) => /^memo-manager-.*\.db$/.test(name);
+      const replicaFiles = (await fs.readdir(replicationDirectory)).filter(isSnapshot);
+      expect(replicaFiles).toHaveLength(1);
+      const replicaPath = path.join(replicationDirectory, path.basename(first));
+      const replica = new Database(replicaPath, { readonly: true });
+      try {
+        const row = replica.prepare('SELECT title FROM memos WHERE id = 1').get() as { title: string };
+        expect(row.title).toBe('off-host protected memo');
+      } finally {
+        replica.close();
+      }
+
+      // Retention is enforced independently in the replica directory
+      await createDatabaseBackup(source, { directory: backupDirectory, retention: 3, replicationDirectory, replicationRetention: 2 });
+      await createDatabaseBackup(source, { directory: backupDirectory, retention: 3, replicationDirectory, replicationRetention: 2 });
+      const afterThree = (await fs.readdir(replicationDirectory)).filter(isSnapshot);
+      expect(afterThree).toHaveLength(2); // replica capped at 2
+      const localAfterThree = (await fs.readdir(backupDirectory)).filter(isSnapshot);
+      expect(localAfterThree).toHaveLength(3); // local cap is 3
+    } finally {
+      source.close();
+    }
+  });
+
+  it('keeps the local snapshot even when off-host replication fails', async () => {
+    tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'memo-replication-fail-'));
+    const sourcePath = path.join(tempDirectory, 'source.db');
+    const backupDirectory = path.join(tempDirectory, 'backups');
+    // A FILE (not a directory) at the replication path forces copyFile to fail
+    const badReplicationPath = path.join(tempDirectory, 'not-a-directory');
+    await fs.writeFile(badReplicationPath, 'blocker');
+    const source = new Database(sourcePath);
+
+    const warnings: string[] = [];
+    try {
+      source.exec('CREATE TABLE memos (id INTEGER PRIMARY KEY, title TEXT NOT NULL)');
+      source.pragma('journal_mode = WAL');
+
+      const backupPath = await createDatabaseBackup(source, {
+        directory: backupDirectory,
+        replicationDirectory: badReplicationPath,
+        logger: {
+          info: () => undefined,
+          warn: () => undefined,
+          error: () => warnings.push('replication failed'),
+        },
+      });
+
+      const localFiles = await fs.readdir(backupDirectory);
+      expect(localFiles).toHaveLength(1);
+      const restored = new Database(backupPath, { readonly: true });
+      restored.close();
+      expect(warnings).toHaveLength(1);
+    } finally {
+      source.close();
+    }
+  });
 });

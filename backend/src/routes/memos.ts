@@ -8,6 +8,7 @@ import {
   restoreMemo,
   getMemoVersions,
   reorderMemos,
+  emptyTrash,
   MemoNotFoundError,
   MemoConflictError,
   ValidationError,
@@ -20,6 +21,10 @@ import {
   verifyWorkspaceMembership,
   WorkspaceAccessError,
 } from '../services/workspace.service.js';
+import {
+  assertPublicHttpUrl,
+  UrlGuardError,
+} from '../services/url-guard.js';
 
 interface MemoQuery {
   workspaceId?: string;
@@ -34,6 +39,7 @@ interface MemoQuery {
   isArchived?: boolean | string;
   hasReminder?: boolean | string;
   includeDeleted?: boolean | string;
+  deletedOnly?: boolean | string;
   search?: string;
   page?: number;
   limit?: number;
@@ -48,6 +54,133 @@ interface MemoParams {
 interface DeleteMemoQuery {
   permanent?: boolean | string;
 }
+
+const idSchema = { type: 'string', minLength: 1, maxLength: 64 };
+
+const tagItemSchema = { type: 'string', minLength: 1, maxLength: 80 };
+
+// Content limit aligned with the JSON body budget (see app.ts). Large embedded
+// images are stored as attachments; this cap prevents runaway payloads while
+// accommodating imports that embed images as data URIs.
+const MEMO_MAX_CONTENT_CHARS = 2_000_000;
+
+const memoBodyBaseSchema = {
+  type: 'object',
+  properties: {
+    workspaceId: { ...idSchema },
+    folderId: { type: ['string', 'null'], maxLength: 64 },
+    categoryId: { type: ['string', 'null'], maxLength: 64 },
+    title: { type: 'string', maxLength: 200 },
+    content: { type: 'string', maxLength: MEMO_MAX_CONTENT_CHARS },
+    color: { type: 'string', maxLength: 32 },
+    theme: { type: 'string', maxLength: 32 },
+    priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
+    status: { type: 'string', enum: ['draft', 'pending', 'in_progress', 'completed', 'archived'] },
+    isFavorite: { type: 'boolean' },
+    isPinned: { type: 'boolean' },
+    isArchived: { type: 'boolean' },
+    noteType: { type: 'string', enum: ['text', 'checklist'], maxLength: 32 },
+    sortOrder: { type: 'integer', minimum: 0, maximum: 1000000 },
+    dueDate: { type: ['integer', 'null'], minimum: 0 },
+    reminderTime: { type: ['integer', 'null'], minimum: 0 },
+    reminderLocation: { type: ['string', 'null'], maxLength: 300 },
+    collaborators: { type: 'array', maxItems: 50, items: { type: 'object', additionalProperties: true } },
+    checklistData: {
+      type: ['array', 'null'],
+      maxItems: 1000,
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', maxLength: 64 },
+          text: { type: 'string', maxLength: 5000 },
+          checked: { type: 'boolean' },
+          completed: { type: 'boolean' },
+          sortOrder: { type: 'integer' },
+        },
+        additionalProperties: true,
+      },
+    },
+    linkPreviews: {
+      type: ['array', 'null'],
+      maxItems: 20,
+      items: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', maxLength: 2048 },
+          title: { type: 'string', maxLength: 300 },
+          description: { type: 'string', maxLength: 1000 },
+          imageUrl: { type: 'string', maxLength: 2048 },
+          image: { type: 'string', maxLength: 2048 },
+          faviconUrl: { type: 'string', maxLength: 2048 },
+        },
+        additionalProperties: true,
+      },
+    },
+    tags: { type: 'array', maxItems: 50, items: tagItemSchema },
+    version: { type: 'integer', minimum: 1 },
+  },
+  additionalProperties: false,
+};
+
+const createMemoSchema = {
+  body: {
+    ...memoBodyBaseSchema,
+    required: ['workspaceId'],
+  },
+};
+
+const updateMemoSchema = {
+  body: memoBodyBaseSchema,
+};
+
+const listMemosSchema = {
+  querystring: {
+    type: 'object',
+    required: ['workspaceId'],
+    properties: {
+      workspaceId: idSchema,
+      status: { type: 'string', maxLength: 32 },
+      priority: { type: 'string', maxLength: 32 },
+      categoryId: idSchema,
+      tagId: idSchema,
+      tagName: { type: 'string', maxLength: 80 },
+      folderId: idSchema,
+      isFavorite: { type: 'string', enum: ['true', 'false'] },
+      isPinned: { type: 'string', enum: ['true', 'false'] },
+      isArchived: { type: 'string', enum: ['true', 'false'] },
+      hasReminder: { type: 'string', enum: ['true', 'false'] },
+      includeDeleted: { type: 'string', enum: ['true', 'false'] },
+      deletedOnly: { type: 'string', enum: ['true', 'false'] },
+      search: { type: 'string', maxLength: 200 },
+      page: { type: 'integer', minimum: 1, maximum: 100000 },
+      limit: { type: 'integer', minimum: 1, maximum: 100 },
+      sortBy: { type: 'string', maxLength: 40 },
+      sortOrder: { type: 'string', enum: ['asc', 'desc'] },
+    },
+    additionalProperties: false,
+  },
+};
+
+const reorderSchema = {
+  body: {
+    type: 'object',
+    required: ['workspaceId', 'memoIds'],
+    properties: {
+      workspaceId: idSchema,
+      memoIds: { type: 'array', minItems: 1, maxItems: 500, items: idSchema },
+    },
+    additionalProperties: false,
+  },
+};
+
+const linkPreviewSchema = {
+  body: {
+    type: 'object',
+    required: ['url'],
+    properties: { url: { type: 'string', minLength: 8, maxLength: 2048 } },
+    additionalProperties: false,
+  },
+};
 
 export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -77,7 +210,9 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   };
 
   // GET /api/v1/memos (List & Full-Text Search)
-  fastify.get<{ Querystring: MemoQuery }>('/', async (request, reply) => {
+  fastify.get<{ Querystring: MemoQuery }>('/', {
+    schema: listMemosSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const { workspaceId } = request.query;
@@ -119,6 +254,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
         isArchived: request.query.isArchived,
         hasReminder: request.query.hasReminder,
         includeDeleted: request.query.includeDeleted,
+        deletedOnly: request.query.deletedOnly,
         search: request.query.search,
         page: pageNum,
         limit: limitNum,
@@ -143,7 +279,9 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/memos (Create Memo)
-  fastify.post<{ Body: CreateMemoInput }>('/', async (request, reply) => {
+  fastify.post<{ Body: CreateMemoInput }>('/', {
+    schema: createMemoSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const body = request.body || {};
@@ -220,7 +358,9 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // PATCH /api/v1/memos/:id (Update with Optimistic Concurrency Control)
-  fastify.patch<{ Params: MemoParams; Body: UpdateMemoInput }>('/:id', async (request, reply) => {
+  fastify.patch<{ Params: MemoParams; Body: UpdateMemoInput }>('/:id', {
+    schema: updateMemoSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id } = request.params;
@@ -367,7 +507,9 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/memos/reorder (Google Keep card drag & drop order)
-  fastify.post<{ Body: { workspaceId: string; memoIds: string[] } }>('/reorder', async (request, reply) => {
+  fastify.post<{ Body: { workspaceId: string; memoIds: string[] } }>('/reorder', {
+    schema: reorderSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const { workspaceId, memoIds } = request.body || {};
@@ -395,8 +537,96 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
+  // DELETE /api/v1/memos/trash?workspaceId=... — Empty Trash (bulk permanent delete)
+  //
+  // Permanently removes every soft-deleted memo in the workspace along with
+  // its attachment files. Editors and above may empty the trash.
+  fastify.delete<{ Querystring: { workspaceId?: string } }>('/trash', {
+    schema: {
+      querystring: {
+        type: 'object',
+        required: ['workspaceId'],
+        properties: { workspaceId: idSchema },
+        additionalProperties: false,
+      },
+    },
+  }, async (request, reply) => {
+    try {
+      const user = request.user!;
+      const { workspaceId } = request.query || {};
+      if (!workspaceId) {
+        return reply.status(400).send({ error: 'Bad Request', message: 'workspaceId is required' });
+      }
+
+      verifyWorkspaceMembership(fastify.dbCtx.db, user.id, workspaceId, ['owner', 'admin', 'editor']);
+
+      const result = emptyTrash(fastify.dbCtx, workspaceId);
+
+      // Best-effort cleanup of attachment files (rows already cascaded away).
+      for (const attachmentPath of result.attachmentPaths) {
+        try {
+          const fs = await import('node:fs');
+          fs.unlinkSync(attachmentPath);
+        } catch (error: any) {
+          if (error?.code !== 'ENOENT') fastify.log.warn(error, 'Unable to clean up attachment file during trash purge');
+        }
+      }
+
+      return reply.status(200).send({ success: true, deletedCount: result.deletedCount });
+    } catch (err: unknown) {
+      if (err instanceof WorkspaceAccessError) {
+        return reply.status(err.statusCode).send({
+          error: err.statusCode === 403 ? 'Forbidden' : 'Not Found',
+          message: err.message,
+        });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({
+        error: 'Internal Server Error',
+        message: 'Failed to empty trash',
+      });
+    }
+  });
+
   // POST /api/v1/memos/link-preview (Scrape OpenGraph / Metadata for URLs)
-  fastify.post<{ Body: { url: string } }>('/link-preview', async (request, reply) => {
+  //
+  // SSRF protection (SEC-01): every target — the initial URL and each redirect
+  // hop — must resolve to a public address. Private, loopback, link-local and
+  // cloud-metadata destinations are rejected with HTTP 400.
+  const LINK_PREVIEW_MAX_HTML_BYTES = 256 * 1024;
+  const LINK_PREVIEW_MAX_REDIRECTS = 4;
+
+  const readBodyWithLimit = async (res: Response, limitBytes: number): Promise<string> => {
+    if (!res.body) return '';
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let received = 0;
+    let text = '';
+    while (received < limitBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      text += decoder.decode(value, { stream: true });
+      if (received >= limitBytes) {
+        try { await reader.cancel(); } catch { /* already closed */ }
+        break;
+      }
+    }
+    return text;
+  };
+
+  fastify.post<{ Body: { url: string } }>('/link-preview', {
+    schema: linkPreviewSchema,
+  }, async (request, reply) => {
+    const fallbackPreview = (targetUrl: string) => {
+      const parsed = new URL(targetUrl);
+      return {
+        url: targetUrl,
+        title: parsed.hostname,
+        faviconUrl: `${parsed.origin}/favicon.ico`,
+      };
+    };
+
     try {
       const { url } = request.body || {};
       if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
@@ -406,23 +636,78 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // Validate the requested destination before any request leaves the server.
+      let currentUrl: URL;
+      try {
+        currentUrl = await assertPublicHttpUrl(url);
+      } catch (err) {
+        if (err instanceof UrlGuardError) {
+          return reply.status(400).send({
+            error: 'Bad Request',
+            message: err.message,
+          });
+        }
+        // DNS resolution failed: no request can succeed, so degrade to a
+        // hostname-only preview (same behaviour as an unreachable host).
+        return reply.send(fallbackPreview(url));
+      }
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
       try {
-        const res = await fetch(url, {
+        // Redirects are followed manually so every hop is re-validated against
+        // the SSRF guard before the server connects to it.
+        let res = await fetch(currentUrl, {
           signal: controller.signal,
+          redirect: 'manual',
           headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NotesBot/1.0)' },
         });
-        clearTimeout(timeoutId);
+        let redirects = 0;
+        while (res.status >= 300 && res.status < 400) {
+          const location = res.headers.get('location');
+          try { await res.body?.cancel(); } catch { /* drain */ }
+          if (!location) break; // malformed redirect — fall through to the !res.ok path
+          if (redirects++ >= LINK_PREVIEW_MAX_REDIRECTS) {
+            clearTimeout(timeoutId);
+            return reply.send(fallbackPreview(url));
+          }
+          let nextUrl: URL;
+          try {
+            nextUrl = new URL(location, currentUrl);
+          } catch {
+            clearTimeout(timeoutId);
+            return reply.send(fallbackPreview(url));
+          }
+          try {
+            currentUrl = await assertPublicHttpUrl(nextUrl.href);
+          } catch (guardErr) {
+            clearTimeout(timeoutId);
+            if (guardErr instanceof UrlGuardError) {
+              return reply.status(400).send({
+                error: 'Bad Request',
+                message: 'Private or internal IP addresses are prohibited',
+              });
+            }
+            return reply.send(fallbackPreview(url));
+          }
+          res = await fetch(currentUrl, {
+            signal: controller.signal,
+            redirect: 'manual',
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NotesBot/1.0)' },
+          });
+        }
+
         const parsed = new URL(url);
         if (!res.ok) {
+          clearTimeout(timeoutId);
           return reply.send({
             url,
             title: parsed.hostname,
             faviconUrl: `${parsed.origin}/favicon.ico`,
           });
         }
-        const html = await res.text();
+        const html = await readBodyWithLimit(res, LINK_PREVIEW_MAX_HTML_BYTES);
+        clearTimeout(timeoutId);
         const getMeta = (prop: string) => {
           const m = html.match(new RegExp(`<meta\\s+[^>]*(?:property|name)=["'](?:og:)?${prop}["'][^>]*content=["']([^"']+)["']`, 'i'))
             || html.match(new RegExp(`<meta\\s+[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:)?${prop}["']`, 'i'));
@@ -451,12 +736,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
         });
       } catch {
         clearTimeout(timeoutId);
-        const parsed = new URL(url);
-        return reply.send({
-          url,
-          title: parsed.hostname,
-          faviconUrl: `${parsed.origin}/favicon.ico`,
-        });
+        return reply.send(fallbackPreview(url));
       }
     } catch (err: unknown) {
       fastify.log.error(err);

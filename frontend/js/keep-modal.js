@@ -6,14 +6,22 @@
 import { api } from './api.js';
 import { state } from './state.js';
 import { escapeHtml } from './markdown.js';
-import { openModal, closeModal, showToast, toggleSpeechRecognition, checkAndAddLinkPreview, extractImageFilesFromEvent } from './utils.js';
-import { openPalettePopover, openReminderPopover, openCollabPopover, applyMemoCardPalette, closeKeepPopovers } from './keep-popovers.js';
+import { openModal, closeModal, showToast, checkAndAddLinkPreview, extractImageFilesFromEvent } from './utils.js';
+import { toggleSpeechRecognition } from './voice-notes.js';
+import { openPalettePopover, openReminderPopover, openCollabPopover, openLabelsPickerPopover, applyMemoCardPalette, closeKeepPopovers } from './keep-popovers.js';
 import { openKeepDrawingModal } from './keep-drawing.js';
 import { openLightbox } from './keep-lightbox.js';
 
 export let activeKeepModalMemo = null;
 let keepModalAutosaveTimer = null;
 let onMemoChangedCallback = null;
+
+// DATA-02 remediation: saves are serialized through a promise chain so rapid
+// edits can never issue overlapping PATCH requests with a stale version.
+let keepModalSaveChain = Promise.resolve();
+
+// Aligned with the backend memo content limit (see backend/src/routes/memos.ts).
+const MAX_MEMO_CONTENT_CHARS = 2000000;
 
 export function openKeepNoteModal(memo, callbacks = {}) {
   closeKeepPopovers();
@@ -60,14 +68,17 @@ export function openKeepNoteModal(memo, callbacks = {}) {
   openModal('modal-keep-editor');
 }
 
-export function closeKeepNoteModal() {
+export async function closeKeepNoteModal() {
   clearTimeout(keepModalAutosaveTimer);
-  if (activeKeepModalMemo) {
-    saveKeepModalNote(true);
+  if (activeKeepModalMemo?.id) {
+    // Flush pending edits through the serialized save chain before closing,
+    // so nothing typed/toggled in the last milliseconds is lost.
+    await saveKeepModalNote(true);
   }
   closeModal('modal-keep-editor');
   closeKeepPopovers();
   activeKeepModalMemo = null;
+  state.set('hasUnsavedChanges', false);
   if (typeof onMemoChangedCallback === 'function') {
     onMemoChangedCallback();
   }
@@ -77,14 +88,29 @@ export function scheduleKeepModalAutosave(immediate = false) {
   clearTimeout(keepModalAutosaveTimer);
   const statusEl = document.getElementById('keep-modal-status');
   if (statusEl) statusEl.textContent = 'Saving…';
+  state.set('hasUnsavedChanges', true);
   if (immediate) {
-    saveKeepModalNote(true);
+    void saveKeepModalNote(true);
   } else {
-    keepModalAutosaveTimer = setTimeout(() => saveKeepModalNote(true), 400);
+    keepModalAutosaveTimer = setTimeout(() => void saveKeepModalNote(true), 400);
   }
 }
 
-export async function saveKeepModalNote(quiet = true) {
+/**
+ * Serialize every save through a single promise chain (DATA-02): concurrent
+ * callers each get their own save slot that runs after the previous one, so
+ * rapid checklist toggles or typing never send overlapping requests carrying
+ * a stale optimistic-concurrency version.
+ */
+export function saveKeepModalNote(quiet = true) {
+  const run = keepModalSaveChain.then(() => performKeepModalSave(quiet));
+  // Keep the chain alive even if a save fails; swallow errors for the chain
+  // itself (the caller still receives the rejection via `run`).
+  keepModalSaveChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function performKeepModalSave(quiet = true) {
   if (!activeKeepModalMemo || !activeKeepModalMemo.id) return;
   const memo = activeKeepModalMemo;
   const title = document.getElementById('keep-modal-title')?.value.trim() || '';
@@ -109,21 +135,45 @@ export async function saveKeepModalNote(quiet = true) {
     version: memo.version
   };
 
+  const statusEl = document.getElementById('keep-modal-status');
+
+  // DATA-01 guard: surface oversized content instead of a silent autosave failure.
+  if ((payload.content || '').length > MAX_MEMO_CONTENT_CHARS) {
+    state.set('hasUnsavedChanges', true);
+    if (statusEl) statusEl.textContent = 'Note too large';
+    showToast(`This note exceeds the ${MAX_MEMO_CONTENT_CHARS.toLocaleString()} character limit. Remove large embedded images or split the note.`, 'error', 6000);
+    return;
+  }
+
   try {
-    const res = await api.updateMemo(memo.id, payload);
+    let res;
+    try {
+      res = await api.updateMemo(memo.id, payload);
+    } catch (err) {
+      if (err?.status !== 409) throw err;
+      // Version conflict (DATA-02): re-sync with the server's current version
+      // and retry once so the user is never locked out of saving by a stale
+      // optimistic-concurrency counter.
+      const fresh = await api.getMemo(memo.id);
+      if (fresh?.memo?.version) {
+        memo.version = fresh.memo.version;
+      }
+      res = await api.updateMemo(memo.id, { ...payload, version: memo.version });
+    }
     if (res && res.memo) {
       memo.version = res.memo.version;
     }
-    const statusEl = document.getElementById('keep-modal-status');
     if (statusEl) statusEl.textContent = 'Saved';
+    state.set('hasUnsavedChanges', false);
 
     if (memo.noteType === 'text' && memo.content && (!memo.linkPreviews || !memo.linkPreviews.length)) {
       checkAndAddLinkPreview(memo.content, memo, () => renderKeepModalLinks(memo));
     }
   } catch (err) {
     console.error('Save keep modal error:', err);
-    const statusEl = document.getElementById('keep-modal-status');
     if (statusEl) statusEl.textContent = 'Error saving';
+    state.set('hasUnsavedChanges', true);
+    if (!quiet) showToast(err.message || 'Failed to save note', 'error', 5000);
   }
 }
 
@@ -338,11 +388,12 @@ export function renderKeepModalLinks(memo) {
     return;
   }
   container.innerHTML = previews.map((lp) => {
+    const lpImage = lp.image || lp.imageUrl || lp.faviconUrl || '';
     let domain = '';
     try { domain = new URL(lp.url).hostname; } catch {}
     return `
       <a href="${escapeHtml(lp.url)}" target="_blank" rel="noopener noreferrer" class="keep-link-card">
-        ${lp.image ? `<img src="${escapeHtml(lp.image)}" class="keep-link-thumb" alt="">` : ''}
+        ${lpImage ? `<img src="${escapeHtml(lpImage)}" class="keep-link-thumb" alt="">` : ''}
         <div class="keep-link-info">
           <span class="keep-link-title">${escapeHtml(lp.title || lp.url)}</span>
           <span class="keep-link-domain">${escapeHtml(domain || lp.url)}</span>
@@ -382,7 +433,28 @@ export function renderKeepModalTags(memo) {
   const container = document.getElementById('keep-modal-tags');
   if (!container) return;
   const tags = memo.tags || [];
-  container.innerHTML = tags.map((t) => `<span class="tag-chip">#${escapeHtml(t)}</span>`).join('');
+  container.innerHTML = tags.map((t) => `
+    <span class="tag-chip" data-keep-tag="${escapeHtml(t)}">#${escapeHtml(t)}<span class="tag-chip-remove" role="button" data-keep-tag-remove="${escapeHtml(t)}" title="Remove label">&times;</span></span>
+  `).join('');
+
+  container.querySelectorAll('[data-keep-tag-remove]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!memo.id) return;
+      const removed = btn.dataset.keepTagRemove;
+      const nextTags = (memo.tags || []).filter((t) => String(t).trim().toLowerCase() !== String(removed).trim().toLowerCase());
+      try {
+        const res = await api.updateMemo(memo.id, { tags: nextTags, version: memo.version });
+        memo.tags = nextTags;
+        memo.version = res.memo?.version || (memo.version + 1);
+        renderKeepModalTags(memo);
+        if (typeof onMemoChangedCallback === 'function') onMemoChangedCallback();
+        showToast(`Removed label #${removed}`, 'info', 1500);
+      } catch (err) {
+        showToast(err.message || 'Failed to remove label', 'error');
+      }
+    });
+  });
 }
 
 export function setupKeepModalListeners(callbacks = {}) {
@@ -396,6 +468,7 @@ export function setupKeepModalListeners(callbacks = {}) {
   const trashBtn = document.getElementById('keep-modal-trash-btn');
   const checklistToggleBtn = document.getElementById('keep-modal-checklist-toggle-btn');
   const reminderBtn = document.getElementById('keep-modal-reminder-btn');
+  const labelsBtn = document.getElementById('keep-modal-labels-btn');
   const colorBtn = document.getElementById('keep-modal-color-btn');
   const collabBtn = document.getElementById('keep-modal-collab-btn');
   const imageBtn = document.getElementById('keep-modal-image-btn');
@@ -410,9 +483,15 @@ export function setupKeepModalListeners(callbacks = {}) {
 
   expandBtn?.addEventListener('click', async () => {
     if (!activeKeepModalMemo) return;
-    await saveKeepModalNote(true);
     const memoToOpen = { ...activeKeepModalMemo };
-    closeKeepNoteModal();
+    await saveKeepModalNote(true);
+    // Close without saving again: the note was just persisted above.
+    activeKeepModalMemo = null;
+    closeModal('modal-keep-editor');
+    closeKeepPopovers();
+    if (typeof onMemoChangedCallback === 'function') {
+      onMemoChangedCallback();
+    }
     if (typeof callbacks.onExpand === 'function') {
       callbacks.onExpand(memoToOpen);
     }
@@ -465,6 +544,22 @@ export function setupKeepModalListeners(callbacks = {}) {
         renderKeepModalReminderChip(activeKeepModalMemo);
       });
     }
+  });
+
+  labelsBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!activeKeepModalMemo) return;
+    openLabelsPickerPopover(labelsBtn, activeKeepModalMemo, async (tags) => {
+      renderKeepModalTags(activeKeepModalMemo);
+      if (!activeKeepModalMemo.id) return;
+      try {
+        const res = await api.updateMemo(activeKeepModalMemo.id, { tags, version: activeKeepModalMemo.version });
+        activeKeepModalMemo.version = res.memo?.version || (activeKeepModalMemo.version + 1);
+        if (typeof onMemoChangedCallback === 'function') onMemoChangedCallback();
+      } catch (err) {
+        showToast(err.message || 'Failed to update labels', 'error');
+      }
+    });
   });
 
   colorBtn?.addEventListener('click', (e) => {

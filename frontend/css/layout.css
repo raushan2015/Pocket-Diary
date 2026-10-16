@@ -553,8 +553,38 @@ body {
   position: fixed;
   inset: 0;
   background-color: var(--modal-backdrop);
-  z-index: calc(var(--z-nav) - 1);
+  /* UX-02: sit directly behind the off-canvas drawer (z-modal: 210) and above
+     the top navbar (z-nav: 50) so the whole viewport dims uniformly. */
+  z-index: var(--z-modal-backdrop);
   backdrop-filter: blur(2px);
+}
+
+/* UX-01: tablet and medium viewports (769px–1024px) collapse the fixed 260px
+   sidebar into the same off-canvas drawer used on phones, so the memo grid and
+   editor keep a comfortable width on iPad-class screens. */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .app-sidebar {
+    position: fixed;
+    left: -280px;
+    top: 0;
+    bottom: 0;
+    height: 100vh;
+    z-index: var(--z-modal);
+    transition: left var(--transition-smooth);
+    width: 270px;
+    box-shadow: var(--shadow-xl);
+  }
+  .app-sidebar.open {
+    left: 0;
+  }
+  .sidebar-overlay.active {
+    display: block;
+  }
+  #top-navbar > .mobile-menu-toggle {
+    display: inline-flex !important;
+    order: -1 !important;
+    flex: 0 0 auto;
+  }
 }
 
 /* Responsive Media Queries */
@@ -765,7 +795,7 @@ body {
   gap: .65rem;
 }
 .navbar-filter-panel .filter-select { width: 100%; min-width: 0; }
-.navbar-filter-panel .filter-right-controls { display: none !important; }
+.navbar-filter-panel .filter-right-controls { display: flex !important; justify-content: flex-end; margin-top: 0.65rem; }
 @media (max-width: 768px) {
   .navbar-search-container {
     display: flex !important;
@@ -1299,6 +1329,6 @@ body {
     padding-top: 0 !important;
   }
 }
-@media (min-width: 769px) {
+@media (min-width: 1025px) {
   #top-navbar > .mobile-menu-toggle { display: none !important; }
 }

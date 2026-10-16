@@ -4,9 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Notes - Capture, organize, and find your ideas in one place.">
-  <meta name="theme-color" content="#fbbc04">
+  <meta name="theme-color" content="#6552F8">
   <link rel="manifest" href="manifest.json">
-  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/logo-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/logo-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/logo-192.png">
   <title>Notes</title>
 
   <!-- Google Font: Inter -->
@@ -45,14 +47,7 @@
       <!-- Left: Logo & Brand -->
       <div class="navbar-brand-section" id="nav-brand-btn" role="button" tabindex="0" title="Notes Home">
         <div class="brand-logo-icon">
-          <!-- Folded Memo SVG Icon -->
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-            <polyline points="10 9 9 9 8 9"></polyline>
-          </svg>
+          <img class="brand-logo-img" src="icons/logo-96.png" alt="Notes" width="38" height="38">
         </div>
         <span class="brand-title">Notes</span>
       </div>
@@ -109,13 +104,28 @@
         <!-- Authenticated Actions -->
         <div class="nav-auth-actions" id="nav-auth-actions" style="display: none; align-items: center; gap: 0.75rem;">
           <!-- Notification Bell -->
-          <button class="btn btn-ghost btn-icon-only" id="nav-notifications-btn" aria-label="Notifications" title="Notifications" style="position: relative;">
+          <button class="btn btn-ghost btn-icon-only" id="nav-notifications-btn" aria-label="Notifications" title="Notifications" aria-haspopup="true" aria-expanded="false" style="position: relative;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
             <span id="notification-badge-dot" style="position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; display: none;"></span>
+            <span id="notification-badge-count" style="position: absolute; top: 2px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; background: var(--color-red); color: #fff; border-radius: 9px; font-size: 0.62rem; font-weight: 700; display: none; align-items: center; justify-content: center;">0</span>
           </button>
+
+          <!-- Notifications dropdown panel -->
+          <div class="notifications-panel" id="notifications-panel" style="display: none;">
+            <div class="notifications-panel-header">
+              <strong>Notifications</strong>
+              <button type="button" class="btn btn-ghost btn-xs" id="notifications-read-all-btn" title="Mark all as read">Mark all read</button>
+            </div>
+            <div class="notifications-panel-list" id="notifications-panel-list">
+              <div class="notifications-empty">No notifications yet. Reminders you set on notes will appear here.</div>
+            </div>
+            <div class="notifications-panel-footer">
+              <button type="button" class="btn btn-outline btn-sm btn-full" id="notifications-enable-push-btn" style="display:none;">🔔 Enable push notifications</button>
+            </div>
+          </div>
 
           <!-- User Menu Pill -->
           <div class="user-menu-pill" id="user-menu-pill" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false">
@@ -486,7 +496,7 @@
             </div>
             <div class="resource-faq-item">
               <h4 class="faq-question">Can I migrate notes from other tools?</h4>
-              <p class="faq-answer">Yes! The Migration & Backup Wizard automatically detects legacy notes in browser localStorage and allows importing/exporting standard JSON backup files in one click.</p>
+              <p class="faq-answer">Yes! The Migration & Backup Wizard automatically detects legacy notes in browser localStorage and allows importing/exporting standard JSON backup files in one click. Google Keep exports and Markdown (.md) files can be imported from Account Settings → Import & Export Notes.</p>
             </div>
             <div class="resource-faq-item">
               <h4 class="faq-question">Does Notes support Markdown and shortcuts?</h4>
@@ -531,6 +541,9 @@
             <!-- Alert Notification Banner inside Form -->
             <div class="auth-alert" id="auth-alert" role="alert"></div>
 
+            <!-- Workspace invitation context banner (register via invite link) -->
+            <div class="auth-invite-banner" id="auth-invite-banner" style="display: none;"></div>
+
             <form class="auth-form" id="auth-form" novalidate>
               <!-- Full Name (Only for Registration Mode) -->
               <div class="form-group" id="auth-name-group" style="display: none;">
@@ -540,13 +553,13 @@
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
                   </svg>
-                  <input type="text" class="form-input" id="auth-name-input" placeholder="Alex Morgan" autocomplete="name">
+                  <input type="text" class="form-input" id="auth-name-input" placeholder="Alex Morgan" autocomplete="name" maxlength="120">
                 </div>
                 <div class="form-error-msg" id="auth-name-error">Please enter your full name</div>
               </div>
 
               <!-- Email Address -->
-              <div class="form-group">
+              <div class="form-group" id="auth-email-group">
                 <label class="form-label" for="auth-email-input">Email Address</label>
                 <div class="input-icon-wrapper">
                   <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -559,14 +572,14 @@
               </div>
 
               <!-- Password -->
-              <div class="form-group">
+              <div class="form-group" id="auth-password-group">
                 <label class="form-label" for="auth-password-input">Password</label>
                 <div class="input-icon-wrapper">
                   <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                   </svg>
-                  <input type="password" class="form-input" id="auth-password-input" placeholder="••••••••" autocomplete="current-password" required>
+                  <input type="password" class="form-input" id="auth-password-input" placeholder="••••••••" autocomplete="current-password" required maxlength="200">
                   <button type="button" class="password-toggle-btn" id="password-toggle-btn" aria-label="Toggle password visibility">
                     <!-- Eye Icon -->
                     <svg class="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -576,6 +589,33 @@
                   </button>
                 </div>
                 <div class="form-error-msg" id="auth-password-error">Password must be at least 6 characters</div>
+                <!-- Password strength meter (register / password-change modes) -->
+                <div class="password-strength-meter" id="password-strength-meter" style="display: none;">
+                  <div class="password-strength-bars" id="password-strength-bars" aria-hidden="true">
+                    <span></span><span></span><span></span><span></span>
+                  </div>
+                  <span class="password-strength-label" id="password-strength-label"></span>
+                </div>
+                <div class="password-requirements" id="password-requirements" style="display: none;">
+                  <span data-req="length"><span class="req-icon">◦</span> 6+ characters</span>
+                  <span data-req="letter"><span class="req-icon">◦</span> Letter</span>
+                  <span data-req="number"><span class="req-icon">◦</span> Number</span>
+                </div>
+                <div class="caps-lock-warning" id="caps-lock-warning" style="display: none;">⚠️ Caps Lock is on</div>
+              </div>
+
+              <!-- Confirm Password (Register mode only) -->
+              <div class="form-group" id="auth-confirm-password-group" style="display: none;">
+                <label class="form-label" for="auth-confirm-password-input">Confirm Password</label>
+                <div class="input-icon-wrapper">
+                  <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                  <input type="password" class="form-input" id="auth-confirm-password-input" placeholder="••••••••" autocomplete="new-password" maxlength="200">
+                </div>
+                <div class="form-error-msg" id="auth-confirm-password-error">Passwords do not match</div>
               </div>
 
               <!-- Remember Me & Forgot Password (Login Mode) -->
@@ -593,24 +633,9 @@
               </button>
             </form>
 
-            <!-- Social Divider -->
-            <div class="auth-divider">or continue with</div>
-
-            <!-- Social OAuth Buttons Row -->
-            <div class="auth-social-row">
-              <button type="button" class="social-auth-btn" id="social-google-btn" title="Continue with Google">
-                <svg viewBox="0 0 24 24"><path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.8z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.8s.2-2.1.4-2.8L1.9 6.3C.7 8.7 0 10.3 0 12s.7 3.3 1.9 5.7l3.7-2.9z"/><path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"/></svg>
-                <span>Google</span>
-              </button>
-              <button type="button" class="social-auth-btn" id="social-apple-btn" title="Continue with Apple">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.63 1.35-.55.63-1.03 1.69-.9 2.73 1.01.08 2.02-.49 2.61-1.23z"/></svg>
-                <span>Apple</span>
-              </button>
-              <button type="button" class="social-auth-btn" id="social-github-btn" title="Continue with GitHub">
-                <svg viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-                <span>GitHub</span>
-              </button>
-            </div>
+            <!-- SOCIAL OAUTH (MOCK-04): removed — this instance has no OAuth provider
+                 integration. Email/password sign-in, workspace invitations and the
+                 live demo are the supported authentication paths. -->
 
             <!-- Footer Toggle Prompt -->
             <div class="auth-switch-prompt">
@@ -839,7 +864,7 @@
                 <div class="storage-progress-bar-fill" id="storage-progress-fill" style="width: 24%;"></div>
               </div>
               <button class="btn btn-outline btn-sm btn-full" id="storage-upgrade-btn">
-                Upgrade Plan
+                Storage & Plan Details
               </button>
             </div>
           </div>
@@ -942,6 +967,26 @@
                 <button type="button" id="clear-filter-btn">Clear Filter ✕</button>
               </div>
 
+              <!-- Dedicated Trash management toolbar (Trash view only) -->
+              <div class="trash-toolbar" id="trash-toolbar" style="display: none;">
+                <div class="trash-toolbar-info">
+                  <span class="trash-toolbar-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </span>
+                  <div class="trash-toolbar-text">
+                    <div class="trash-toolbar-title-row">
+                      <strong>Trash</strong>
+                      <span class="trash-toolbar-count" id="trash-count-text">0 notes</span>
+                    </div>
+                    <p class="trash-toolbar-desc">Deleted notes stay here — restore them individually or empty the Trash to permanently delete everything.</p>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-outline btn-sm trash-empty-btn" id="empty-trash-btn" title="Permanently delete everything in Trash">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                  <span>Empty Trash</span>
+                </button>
+              </div>
+
               <!-- Google Keep authentic quick capture bar -->
               <div class="keep-capture-container" id="quick-capture-container">
                 <!-- Collapsed view -->
@@ -1006,6 +1051,9 @@
                       <button type="button" class="keep-tool-btn" id="qc-tool-reminder" title="Remind me" aria-label="Set reminder">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
                       </button>
+                      <button type="button" class="keep-tool-btn" id="qc-tool-labels" title="Labels" aria-label="Labels">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+                      </button>
                       <button type="button" class="keep-tool-btn" id="qc-tool-palette" title="Background options" aria-label="Background options">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0-9.5 13.1c.3.9 1.1 1.4 2 1.4h1.7c.6 0 1.1.5 1.1 1.1 0 .9.7 1.6 1.6 1.6h.4c5.5 0 9.7-4.5 9.7-10S17.5 2 12 2z"></path></svg>
                       </button>
@@ -1020,6 +1068,10 @@
                       </button>
                       <button type="button" class="keep-tool-btn" id="qc-tool-mic" title="Voice typing" aria-label="Speech to text">
                         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                      </button>
+                      <button type="button" class="keep-tool-btn voice-lang-btn" id="qc-voice-lang-btn" title="Voice typing language (English / 日本語)" aria-label="Choose voice typing language">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                        <span class="voice-lang-badge" id="qc-voice-lang-badge">EN</span>
                       </button>
                     </div>
                     <div class="keep-footer-actions">
@@ -1080,6 +1132,7 @@
 
                   <!-- Sort Order -->
                   <select class="filter-select" id="sort-memos-select" aria-label="Sort Memos">
+                    <option value="sortOrder:asc" selected>Custom order</option>
                     <option value="updatedAt:desc">Recently updated</option>
                     <option value="createdAt:desc">Recently created</option>
                     <option value="updatedAt:asc">Least recently updated</option>
@@ -1116,6 +1169,11 @@
               <div class="memo-grid-container" id="memos-grid-container"></div>
               <!-- Container for list items -->
               <div class="memo-list-container" id="recent-memos-list" style="display: none;"></div>
+              <!-- Pagination: load additional pages when the workspace has more notes than loaded -->
+              <div class="load-more-row" id="load-more-row" style="display: none;">
+                <button type="button" class="btn btn-outline btn-sm" id="load-more-btn">Load more notes</button>
+                <span class="load-more-meta" id="load-more-meta"></span>
+              </div>
             </div>
 
             <!-- Right (40%): Mini-Calendar Widget & Upcoming Reminders -->
@@ -1634,7 +1692,7 @@
 
     <!-- Modal 9: User Profile & Account Settings -->
     <div class="modal-backdrop" id="modal-profile" role="dialog" aria-modal="true" aria-labelledby="modal-profile-title">
-      <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-card" style="max-width: 560px;">
         <div class="modal-header">
           <h3 class="modal-title" id="modal-profile-title">Account Settings</h3>
           <button type="button" class="modal-close-btn" id="modal-profile-close-btn" aria-label="Close modal">
@@ -1643,23 +1701,80 @@
         </div>
         <form id="profile-settings-form">
           <div class="modal-body">
+            <!-- Identity block: avatar preview + name/email -->
+            <div class="profile-identity-row">
+              <div class="profile-avatar-large" id="profile-avatar-large" aria-hidden="true">A</div>
+              <div>
+                <div class="profile-name-large" id="profile-name-large">—</div>
+                <div class="profile-member-since" id="profile-member-since"></div>
+              </div>
+            </div>
+
             <div class="form-group">
               <label class="form-label" for="profile-name-input">Display Name</label>
-              <input type="text" class="form-input" id="profile-name-input" required>
+              <input type="text" class="form-input" id="profile-name-input" required maxlength="120">
             </div>
             <div class="form-group">
               <label class="form-label" for="profile-email-input">Email Address</label>
               <input type="email" class="form-input" id="profile-email-input" readonly disabled style="opacity: 0.8;">
             </div>
+
             <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1rem 0;">
             <h4 style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-primary);">Change Password</h4>
             <div class="form-group">
               <label class="form-label" for="profile-current-pwd-input">Current Password</label>
-              <input type="password" class="form-input" id="profile-current-pwd-input" placeholder="Leave blank if not changing">
+              <input type="password" class="form-input" id="profile-current-pwd-input" placeholder="Leave blank if not changing" autocomplete="current-password">
             </div>
             <div class="form-group">
               <label class="form-label" for="profile-new-pwd-input">New Password</label>
-              <input type="password" class="form-input" id="profile-new-pwd-input" placeholder="Min 6 characters">
+              <input type="password" class="form-input" id="profile-new-pwd-input" placeholder="Min 6 characters" autocomplete="new-password" maxlength="200">
+              <div class="password-strength-meter" id="profile-strength-meter" style="display: none;">
+                <div class="password-strength-bars" id="profile-strength-bars" aria-hidden="true">
+                  <span></span><span></span><span></span><span></span>
+                </div>
+                <span class="password-strength-label" id="profile-strength-label"></span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="profile-confirm-pwd-input">Confirm New Password</label>
+              <input type="password" class="form-input" id="profile-confirm-pwd-input" placeholder="Repeat the new password" autocomplete="new-password" maxlength="200">
+              <div class="form-error-msg" id="profile-confirm-pwd-error">New passwords do not match</div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1rem 0;">
+            <h4 style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-primary);">Active Sessions</h4>
+            <div id="profile-sessions-list" class="profile-sessions-list"></div>
+            <button type="button" class="btn btn-outline btn-sm btn-full" id="profile-revoke-sessions-btn" style="margin-top: 0.5rem;">Sign out of all other sessions</button>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1rem 0;">
+            <h4 style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-primary);">Backups <span class="badge badge-sm" style="background: var(--bg-hover); color: var(--text-secondary); font-weight: 400;">self-hosted</span></h4>
+            <div id="profile-backup-status" class="profile-backup-status"></div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 1rem 0;">
+            <h4 style="font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-primary);">Import & Export Notes</h4>
+            <div class="settings-data-section">
+              <div class="settings-data-row">
+                <div>
+                  <div class="settings-data-title">Export workspace</div>
+                  <div class="settings-data-desc">Download every note, label and category in this workspace as a JSON backup.</div>
+                </div>
+                <button type="button" class="btn btn-outline btn-sm" id="settings-export-btn">⬇ Export .json</button>
+              </div>
+              <div class="settings-data-row" style="flex-direction: column; align-items: stretch;">
+                <div>
+                  <div class="settings-data-title">Import from Google Keep or Markdown</div>
+                  <div class="settings-data-desc">Export your notes from <a href="https://takeout.google.com/settings/takeout" target="_blank" rel="noopener noreferrer">Google Takeout</a> (select “Keep”), then upload the <strong>.zip</strong> here — or pick the extracted <strong>.html</strong> files. Checklists and labels are converted automatically. You can also import <strong>.md</strong> files (loose or zipped): each file becomes a new note with all of its content. Notes JSON backups are also accepted.</div>
+                </div>
+                <input type="file" id="settings-import-file-input" accept=".zip,.html,.htm,.json,.md,.markdown" multiple style="display: none;">
+                <div class="settings-import-controls">
+                  <button type="button" class="btn btn-primary btn-sm" id="settings-import-browse-btn">Choose file…</button>
+                  <span class="settings-import-selection" id="settings-import-selection">No file selected</span>
+                </div>
+                <div class="settings-import-preview" id="settings-import-preview" style="display: none;"></div>
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                  <button type="button" class="btn btn-outline btn-sm" id="settings-import-btn" disabled>Import notes</button>
+                </div>
+              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -1681,7 +1796,7 @@
         </div>
         <div class="modal-body">
           <form id="invite-member-form" style="margin-bottom: 1.25rem;">
-            <label class="form-label">Invite New Member</label>
+            <label class="form-label">Invite by Email</label>
             <div style="display: flex; gap: 0.5rem;">
               <input type="email" class="form-input" id="invite-email-input" placeholder="colleague@example.com" required style="flex: 1;">
               <select class="filter-select" id="invite-role-select" style="width: 100px;">
@@ -1691,11 +1806,20 @@
               </select>
               <button type="submit" class="btn btn-primary btn-sm" id="invite-submit-btn">Invite</button>
             </div>
+            <div class="auth-alert" id="invite-alert" style="margin-top: 0.5rem;"></div>
           </form>
+
           <label class="form-label">Current Members</label>
-          <div id="workspace-members-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 180px; overflow-y: auto;">
-            <!-- Loaded dynamically -->
+          <div id="workspace-members-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 220px; overflow-y: auto;"></div>
+
+          <div style="margin-top: 1.25rem;">
+            <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Pending Invitations</span>
+              <span class="badge badge-sm" style="font-size: 0.7rem; background: var(--bg-hover); color: var(--text-secondary);">link or email</span>
+            </label>
+            <div id="workspace-invites-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 200px; overflow-y: auto;"></div>
           </div>
+
           <div style="margin-top: 1.25rem;">
             <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
               <span>Workspace Activity & Audit Trail</span>
@@ -1714,56 +1838,38 @@
 
     <!-- Modal 11: Upgrade Plan Modal -->
     <div class="modal-backdrop" id="modal-upgrade-plan" role="dialog" aria-modal="true" aria-labelledby="modal-plan-title">
-      <div class="modal-card" style="max-width: 720px;">
+      <div class="modal-card" style="max-width: 640px;">
         <div class="modal-header">
-          <h3 class="modal-title" id="modal-plan-title">Upgrade Workspace Plan</h3>
+          <h3 class="modal-title" id="modal-plan-title">Your Notes Plan</h3>
           <button type="button" class="modal-close-btn" id="modal-plan-close-btn" aria-label="Close modal">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
         </div>
         <div class="modal-body">
-          <p style="color: var(--text-secondary); margin-bottom: 1.5rem; text-align: center; font-size: 0.95rem;">
-            Scale your productivity with unlimited memos, team collaboration, and expanded storage.
+          <!-- MOCK-02 remediation: this is a self-hosted application with no billing
+               backend, so the mock plan upgrade flow was replaced with an honest
+               summary of what the instance provides. -->
+          <p style="margin-bottom: 1rem; text-align: center;">
+            <span class="badge badge-personal" style="font-size: 0.85rem;">Self-Hosted Community Edition</span>
           </p>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
-            <!-- Free Plan -->
-            <div style="padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-surface);">
-              <h4 style="font-size: 1.1rem; margin-bottom: 0.25rem;">Free Tier</h4>
-              <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.75rem;">$0 <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted);">/ month</span></div>
-              <ul style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.8; margin-bottom: 1rem; padding-left: 1.2rem;">
-                <li>Up to 10 GB storage</li>
-                <li>Unlimited local memos</li>
-                <li>FTS5 Full-Text Search</li>
-              </ul>
-              <button type="button" class="btn btn-secondary btn-sm btn-full" disabled>Current Plan</button>
-            </div>
-            <!-- Pro Plan -->
-            <div style="padding: 1.25rem; border: 2px solid var(--primary-color); border-radius: 12px; background: var(--bg-surface); position: relative;">
-              <span class="badge badge-personal" style="position: absolute; top: -10px; right: 12px;">Most Popular</span>
-              <h4 style="font-size: 1.1rem; margin-bottom: 0.25rem; color: var(--primary-color);">Pro Plan</h4>
-              <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.75rem;">$9 <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted);">/ month</span></div>
-              <ul style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.8; margin-bottom: 1rem; padding-left: 1.2rem;">
-                <li>100 GB cloud storage</li>
-                <li>Version history up to 90 days</li>
-                <li>Document attachment uploads</li>
-              </ul>
-              <button type="button" class="btn btn-primary btn-sm btn-full" id="choose-pro-plan-btn">Upgrade to Pro</button>
-            </div>
-            <!-- Team Plan -->
-            <div style="padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-surface);">
-              <h4 style="font-size: 1.1rem; margin-bottom: 0.25rem;">Team Plan</h4>
-              <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.75rem;">$19 <span style="font-size: 0.8rem; font-weight: 400; color: var(--text-muted);">/ month</span></div>
-              <ul style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.8; margin-bottom: 1rem; padding-left: 1.2rem;">
-                <li>1 TB cloud storage</li>
-                <li>Unlimited team collaborators</li>
-                <li>Priority 24/7 support</li>
-              </ul>
-              <button type="button" class="btn btn-outline btn-sm btn-full" id="choose-team-plan-btn">Choose Team</button>
-            </div>
+          <p style="color: var(--text-secondary); margin-bottom: 1.25rem; text-align: center; font-size: 0.95rem;">
+            Every feature is already enabled on your instance — workspaces, reminders, whiteboards,
+            revision history and attachment storage. There is no paid tier to upgrade to.
+          </p>
+          <div style="padding: 1.1rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-surface); margin-bottom: 1.25rem;">
+            <ul style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.9; margin: 0; padding-left: 1.2rem;">
+              <li>10 GB attachment storage per workspace by default</li>
+              <li>Unlimited memos, workspaces, labels and folders</li>
+              <li>Full revision history, FTS5 search and reminders</li>
+              <li>Local SQLite snapshots with optional off-host replication</li>
+            </ul>
           </div>
+          <p style="color: var(--text-muted); font-size: 0.8rem; text-align: center; margin-bottom: 0;">
+            Attachment storage limits are managed by your server's configuration and available disk space.
+          </p>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="modal-plan-close-footer-btn">Cancel</button>
+          <button type="button" class="btn btn-secondary" id="modal-plan-close-footer-btn">Close</button>
         </div>
       </div>
     </div>
@@ -1841,6 +1947,9 @@
             <button type="button" class="keep-tool-btn" id="keep-modal-collab-btn" title="Collaborator" aria-label="Collaborator">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg>
             </button>
+            <button type="button" class="keep-tool-btn" id="keep-modal-labels-btn" title="Labels" aria-label="Labels">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+            </button>
             <button type="button" class="keep-tool-btn" id="keep-modal-color-btn" title="Background options" aria-label="Background options">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0-9.5 13.1c.3.9 1.1 1.4 2 1.4h1.7c.6 0 1.1.5 1.1 1.1 0 .9.7 1.6 1.6 1.6h.4c5.5 0 9.7-4.5 9.7-10S17.5 2 12 2z"></path></svg>
             </button>
@@ -1855,6 +1964,10 @@
             </button>
             <button type="button" class="keep-tool-btn" id="keep-modal-voice-btn" title="Voice typing" aria-label="Speech to text">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+            </button>
+            <button type="button" class="keep-tool-btn voice-lang-btn" id="keep-modal-voice-lang-btn" title="Voice typing language (English / 日本語)" aria-label="Choose voice typing language">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+              <span class="voice-lang-badge" id="keep-modal-voice-lang-badge">EN</span>
             </button>
             <button type="button" class="keep-tool-btn" id="keep-modal-drawing-btn" title="Add drawing" aria-label="Add drawing">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"></path><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path></svg>
@@ -1969,6 +2082,12 @@
     </div>
 
     <!-- Floating Popover: Card More Options -->
+    <!-- Voice typing language popover (English / 日本語) -->
+    <div class="keep-popover" id="keep-popover-voice-language" style="display: none;" role="menu" aria-label="Voice typing language">
+      <div class="keep-popover-label">Voice typing language</div>
+      <div class="voice-lang-list" id="voice-lang-list"></div>
+    </div>
+
     <div class="keep-popover" id="keep-popover-more" style="display: none;">
       <button type="button" class="keep-popover-item" id="keep-more-delete-btn">
         <span>Delete note</span>
@@ -2027,6 +2146,17 @@
         <button type="button" class="keep-theme-pill" data-theme="recipes">🍲 Recipes</button>
         <button type="button" class="keep-theme-pill" data-theme="places">✈️ Places</button>
         <button type="button" class="keep-theme-pill" data-theme="celebration">🎉 Celebration</button>
+      </div>
+    </div>
+
+    <!-- Floating Popover: Labels Picker (Keep modal & Quick capture) -->
+    <div class="keep-popover keep-labels-popover" id="keep-popover-labels" style="display: none;">
+      <div class="keep-popover-title">Labels</div>
+      <div class="keep-labels-picker-list" id="keep-labels-picker-list"></div>
+      <div class="keep-popover-divider"></div>
+      <div class="keep-labels-picker-create">
+        <input type="text" id="keep-labels-picker-new-input" class="form-input form-input-sm" placeholder="Create new label" maxlength="50" autocomplete="off">
+        <button type="button" class="btn btn-primary btn-sm" id="keep-labels-picker-create-btn">Create</button>
       </div>
     </div>
 

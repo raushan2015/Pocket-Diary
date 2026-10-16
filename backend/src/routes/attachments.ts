@@ -25,7 +25,10 @@ function resolveMemo(fastify: { dbCtx: DatabaseContext }, memoId: string, userId
   const memo = fastify.dbCtx.sqlite.prepare(
     'SELECT id, workspace_id, deleted_at FROM memos WHERE id = ?'
   ).get(memoId) as MemoRow | undefined;
-  if (!memo || memo.deleted_at !== null) throw new MemoNotFoundError();
+  if (!memo) throw new MemoNotFoundError();
+  // Soft-deleted (trashed) notes stay readable so members can inspect their
+  // attachments before restoring or purging; writes are rejected (BUG-01).
+  if (write && memo.deleted_at !== null) throw new MemoNotFoundError();
   const member = getWorkspaceMembership(fastify.dbCtx.db, userId, memo.workspace_id);
   if (!member) throw new MemoNotFoundError();
   if (write && member.role === 'viewer') throw new WorkspaceAccessError('Viewers cannot add or remove attachments', 403);
@@ -124,7 +127,10 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
       const row = fastify.dbCtx.sqlite.prepare(
         'SELECT a.*, m.deleted_at FROM attachments a JOIN memos m ON m.id = a.memo_id WHERE a.id = ?'
       ).get(request.params.id) as any;
-      if (!row || row.deleted_at !== null) return reply.status(404).send({ error: 'Not Found', message: 'Attachment not found' });
+      // Soft-deleted (trashed) memos keep serving their attachments to
+      // workspace members so Trash view thumbnails render correctly (BUG-01).
+      // Cross-tenant access is still prevented via the membership check below.
+      if (!row) return reply.status(404).send({ error: 'Not Found', message: 'Attachment not found' });
       if (!getWorkspaceMembership(fastify.dbCtx.db, request.user!.id, row.workspace_id)) {
         return reply.status(404).send({ error: 'Not Found', message: 'Attachment not found' });
       }

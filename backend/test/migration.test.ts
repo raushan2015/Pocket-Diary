@@ -164,3 +164,72 @@ describe('Data Migration API (/api/v1/migration)', () => {
     expect(exportData.tags.length).toBe(2);
   });
 });
+
+describe('Google Keep-style import extensions (checklists, colors, noteType)', () => {
+  let app: FastifyInstance;
+  let dbCtx: ReturnType<typeof createDatabase>;
+  let workspaceId: string;
+  let cookieHeader: string;
+
+  beforeEach(async () => {
+    dbCtx = createDatabase(':memory:');
+    app = buildApp({ dbCtx, logger: false });
+    await app.ready();
+    const user = await createTestUser(app, 'keep-import@example.com');
+    workspaceId = user.workspace.id;
+    cookieHeader = user.cookieHeader;
+  });
+
+  afterEach(async () => {
+    await app.close();
+    dbCtx.sqlite.close();
+  });
+
+  it('imports checklist notes as native checklists with preserved checked state', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/migration/import-local',
+      headers: { cookie: cookieHeader },
+      payload: {
+        workspaceId,
+        memos: [
+          {
+            title: 'Keep Shopping List',
+            content: '',
+            noteType: 'checklist',
+            checklistData: [
+              { text: 'Oat milk', checked: true },
+              { text: 'Sourdough', checked: false },
+            ],
+            color: 'teal',
+            tags: ['from-keep'],
+          },
+          { title: 'Plain Text Note', content: 'hello world' },
+        ],
+        tags: ['from-keep'],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.importedMemos).toBe(2);
+    expect(body.importedTags).toBe(1);
+
+    const list = await app.inject({
+      method: 'GET',
+      url: `/api/v1/memos?workspaceId=${workspaceId}`,
+      headers: { cookie: cookieHeader },
+    });
+    const memos = list.json().memos;
+    const checklistMemo = memos.find((m: any) => m.title === 'Keep Shopping List');
+    expect(checklistMemo.noteType).toBe('checklist');
+    expect(checklistMemo.color).toBe('teal');
+    expect(checklistMemo.checklistData).toHaveLength(2);
+    expect(checklistMemo.checklistData[0].checked).toBe(true);
+    expect(checklistMemo.checklistData[1].checked).toBe(false);
+    expect(checklistMemo.tags).toEqual(['from-keep']);
+
+    const textMemo = memos.find((m: any) => m.title === 'Plain Text Note');
+    expect(textMemo.noteType).toBe('text');
+    expect(textMemo.checklistData).toEqual([]);
+  });
+});

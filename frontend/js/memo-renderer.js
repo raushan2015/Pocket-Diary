@@ -8,7 +8,7 @@ import { state } from './state.js';
 import { escapeHtml } from './markdown.js';
 import { showToast, showConfirmDialog, triggerImagePicker } from './utils.js';
 import { navigateTo } from './navigation.js';
-import { refreshWorkspaceMemos } from './workspace-data.js';
+import { refreshWorkspaceMemos, updateLoadMoreUi } from './workspace-data.js';
 import { openKeepNoteModal } from './keep-modal.js';
 import { setupCardDragAndDrop } from './keep-dnd.js';
 import {
@@ -49,9 +49,35 @@ export function renderMemos(memoList, customHeading = null, bannerMessage = null
     }
   }
 
+  // Dedicated Trash toolbar: the Trash view is a managed destination with its
+  // own header, item count and Empty Trash action — not just a filter heading.
+  const trashToolbar = document.getElementById('trash-toolbar');
+  const trashCountText = document.getElementById('trash-count-text');
+  if (trashToolbar) {
+    if (isTrash) {
+      trashToolbar.style.display = 'flex';
+      if (trashCountText) {
+        trashCountText.textContent = memoList.length === 0
+          ? 'Trash is empty'
+          : `${memoList.length} note${memoList.length === 1 ? '' : 's'} in Trash`;
+      }
+      const emptyBtn = document.getElementById('empty-trash-btn');
+      if (emptyBtn) emptyBtn.disabled = memoList.length === 0;
+    } else {
+      trashToolbar.style.display = 'none';
+    }
+  }
+
   if (memoList.length === 0) {
-    if (gridContainer) gridContainer.style.display = 'none';
-    if (listContainer) listContainer.style.display = 'none';
+    if (gridContainer) {
+      gridContainer.style.display = 'none';
+      gridContainer.innerHTML = '';
+    }
+    if (listContainer) {
+      listContainer.style.display = 'none';
+      listContainer.innerHTML = '';
+    }
+    if (!isTrash) updateLoadMoreUi();
     if (emptyStateEl) {
       emptyStateEl.style.display = 'block';
       const emptyTitle = document.getElementById('empty-state-title');
@@ -85,6 +111,7 @@ export function renderMemos(memoList, customHeading = null, bannerMessage = null
     if (listContainer) listContainer.style.display = 'flex';
     renderListView(memoList, listContainer, isTrash);
   }
+  updateLoadMoreUi();
 }
 
 export function renderCardGridView(memos, container, isTrash, skipPinnedGrouping = false) {
@@ -145,11 +172,12 @@ export function renderCardGridView(memos, container, isTrash, skipPinnedGrouping
     let linkPreviewsHtml = '';
     if (Array.isArray(memo.linkPreviews) && memo.linkPreviews.length > 0) {
       const lp = memo.linkPreviews[0];
+      const lpImage = lp.image || lp.imageUrl || lp.faviconUrl || '';
       let domain = '';
       try { domain = new URL(lp.url).hostname; } catch {}
       linkPreviewsHtml = `
         <a href="${escapeHtml(lp.url)}" target="_blank" rel="noopener noreferrer" class="keep-link-card" onclick="event.stopPropagation();" style="margin-bottom:0.5rem;">
-          ${lp.image ? `<img src="${escapeHtml(lp.image)}" class="keep-link-thumb" alt="">` : ''}
+          ${lpImage ? `<img src="${escapeHtml(lpImage)}" class="keep-link-thumb" alt="">` : ''}
           <div class="keep-link-info">
             <span class="keep-link-title">${escapeHtml(lp.title || lp.url)}</span>
             <span class="keep-link-domain">${escapeHtml(domain || lp.url)}</span>
@@ -311,7 +339,10 @@ export function renderListView(memos, container, isTrash, skipPinnedGrouping = f
 }
 
 export function attachMemoItemInteractions(container, memos) {
-  // Click on card/row opens editor view (supports fast markdown editing & E2E flows)
+  // Click on card/row opens editor view (supports fast markdown editing & E2E flows).
+  // The in-place Keep modal is opened from the card hover toolbar (quick-edit pencil button).
+  // A dblclick binding is intentionally avoided: dblclick also fires two click events,
+  // which would navigate to the editor view *before* opening the modal on top of it.
   container.querySelectorAll('[data-memo-id]').forEach((el) => {
     el.addEventListener('click', (e) => {
       if (e.target.closest('button, a, input, .keep-tool-btn, .tag-chip, .keep-checklist-item, .keep-link-card')) return;
@@ -319,16 +350,6 @@ export function attachMemoItemInteractions(container, memos) {
       const memo = memos.find((m) => m.id === id);
       if (memo) {
         navigateTo('editor', { memo });
-      }
-    });
-
-    // Double-click on card opens Google Keep modal editor
-    el.addEventListener('dblclick', (e) => {
-      if (e.target.closest('button, a, input, .keep-tool-btn, .tag-chip, .keep-checklist-item, .keep-link-card')) return;
-      const id = el.getAttribute('data-memo-id');
-      const memo = memos.find((m) => m.id === id);
-      if (memo) {
-        openKeepNoteModal(memo, { onChanged: () => { import('./search-filter.js').then(m => m.filterAndRenderMemos()); } });
       }
     });
   });
@@ -568,8 +589,12 @@ export function renderUpcomingReminders() {
   const now = Date.now();
   const nextWeek = now + 7 * 86400000;
   const reminders = (state.get('allWorkspaceMemos') || [])
-    .filter((memo) => !memo.deletedAt && memo.dueDate && Number(memo.dueDate) <= nextWeek && (memo.status || '').toLowerCase() !== 'completed')
-    .sort((a, b) => Number(a.dueDate) - Number(b.dueDate))
+    .filter((memo) => {
+      if (memo.deletedAt || memo.isArchived) return false;
+      const time = Number(memo.reminderTime || memo.dueDate) || 0;
+      return time > 0 && time <= nextWeek && (memo.status || '').toLowerCase() !== 'completed';
+    })
+    .sort((a, b) => Number(a.reminderTime || a.dueDate) - Number(b.reminderTime || b.dueDate))
     .slice(0, 6);
   container.replaceChildren();
   if (!reminders.length) {
@@ -587,7 +612,8 @@ export function renderUpcomingReminders() {
     const icon = document.createElement('span');
     icon.className = 'reminder-icon-box';
     icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = Number(memo.dueDate) < now ? '!' : '◷';
+    const remTs = Number(memo.reminderTime || memo.dueDate);
+    icon.textContent = remTs < now ? '!' : '◷';
     const info = document.createElement('span');
     info.className = 'reminder-info';
     const title = document.createElement('span');
@@ -595,7 +621,7 @@ export function renderUpcomingReminders() {
     title.textContent = memo.title || 'Untitled note';
     const time = document.createElement('span');
     time.className = 'reminder-time';
-    time.textContent = Number(memo.dueDate) < now ? `Overdue · ${formatReminderDate(memo.dueDate)}` : formatReminderDate(memo.dueDate);
+    time.textContent = remTs < now ? `Overdue · ${formatReminderDate(remTs)}` : formatReminderDate(remTs);
     info.append(title, time);
     item.append(icon, info);
     item.addEventListener('click', () => openKeepNoteModal(memo, { onChanged: () => { import('./search-filter.js').then(m => m.filterAndRenderMemos()); } }));

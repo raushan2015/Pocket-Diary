@@ -41,6 +41,10 @@ export interface LocalMemoInput {
   dueDate?: number | null;
   createdAt?: number;
   updatedAt?: number;
+  /** Keep-import extensions */
+  noteType?: 'text' | 'checklist';
+  checklistData?: Array<{ id?: string; text?: string; checked?: boolean; completed?: boolean }>;
+  color?: string;
 }
 
 export interface ImportLocalPayload {
@@ -211,6 +215,19 @@ export function importLocalData(
       const title = m.title ?? '';
       const content = m.content ?? '';
 
+      // Keep-import extensions: checklists arrive as structured items so imported
+      // Keep lists render and behave like native checklists.
+      const rawChecklist = Array.isArray(m.checklistData) ? m.checklistData : null;
+      const checklistData = rawChecklist
+        ? JSON.stringify(rawChecklist.map((item, idx) => ({
+            id: typeof item?.id === 'string' && item.id ? item.id : `imp_chk_${memoId.slice(0, 8)}_${idx}`,
+            text: typeof item?.text === 'string' ? item.text : '',
+            checked: Boolean(item?.checked ?? item?.completed ?? false),
+          })))
+        : '[]';
+      const noteType = m.noteType === 'checklist' || (rawChecklist && rawChecklist.length) ? 'checklist' : 'text';
+      const color = typeof m.color === 'string' && m.color ? m.color : 'default';
+
       // Insert memo
       tx.insert(memos).values({
         id: memoId,
@@ -219,6 +236,9 @@ export function importLocalData(
         categoryId,
         title,
         content,
+        color,
+        noteType,
+        checklistData,
         priority,
         status,
         isFavorite: m.isFavorite ? 1 : 0,

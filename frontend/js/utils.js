@@ -47,14 +47,29 @@ export function showToast(message, type = 'info', duration = 3500) {
 // ==========================================================================
 // Modal Windows Controller
 // ==========================================================================
+
+// Modals can stack (e.g. a confirm dialog on top of the Team modal).
+// Each open brings the newest modal above previously opened ones; the counter
+// resets once every modal is closed so popovers (z-index ~230) stay on top.
+const MODAL_BASE_Z = parseInt(String(getComputedStyle(document.documentElement).getPropertyValue('--z-modal-backdrop')), 10) || 200;
+let modalStackCounter = MODAL_BASE_Z;
+
 export function openModal(modalId) {
   const el = document.getElementById(modalId);
-  if (el) el.classList.add('active');
+  if (!el) return;
+  modalStackCounter += 1;
+  el.style.zIndex = String(modalStackCounter);
+  el.classList.add('active');
 }
 
 export function closeModal(modalId) {
   const el = document.getElementById(modalId);
-  if (el) el.classList.remove('active');
+  if (!el) return;
+  el.classList.remove('active');
+  el.style.zIndex = '';
+  if (!document.querySelector('.modal-backdrop.active')) {
+    modalStackCounter = MODAL_BASE_Z;
+  }
 }
 
 export function showConfirmDialog(title, message, onConfirm) {
@@ -209,61 +224,6 @@ export function canvasToBlob(canvas, mimeType = 'image/png') {
   });
 }
 
-// ==========================================================================
-// Speech-to-Text Recognition
-// ==========================================================================
-let speechRecognitionInstance = null;
-let isListeningSpeech = false;
+// Speech-to-Text Recognition lives in voice-notes.js
+// (English / Japanese language support, continuous dictation, diagnostics).
 
-export function toggleSpeechRecognition(onTranscript, buttonEl) {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    showToast('Speech recognition is not supported in this browser.', 'info', 4000);
-    return;
-  }
-
-  if (isListeningSpeech) {
-    try { speechRecognitionInstance?.stop(); } catch {}
-    isListeningSpeech = false;
-    buttonEl?.classList.remove('active');
-    return;
-  }
-
-  try {
-    speechRecognitionInstance = new SpeechRecognition();
-    speechRecognitionInstance.continuous = false;
-    speechRecognitionInstance.interimResults = false;
-    speechRecognitionInstance.lang = 'en-US';
-
-    speechRecognitionInstance.onstart = () => {
-      isListeningSpeech = true;
-      buttonEl?.classList.add('active');
-      showToast('Listening... Speak now', 'info', 2500);
-    };
-
-    speechRecognitionInstance.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      if (transcript) {
-        onTranscript(transcript);
-        showToast(`Captured: "${transcript}"`, 'success', 2000);
-      }
-    };
-
-    speechRecognitionInstance.onerror = (err) => {
-      console.warn('Speech recognition error:', err);
-      isListeningSpeech = false;
-      buttonEl?.classList.remove('active');
-    };
-
-    speechRecognitionInstance.onend = () => {
-      isListeningSpeech = false;
-      buttonEl?.classList.remove('active');
-    };
-
-    speechRecognitionInstance.start();
-  } catch (err) {
-    console.error('Speech start error:', err);
-    isListeningSpeech = false;
-    buttonEl?.classList.remove('active');
-  }
-}

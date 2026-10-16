@@ -472,4 +472,117 @@ describe('Memos Management API (/api/v1/memos)', () => {
     expect(data.url).toBe('https://example.com/test-article');
     expect(data.title).toBeDefined();
   });
+
+  it('empties the trash: permanently purges all soft-deleted memos for the workspace', async () => {
+    const { workspace, cookieHeader, user } = await createTestUser(app, 'trash-owner@example.com');
+
+    const createMemoTitled = async (title: string) => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/memos',
+        headers: { cookie: cookieHeader },
+        payload: { workspaceId: workspace.id, title, content: 'to be deleted' },
+      });
+      expect(res.statusCode).toBe(201);
+      return res.json().memo as { id: string };
+    };
+
+    const keep = await createMemoTitled('Keeper');
+    const del1 = await createMemoTitled('Doomed one');
+    const del2 = await createMemoTitled('Doomed two');
+
+    // Soft-delete two memos
+    for (const memo of [del1, del2]) {
+      const res = await app.inject({ method: 'DELETE', url: `/api/v1/memos/${memo.id}`, headers: { cookie: cookieHeader } });
+      expect(res.statusCode).toBe(200);
+    }
+
+    // Other-workspace trash must not be touched: create an isolated second user + trashed memo
+    const other = await createTestUser(app, 'other-ws-owner@example.com');
+    const otherMemoRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/memos',
+      headers: { cookie: other.cookieHeader },
+      payload: { workspaceId: other.workspace.id, title: 'Other workspace trashed note', content: 'x' },
+    });
+    const otherMemo = otherMemoRes.json().memo as { id: string };
+    await app.inject({ method: 'DELETE', url: `/api/v1/memos/${otherMemo.id}`, headers: { cookie: other.cookieHeader } });
+
+    // Viewers may not empty the trash
+    const viewer = await createTestUser(app, 'trash-viewer@example.com');
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/workspaces/${workspace.id}/members`,
+      headers: { cookie: cookieHeader },
+      payload: { email: 'trash-viewer@example.com', role: 'viewer' },
+    });
+    const viewerRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/memos/trash?workspaceId=${workspace.id}`,
+      headers: { cookie: viewer.cookieHeader },
+    });
+    expect(viewerRes.statusCode).toBe(403);
+
+    // Empty the trash as the owner
+    const emptyRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/memos/trash?workspaceId=${workspace.id}`,
+      headers: { cookie: cookieHeader },
+    });
+    expect(emptyRes.statusCode).toBe(200);
+    expect(emptyRes.json().deletedCount).toBe(2);
+
+    // Trashed memos are gone hard; the kept memo survives
+    const trashList = await app.inject({
+      method: 'GET',
+      url: `/api/v1/memos?workspaceId=${workspace.id}&deletedOnly=true&limit=100`,
+      headers: { cookie: cookieHeader },
+    });
+    expect(trashList.json().total).toBe(0);
+
+    const activeList = await app.inject({
+      method: 'GET',
+      url: `/api/v1/memos?workspaceId=${workspace.id}&limit=100`,
+      headers: { cookie: cookieHeader },
+    });
+    const activeIds = activeList.json().memos.map((m: any) => m.id);
+    expect(activeIds).toContain(keep.id);
+    expect(activeIds).not.toContain(del1.id);
+    expect(activeIds).not.toContain(del2.id);
+
+    // Version history rows were cascaded away with the purged memos
+    const versionRows = dbCtx.sqlite
+      .prepare('SELECT COUNT(*) AS n FROM memo_versions WHERE memo_id IN (?, ?)')
+      .get(del1.id, del2.id) as { n: number };
+    expect(versionRows.n).toBe(0);
+
+    // The other workspace's trashed memo is untouched
+    const otherTrash = await app.inject({
+      method: 'GET',
+      url: `/api/v1/memos?workspaceId=${other.workspace.id}&deletedOnly=true`,
+      headers: { cookie: other.cookieHeader },
+    });
+    expect(otherTrash.json().total).toBe(1);
+
+    // Emptying again is a safe no-op
+    const reEmpty = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/memos/trash?workspaceId=${workspace.id}`,
+      headers: { cookie: cookieHeader },
+    });
+    expect(reEmpty.statusCode).toBe(200);
+    expect(reEmpty.json().deletedCount).toBe(0);
+
+    // workspaceId is required by schema validation
+    const missingWs = await app.inject({ method: 'DELETE', url: '/api/v1/memos/trash', headers: { cookie: cookieHeader } });
+    expect(missingWs.statusCode).toBe(400);
+
+    // Cross-tenant emptying is rejected
+    const cross = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/memos/trash?workspaceId=${other.workspace.id}`,
+      headers: { cookie: viewer.cookieHeader },
+    });
+    expect(cross.statusCode).toBe(403);
+  });
 });

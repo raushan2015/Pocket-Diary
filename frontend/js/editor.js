@@ -18,8 +18,16 @@ let whiteboardStrokes = [];
 let whiteboardActiveStroke = null;
 let onRefreshWorkspaceCallback = null;
 
+// Aligned with the backend memo content limit (see backend/src/routes/memos.ts).
+const MAX_MEMO_CONTENT_CHARS = 2000000;
+
 export function setEditorRefreshCallback(cb) {
   onRefreshWorkspaceCallback = cb;
+}
+
+function setUnsavedState(dirty) {
+  editorHasUnsavedChanges = dirty;
+  state.set('hasUnsavedChanges', dirty);
 }
 
 export function editorSnapshot() {
@@ -50,12 +58,12 @@ export function scheduleEditorAutosave(immediate = false) {
   if (editorIsHydrating || state.get('currentView') !== 'editor') return;
   const snapshot = editorSnapshot();
   if (snapshot === editorLastSavedSnapshot && state.get('activeMemo')?.id) {
-    editorHasUnsavedChanges = false;
+    setUnsavedState(false);
     setEditorSaveState(`Saved (v${state.get('activeMemo')?.version || 1})`, 'saved');
     clearTimeout(editorAutosaveTimer);
     return;
   }
-  editorHasUnsavedChanges = true;
+  setUnsavedState(true);
   setEditorSaveState('Saving changes…', 'dirty');
   clearTimeout(editorAutosaveTimer);
   editorAutosaveTimer = setTimeout(() => void saveActiveMemo({ quiet: true }), immediate ? 0 : 450);
@@ -68,7 +76,7 @@ export async function flushEditorAutosave() {
   const hasDraft = !!document.getElementById('editor-title-input')?.value.trim()
     || !!document.getElementById('editor-body-textarea')?.value.trim();
   if (hasDraft || memo.id) {
-    if (editorSnapshot() !== editorLastSavedSnapshot) editorHasUnsavedChanges = true;
+    if (editorSnapshot() !== editorLastSavedSnapshot) setUnsavedState(true);
     if (editorHasUnsavedChanges) await saveActiveMemo({ quiet: true });
   }
   if (editorSaveInFlight) await editorSaveInFlight;
@@ -214,13 +222,54 @@ export function toggleWhiteboard() {
 export function clearWhiteboard() { whiteboardStrokes = []; document.getElementById('memo-whiteboard-canvas')?._redraw?.(); }
 export function undoWhiteboardStroke() { whiteboardStrokes.pop(); document.getElementById('memo-whiteboard-canvas')?._redraw?.(); }
 
-export function insertWhiteboardIntoMemo() {
-  const canvas = document.getElementById('memo-whiteboard-canvas'); const textarea = document.getElementById('editor-body-textarea');
+/**
+ * DATA-01 remediation: the whiteboard exports its canvas as a PNG Blob that is
+ * uploaded as a real attachment (`/api/v1/attachments/upload`) and referenced
+ * from the note body with a regular markdown link. Raw base64 data URIs are no
+ * longer embedded into memo content, so autosave never exceeds the memo
+ * content limit and drawings can no longer be lost to a schema rejection.
+ */
+export async function insertWhiteboardIntoMemo() {
+  const canvas = document.getElementById('memo-whiteboard-canvas');
+  const textarea = document.getElementById('editor-body-textarea');
   if (!canvas || !textarea) return;
-  const image = canvas.toDataURL('image/png');
-  if (image.length > 1200000) { showToast('Drawing is too large. Clear or simplify it before inserting.', 'error'); return; }
-  textarea.value += `${textarea.value ? '\n\n' : ''}![Whiteboard](${image})\n`;
-  updateMarkdownLivePreview(); scheduleEditorAutosave(); toggleWhiteboard(); showToast('Whiteboard added to note', 'success');
+
+  let blob = null;
+  try {
+    blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((result) => (result ? resolve(result) : reject(new Error('Canvas export failed'))), 'image/png');
+    });
+  } catch {
+    blob = null;
+  }
+  if (!blob) {
+    showToast('Could not export the drawing. Try simplifying it and try again.', 'error');
+    return;
+  }
+  if (blob.size > 5 * 1024 * 1024) {
+    showToast('Drawing is too large. Clear or simplify it before inserting.', 'error');
+    return;
+  }
+
+  const memo = await ensureMemoDraftExists(textarea);
+  if (!memo?.id) {
+    showToast('Could not initialize note draft. Select a workspace and try again.', 'error');
+    return;
+  }
+
+  const file = new File([blob], `whiteboard_${Date.now()}.png`, { type: 'image/png' });
+  try {
+    showToast('Uploading whiteboard drawing…', 'info', 1500);
+    const res = await api.uploadAttachment(memo.id, file);
+    const att = res?.attachment;
+    if (!att?.url) throw new Error('Upload response missing attachment');
+    insertTextAtCursor(textarea, `![Whiteboard](${att.url})`);
+    toggleWhiteboard();
+    showToast('Whiteboard drawing attached to note', 'success');
+    await renderMemoAttachments(memo.id);
+  } catch (error) {
+    showToast(error.message || 'Failed to attach the whiteboard drawing', 'error', 5000);
+  }
 }
 
 export function insertTextAtCursor(textarea, textToInsert) {
@@ -241,12 +290,13 @@ export function insertTextAtCursor(textarea, textToInsert) {
   scheduleEditorAutosave();
 }
 
-export async function uploadAndInsertImages(files) {
-  if (!files || !files.length) return;
-  const textarea = document.getElementById('editor-body-textarea');
-  if (!state.get('activeMemo')?.id) {
-    await saveActiveMemo({ quiet: true, force: true });
-  }
+/**
+ * Guarantees the editor has a persisted memo to attach files to, creating a
+ * draft (server-side) when the note has never been saved yet.
+ */
+async function ensureMemoDraftExists(textarea) {
+  if (state.get('activeMemo')?.id) return state.get('activeMemo');
+  await saveActiveMemo({ quiet: true, force: true });
   let memo = state.get('activeMemo');
   if (!memo?.id) {
     const activeWs = state.get('activeWorkspace');
@@ -274,6 +324,13 @@ export async function uploadAndInsertImages(files) {
       }
     }
   }
+  return memo;
+}
+
+export async function uploadAndInsertImages(files) {
+  if (!files || !files.length) return;
+  const textarea = document.getElementById('editor-body-textarea');
+  const memo = await ensureMemoDraftExists(textarea);
   if (!memo?.id) {
     showToast('Could not initialize note draft. Select a workspace and try again.', 'error');
     return;
@@ -471,7 +528,7 @@ export function setupEditorEnhancements() {
 
 export function loadMemoIntoEditor(memo) {
   editorIsHydrating = true;
-  editorHasUnsavedChanges = false;
+  setUnsavedState(false);
   clearTimeout(editorAutosaveTimer);
   state.set('activeMemo', memo);
 
@@ -643,7 +700,7 @@ export async function saveActiveMemo(options = {}) {
   const titleText = document.getElementById('editor-title-input')?.value.trim() || '';
   const bodyText = document.getElementById('editor-body-textarea')?.value.trim() || '';
   if (!force && !activeMemo.id && !titleText && !bodyText) {
-    editorHasUnsavedChanges = false;
+    setUnsavedState(false);
     editorLastSavedSnapshot = editorSnapshot();
     setEditorSaveState('New note', 'saved');
     return;
@@ -690,6 +747,15 @@ async function saveActiveMemoImpl({ quiet, outgoingSnapshot }) {
   const isPinned = !!activeMemo.isPinned;
   const normalizedDate = (value) => value == null || value === '' ? null : (typeof value === 'string' && !/^\d+$/.test(value) ? new Date(value).getTime() : Number(value));
 
+  // DATA-01 guard: never silently fail on oversized content — surface a clear
+  // error before the request is sent so the user knows the note needs trimming.
+  if ((content || '').length > MAX_MEMO_CONTENT_CHARS) {
+    setUnsavedState(true);
+    setEditorSaveState('Note too large to save', 'error');
+    showToast(`This note exceeds the ${MAX_MEMO_CONTENT_CHARS.toLocaleString()} character limit (${content.length.toLocaleString()} characters). Remove large embedded images or split the note.`, 'error', 6000);
+    return;
+  }
+
   if (saveBtn) saveBtn.disabled = true;
 
   try {
@@ -705,7 +771,7 @@ async function saveActiveMemoImpl({ quiet, outgoingSnapshot }) {
         && !!activeMemo.isFavorite === isFavorite && !!activeMemo.isPinned === isPinned
         && JSON.stringify(activeMemo.tags || []) === JSON.stringify(tags);
       if (savedTitle === title && savedContent === content && metadataSame) {
-        editorHasUnsavedChanges = false;
+        setUnsavedState(false);
         editorLastSavedSnapshot = outgoingSnapshot;
         setEditorSaveState(`Saved (v${activeMemo.version || 1})`, 'saved');
         if (saveBtn) saveBtn.disabled = false;
@@ -766,7 +832,7 @@ async function saveActiveMemoImpl({ quiet, outgoingSnapshot }) {
     }
   } catch (err) {
     console.error('Error saving memo:', err);
-    editorHasUnsavedChanges = true;
+    setUnsavedState(true);
     setEditorSaveState('Save failed. Retry required.', 'error');
     if (!quiet) showToast(err.message || 'Failed to save memo', 'error', 5000);
     if (err.status === 409) {
@@ -777,7 +843,7 @@ async function saveActiveMemoImpl({ quiet, outgoingSnapshot }) {
           conflictMsg.innerHTML = `<strong>Version Conflict:</strong> Memo was modified in another session (current version: ${err.data?.currentVersion || 'new'}).`;
         }
       }
-      editorHasUnsavedChanges = true;
+      setUnsavedState(true);
       setEditorSaveState('Conflict. Review latest version.', 'error');
       if (!quiet) showToast('Conflict: memo was modified concurrently. Please reload.', 'error', 4000);
     } else {
@@ -788,11 +854,11 @@ async function saveActiveMemoImpl({ quiet, outgoingSnapshot }) {
   }
 
   if (editorSnapshot() === outgoingSnapshot && !conflictAlert?.classList.contains('active')) {
-    editorHasUnsavedChanges = false;
+    setUnsavedState(false);
     editorLastSavedSnapshot = editorSnapshot();
     setEditorSaveState(`Saved · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, 'saved');
   } else {
-    editorHasUnsavedChanges = true;
+    setUnsavedState(true);
     setEditorSaveState('Saving newer edits…', 'dirty');
     clearTimeout(editorAutosaveTimer);
     editorAutosaveTimer = setTimeout(() => void saveActiveMemo({ quiet: true }), 100);

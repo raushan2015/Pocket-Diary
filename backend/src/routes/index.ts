@@ -7,6 +7,10 @@ import { tagRoutes } from './tags.js';
 import { folderRoutes } from './folders.js';
 import { migrationRoutes } from './migration.js';
 import { attachmentRoutes } from './attachments.js';
+import { notificationRoutes } from './notifications.js';
+import { pushRoutes } from './push.js';
+import { inviteRoutes } from './invites.js';
+import { systemRoutes } from './system.js';
 
 export const apiRoutes: FastifyPluginAsync = async (fastify) => {
   // Health check route
@@ -37,4 +41,14 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
 
   // Server-backed note attachments
   await fastify.register(attachmentRoutes, { prefix: '/attachments' });
+
+  // Server-side reminder notifications + Web Push
+  await fastify.register(notificationRoutes, { prefix: '/notifications' });
+  await fastify.register(pushRoutes, { prefix: '/push' });
+
+  // Workspace invitations (public lookup + authenticated accept)
+  await fastify.register(inviteRoutes, { prefix: '/invites' });
+
+  // Self-hosted system status (backup snapshots)
+  await fastify.register(systemRoutes, { prefix: '/system' });
 };

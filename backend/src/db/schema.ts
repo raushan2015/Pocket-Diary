@@ -9,6 +9,8 @@ export const users = sqliteTable('users', {
   avatarUrl: text('avatar_url'),
   timezone: text('timezone').notNull().default('UTC'),
   status: text('status').notNull().default('active'), // active, suspended, pending_verification
+  /** Instance administrator flag — the first registered user on the instance. Admins can view system telemetry (backup status). */
+  isInstanceAdmin: integer('is_instance_admin').notNull().default(0),
   createdAt: integer('created_at').notNull(), // Unix epoch ms
   updatedAt: integer('updated_at').notNull(),
 });
@@ -176,6 +178,83 @@ export const attachments = sqliteTable('attachments', {
   createdAt: integer('created_at').notNull(),
 });
 
+// 12. Server-side Reminder Notifications
+export const notifications = sqliteTable('notifications', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  workspaceId: text('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  memoId: text('memo_id')
+    .notNull()
+    .references(() => memos.id, { onDelete: 'cascade' }),
+  type: text('type').notNull().default('reminder'), // reminder
+  title: text('title').notNull(),
+  body: text('body'),
+  reminderTime: integer('reminder_time'),
+  emailSentAt: integer('email_sent_at'),
+  pushSentAt: integer('push_sent_at'),
+  readAt: integer('read_at'),
+  createdAt: integer('created_at').notNull(),
+}, (table) => [
+  uniqueIndex('idx_notifications_dedup').on(table.userId, table.memoId, table.reminderTime),
+  index('idx_notifications_user_read').on(table.userId, table.readAt),
+  index('idx_notifications_created_at').on(table.createdAt),
+]);
+
+// 13. Web Push Subscriptions (per user, per browser)
+export const pushSubscriptions = sqliteTable('push_subscriptions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  createdAt: integer('created_at').notNull(),
+}, (table) => [
+  index('idx_push_subscriptions_user_id').on(table.userId),
+]);
+
+// 14. Workspace Invitations
+export const workspaceInvites = sqliteTable('workspace_invites', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  email: text('email').notNull(),
+  role: text('role').notNull().default('editor'), // viewer, editor, admin
+  token: text('token').notNull().unique(),
+  status: text('status').notNull().default('pending'), // pending, accepted, revoked
+  invitedBy: text('invited_by')
+    .notNull()
+    .references(() => users.id),
+  emailSentAt: integer('email_sent_at'),
+  expiresAt: integer('expires_at').notNull(),
+  createdAt: integer('created_at').notNull(),
+}, (table) => [
+  index('idx_workspace_invites_workspace').on(table.workspaceId, table.status),
+  index('idx_workspace_invites_email').on(table.email),
+]);
+
+// 15. Password Reset Tokens
+// Stores a SHA-256 hash of the one-time reset token emailed to the user;
+// the raw token itself is never persisted.
+export const passwordResets = sqliteTable('password_resets', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: integer('expires_at').notNull(),
+  usedAt: integer('used_at'),
+  createdAt: integer('created_at').notNull(),
+}, (table) => [
+  index('idx_password_resets_user_id').on(table.userId),
+]);
+
 // Type definitions inferred from schema
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -209,3 +288,15 @@ export type NewMemoVersion = typeof memoVersions.$inferInsert;
 
 export type Attachment = typeof attachments.$inferSelect;
 export type NewAttachment = typeof attachments.$inferInsert;
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
+
+export type WorkspaceInvite = typeof workspaceInvites.$inferSelect;
+export type NewWorkspaceInvite = typeof workspaceInvites.$inferInsert;
+
+export type PasswordReset = typeof passwordResets.$inferSelect;
+export type NewPasswordReset = typeof passwordResets.$inferInsert;

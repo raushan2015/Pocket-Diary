@@ -4,8 +4,80 @@ import {
   getUserWorkspaces,
   createWorkspace,
   verifyWorkspaceMembership,
+  removeWorkspaceMember,
+  changeMemberRole,
   WorkspaceAccessError,
 } from '../services/workspace.service.js';
+import {
+  createInvite,
+  sendInviteEmail,
+  listInvites,
+  revokeInvite,
+  InviteError,
+} from '../services/invite.service.js';
+import { isEmailEnabled } from '../services/mailer.service.js';
+
+const createWorkspaceSchema = {
+  body: {
+    type: 'object',
+    required: ['name'],
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 120 },
+      slug: { type: 'string', minLength: 1, maxLength: 80 },
+    },
+    additionalProperties: false,
+  },
+};
+
+const updateWorkspaceSchema = {
+  body: {
+    type: 'object',
+    required: ['name'],
+    properties: { name: { type: 'string', minLength: 1, maxLength: 120 } },
+    additionalProperties: false,
+  },
+};
+
+const addMemberSchema = {
+  body: {
+    type: 'object',
+    required: ['email'],
+    properties: {
+      email: { type: 'string', minLength: 3, maxLength: 254 },
+      role: { type: 'string', enum: ['admin', 'editor', 'viewer'] },
+    },
+    additionalProperties: false,
+  },
+};
+
+const changeRoleSchema = {
+  body: {
+    type: 'object',
+    required: ['role'],
+    properties: { role: { type: 'string', enum: ['admin', 'editor', 'viewer'] } },
+    additionalProperties: false,
+  },
+};
+
+const createInviteSchema = {
+  body: {
+    type: 'object',
+    required: ['email'],
+    properties: {
+      email: { type: 'string', minLength: 3, maxLength: 254 },
+      role: { type: 'string', enum: ['admin', 'editor', 'viewer'] },
+    },
+    additionalProperties: false,
+  },
+};
+
+/** Public base URL used in invitation links. */
+function resolveAppUrl(): string {
+  const configured = process.env.APP_URL?.trim();
+  if (configured) return configured.replace(/\/$/, '');
+  const port = Number(process.env.FRONTEND_PORT ?? process.env.PORT ?? 8080);
+  return `http://localhost:${port}`;
+}
 
 export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -18,7 +90,9 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/workspaces
-  fastify.post<{ Body: { name?: string; slug?: string } }>('/', async (request, reply) => {
+  fastify.post<{ Body: { name?: string; slug?: string } }>('/', {
+    schema: createWorkspaceSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const { name, slug } = request.body || {};
@@ -91,7 +165,9 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // PATCH /api/v1/workspaces/:id
-  fastify.patch<{ Params: { id: string }; Body: { name?: string } }>('/:id', async (request, reply) => {
+  fastify.patch<{ Params: { id: string }; Body: { name?: string } }>('/:id', {
+    schema: updateWorkspaceSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const workspaceId = request.params.id;
@@ -162,7 +238,9 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/workspaces/:id/members
-  fastify.post<{ Params: { id: string }; Body: { email?: string; role?: string } }>('/:id/members', async (request, reply) => {
+  fastify.post<{ Params: { id: string }; Body: { email?: string; role?: string } }>('/:id/members', {
+    schema: addMemberSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const workspaceId = request.params.id;
@@ -304,6 +382,134 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
         error: 'Internal Server Error',
         message: 'Failed to retrieve workspace activities',
       });
+    }
+  });
+
+
+  // DELETE /api/v1/workspaces/:id/members/:userId — remove a member
+  fastify.delete<{ Params: { id: string; userId: string } }>('/:id/members/:userId', async (request, reply) => {
+    try {
+      const user = request.user!;
+      const { id, userId } = request.params;
+      removeWorkspaceMember(fastify.dbCtx.db, user.id, id, userId);
+      return reply.status(200).send({ success: true });
+    } catch (err: unknown) {
+      if (err instanceof WorkspaceAccessError) {
+        return reply.status(err.statusCode).send({
+          error: err.statusCode === 404 ? 'Not Found' : 'Forbidden',
+          message: err.message,
+        });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to remove member' });
+    }
+  });
+
+  // PATCH /api/v1/workspaces/:id/members/:userId — change a member's role
+  fastify.patch<{ Params: { id: string; userId: string }; Body: { role?: string } }>('/:id/members/:userId', {
+    schema: changeRoleSchema,
+  }, async (request, reply) => {
+    try {
+      const user = request.user!;
+      const { id, userId } = request.params;
+      const role = request.body?.role;
+      if (!role) {
+        return reply.status(400).send({ error: 'Bad Request', message: 'role is required' });
+      }
+      const result = changeMemberRole(fastify.dbCtx.db, user.id, id, userId, role);
+      return reply.status(200).send({ member: result });
+    } catch (err: unknown) {
+      if (err instanceof WorkspaceAccessError) {
+        return reply.status(err.statusCode).send({
+          error: err.statusCode === 404 ? 'Not Found' : 'Forbidden',
+          message: err.message,
+        });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to change member role' });
+    }
+  });
+
+  // POST /api/v1/workspaces/:id/invites — create (or refresh) an invitation
+  fastify.post<{ Params: { id: string }; Body: { email?: string; role?: string } }>('/:id/invites', {
+    schema: createInviteSchema,
+  }, async (request, reply) => {
+    try {
+      const user = request.user!;
+      const workspaceId = request.params.id;
+      const { email, role = 'editor' } = request.body || {};
+      verifyWorkspaceMembership(fastify.dbCtx.db, user.id, workspaceId, ['owner', 'admin']);
+
+      const result = createInvite(fastify.dbCtx, {
+        workspaceId,
+        email: email ?? '',
+        role,
+        invitedByUserId: user.id,
+        appUrl: resolveAppUrl(),
+      });
+
+      const emailSent = await sendInviteEmail(fastify.dbCtx, { inviteId: result.invite.id, appUrl: resolveAppUrl() });
+
+      return reply.status(201).send({
+        invite: { ...result.invite, emailSent },
+        inviteUrl: result.inviteUrl,
+        emailDelivery: isEmailEnabled() ? (emailSent ? 'sent' : 'failed') : 'disabled',
+      });
+    } catch (err: unknown) {
+      if (err instanceof InviteError) {
+        return reply.status(err.statusCode).send({ error: 'Invitation Error', message: err.message });
+      }
+      if (err instanceof WorkspaceAccessError) {
+        return reply.status(err.statusCode).send({
+          error: err.statusCode === 404 ? 'Not Found' : 'Forbidden',
+          message: err.message,
+        });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to create invitation' });
+    }
+  });
+
+  // GET /api/v1/workspaces/:id/invites — list invitations for the workspace
+  fastify.get<{ Params: { id: string } }>('/:id/invites', async (request, reply) => {
+    try {
+      const user = request.user!;
+      const workspaceId = request.params.id;
+      verifyWorkspaceMembership(fastify.dbCtx.db, user.id, workspaceId);
+      const invites = listInvites(fastify.dbCtx, workspaceId);
+      return reply.status(200).send({ invites });
+    } catch (err: unknown) {
+      if (err instanceof WorkspaceAccessError) {
+        return reply.status(err.statusCode).send({
+          error: err.statusCode === 404 ? 'Not Found' : 'Forbidden',
+          message: err.message,
+        });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to list invitations' });
+    }
+  });
+
+  // DELETE /api/v1/workspaces/:id/invites/:inviteId — revoke a pending invitation
+  fastify.delete<{ Params: { id: string; inviteId: string } }>('/:id/invites/:inviteId', async (request, reply) => {
+    try {
+      const user = request.user!;
+      const { id, inviteId } = request.params;
+      verifyWorkspaceMembership(fastify.dbCtx.db, user.id, id, ['owner', 'admin']);
+      const revoked = revokeInvite(fastify.dbCtx, id, inviteId);
+      if (!revoked) {
+        return reply.status(404).send({ error: 'Not Found', message: 'Pending invitation not found' });
+      }
+      return reply.status(200).send({ success: true });
+    } catch (err: unknown) {
+      if (err instanceof WorkspaceAccessError) {
+        return reply.status(err.statusCode).send({
+          error: err.statusCode === 404 ? 'Not Found' : 'Forbidden',
+          message: err.message,
+        });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to revoke invitation' });
     }
   });
 };

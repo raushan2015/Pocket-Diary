@@ -5,7 +5,24 @@
 
 // The frontend server proxies /api/* to Fastify. Use same-origin requests so
 // sessions work from localhost, LAN hosts, reverse proxies, and production domains.
+import { broadcastSync } from './keep-sync.js';
+
 const API_BASE = window.__API_BASE__ !== undefined ? window.__API_BASE__ : '';
+
+/**
+ * ARCH-01 remediation: every successful memo mutation is broadcast to sibling
+ * tabs so their lists, versions and card states stay in sync in real time.
+ * (The read-only link-preview endpoint is intentionally excluded.)
+ */
+const MEMO_MUTATION_ENDPOINT = /^\/api\/v1\/memos(\/[^/?]+)?\/?$/;
+
+function broadcastMemoMutation(endpoint, method) {
+  if (method !== 'POST' && method !== 'PATCH' && method !== 'DELETE') return;
+  const path = String(endpoint).split('?')[0].replace(/\/+$/, '');
+  if (!MEMO_MUTATION_ENDPOINT.test(path)) return;
+  if (path === '/api/v1/memos/link-preview') return;
+  broadcastSync('memos_changed');
+}
 
 class ApiClient {
   constructor(baseUrl = API_BASE) {
@@ -25,6 +42,7 @@ class ApiClient {
     const config = {
       ...options,
       credentials: 'include', // Ensures HTTP-only cookie 'memo_session' is transmitted
+      cache: 'no-store', // API responses are session-scoped; never serve stale cache
       headers: {
         ...defaultHeaders,
         ...(options.headers || {}),
@@ -49,6 +67,9 @@ class ApiClient {
         throw error;
       }
 
+      // Keep open sibling tabs in sync after any memo change (ARCH-01).
+      broadcastMemoMutation(endpoint, options.method);
+
       return data;
     } catch (err) {
       if (err.name === 'TypeError' && err.message.includes('fetch')) {
@@ -67,13 +88,14 @@ class ApiClient {
   // ==========================================
 
   /**
-   * Register new user account
+   * Register new user account. When registering through a workspace invitation
+   * link, `inviteToken` auto-joins the invited workspace at account creation.
    * POST /api/v1/auth/register
    */
-  async register({ email, password, name }) {
+  async register({ email, password, name, inviteToken }) {
     return this.request('/api/v1/auth/register', {
       method: 'POST',
-      body: { email, password, name },
+      body: inviteToken ? { email, password, name, inviteToken } : { email, password, name },
     });
   }
 
@@ -96,6 +118,17 @@ class ApiClient {
     return this.request('/api/v1/auth/forgot-password', {
       method: 'POST',
       body: { email },
+    });
+  }
+
+  /**
+   * Complete password recovery with a one-time reset token
+   * POST /api/v1/auth/reset-password
+   */
+  async resetPassword(token, newPassword) {
+    return this.request('/api/v1/auth/reset-password', {
+      method: 'POST',
+      body: { token, newPassword },
     });
   }
 
@@ -127,6 +160,57 @@ class ApiClient {
   async getMe() {
     return this.request('/api/v1/auth/me', {
       method: 'GET',
+    });
+  }
+
+  /** List active sessions for the current user. */
+  async listSessions() {
+    return this.request('/api/v1/auth/sessions', { method: 'GET' });
+  }
+
+  /** Sign out every session except the current one. */
+  async revokeOtherSessions() {
+    return this.request('/api/v1/auth/sessions/revoke', { method: 'POST' });
+  }
+
+  // ==========================================
+  // Server-side Reminder Notifications (§ Web Push)
+  // ==========================================
+
+  /** List the signed-in user's reminder notifications. */
+  async listNotifications(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/api/v1/notifications${query ? `?${query}` : ''}`, { method: 'GET' });
+  }
+
+  /** Mark one notification read. */
+  async markNotificationRead(id) {
+    return this.request(`/api/v1/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+  }
+
+  /** Mark every notification read. */
+  async markAllNotificationsRead() {
+    return this.request('/api/v1/notifications/read-all', { method: 'POST' });
+  }
+
+  /** Get the VAPID public key (enabled:false when push is unconfigured). */
+  async getPushPublicKey() {
+    return this.request('/api/v1/push/public-key', { method: 'GET' });
+  }
+
+  /** Register this browser for push notifications. */
+  async pushSubscribe(subscription) {
+    return this.request('/api/v1/push/subscribe', {
+      method: 'POST',
+      body: subscription,
+    });
+  }
+
+  /** Remove a push subscription (e.g. on pushsubscriptionchange). */
+  async pushUnsubscribe(endpoint) {
+    return this.request('/api/v1/push/unsubscribe', {
+      method: 'POST',
+      body: { endpoint },
     });
   }
 
@@ -195,6 +279,56 @@ class ApiClient {
       method: 'POST',
       body: { email, role },
     });
+  }
+
+  /** Remove a member from a workspace. */
+  async removeWorkspaceMember(workspaceId, userId) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /** Change a member's role. */
+  async changeMemberRole(workspaceId, userId, role) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: { role },
+    });
+  }
+
+  /**
+   * Workspace invitations
+   */
+  async createWorkspaceInvite(workspaceId, { email, role }) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invites`, {
+      method: 'POST',
+      body: { email, role },
+    });
+  }
+
+  async listWorkspaceInvites(workspaceId) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invites`, { method: 'GET' });
+  }
+
+  async revokeWorkspaceInvite(workspaceId, inviteId) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invites/${encodeURIComponent(inviteId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /** Public lookup: invite context for the auth screen. */
+  async lookupInvite(token) {
+    return this.request(`/api/v1/invites/${encodeURIComponent(token)}`, { method: 'GET' });
+  }
+
+  /** Accept an invitation as the signed-in user. */
+  async acceptInvite(token) {
+    return this.request(`/api/v1/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' });
+  }
+
+  /** Self-hosted backup snapshot status. */
+  async getBackupStatus() {
+    return this.request('/api/v1/system/backup-status', { method: 'GET' });
   }
 
   /**
@@ -271,6 +405,16 @@ class ApiClient {
   async restoreMemo(id) {
     return this.request(`/api/v1/memos/${encodeURIComponent(id)}/restore`, {
       method: 'POST',
+    });
+  }
+
+  /**
+   * Permanently delete every soft-deleted memo (Empty Trash)
+   * DELETE /api/v1/memos/trash?workspaceId=...
+   */
+  async emptyTrash(workspaceId) {
+    return this.request(`/api/v1/memos/trash?workspaceId=${encodeURIComponent(workspaceId)}`, {
+      method: 'DELETE',
     });
   }
 

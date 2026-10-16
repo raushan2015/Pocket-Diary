@@ -26,6 +26,38 @@ interface CreateTagBody {
 
 interface UpdateTagBody { name?: string; workspaceId?: string; }
 
+const tagQuerySchema = {
+  querystring: {
+    type: 'object',
+    required: ['workspaceId'],
+    properties: { workspaceId: { type: 'string', minLength: 1, maxLength: 64 } },
+    additionalProperties: false,
+  },
+};
+
+const createTagSchema = {
+  body: {
+    type: 'object',
+    required: ['workspaceId', 'name'],
+    properties: {
+      workspaceId: { type: 'string', minLength: 1, maxLength: 64 },
+      name: { type: 'string', minLength: 1, maxLength: 80 },
+    },
+    additionalProperties: false,
+  },
+};
+
+const updateTagSchema = {
+  body: {
+    type: 'object',
+    properties: {
+      workspaceId: { type: 'string', maxLength: 64 },
+      name: { type: 'string', minLength: 1, maxLength: 80 },
+    },
+    additionalProperties: false,
+  },
+};
+
 export const tagRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
 
@@ -40,7 +72,9 @@ export const tagRoutes: FastifyPluginAsync = async (fastify) => {
   };
 
   // GET /api/v1/tags
-  fastify.get<{ Querystring: TagQuery }>('/', async (request, reply) => {
+  fastify.get<{ Querystring: TagQuery }>('/', {
+    schema: tagQuerySchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const { workspaceId } = request.query;
@@ -72,7 +106,9 @@ export const tagRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/tags
-  fastify.post<{ Body: CreateTagBody }>('/', async (request, reply) => {
+  fastify.post<{ Body: CreateTagBody }>('/', {
+    schema: createTagSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const body = request.body || {};
@@ -104,7 +140,9 @@ export const tagRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // PATCH /api/v1/tags/:id
-  fastify.patch<{ Params: TagParams; Body: UpdateTagBody }>('/:id', async (request, reply) => {
+  fastify.patch<{ Params: TagParams; Body: UpdateTagBody }>('/:id', {
+    schema: updateTagSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const workspaceId = request.body?.workspaceId || getTagWorkspaceId(request.params.id);

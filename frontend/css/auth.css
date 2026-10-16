@@ -294,3 +294,118 @@
     padding: 2.5rem 1.5rem;
   }
 }
+
+/* ==========================================================================
+   Register / password upgrade: strength meter, requirements, caps lock, invite
+   ========================================================================== */
+
+.password-strength-meter {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.password-strength-bars {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.password-strength-bars span {
+  height: 4px;
+  flex: 1;
+  border-radius: 2px;
+  background-color: var(--bg-subtle, #e5e7eb);
+  transition: background-color 0.25s ease;
+}
+
+.password-strength-bars span.active {
+  background-color: var(--strength-color, #ef4444);
+}
+
+.password-strength-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--strength-color, var(--text-muted));
+  white-space: nowrap;
+}
+
+.password-requirements {
+  display: flex;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.password-requirements span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.password-requirements .req-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
+.password-requirements span.met .req-icon {
+  background-color: var(--color-green);
+  border-color: var(--color-green);
+  color: #fff;
+}
+
+.password-requirements span.met {
+  color: var(--color-green);
+}
+
+.caps-lock-warning {
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  color: #b45309;
+  background: rgba(251, 188, 4, 0.15);
+  border: 1px solid rgba(251, 188, 4, 0.4);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+}
+
+[data-theme="dark"] .caps-lock-warning {
+  color: #fbbf24;
+}
+
+.auth-invite-banner {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  background: var(--color-primary-50, #eef2ff);
+  border: 1px solid var(--color-primary-200, #c7d2fe);
+  color: var(--color-primary-700, #4338ca);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.auth-invite-banner .invite-icon {
+  font-size: 1.3rem;
+}
+
+.auth-invite-banner strong {
+  display: block;
+}
+
+.auth-invite-banner.invalid {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #b91c1c;
+}

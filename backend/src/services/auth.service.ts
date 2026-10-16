@@ -36,7 +36,7 @@ export function generateSessionToken(): string {
 export async function registerUser(
   db: DatabaseContext['db'],
   data: { email: string; password: string; name: string; ipAddress?: string; userAgent?: string }
-): Promise<{ user: { id: string; email: string; name: string }; workspace: { id: string; name: string; slug: string }; sessionToken: string }> {
+): Promise<{ user: { id: string; email: string; name: string; createdAt: number }; workspace: { id: string; name: string; slug: string }; sessionToken: string }> {
   const normalizedEmail = data.email.trim().toLowerCase();
 
   // Validate format
@@ -69,6 +69,11 @@ export async function registerUser(
   const slug = `personal-${userId.slice(0, 8)}`;
   const workspaceName = 'Personal';
 
+  // The very first account created on an instance becomes the instance
+  // administrator (self-hosted bootstrap owner). Admins can access system
+  // telemetry such as backup status (see /api/v1/system/*).
+  const isFirstUser = db.select({ id: users.id }).from(users).limit(1).get() === undefined;
+
   // Insert within transaction
   db.transaction((tx) => {
     // 1. Create user
@@ -79,6 +84,7 @@ export async function registerUser(
       name: data.name.trim(),
       timezone: 'UTC',
       status: 'active',
+      isInstanceAdmin: isFirstUser ? 1 : 0,
       createdAt: now,
       updatedAt: now,
     }).run();
@@ -118,6 +124,7 @@ export async function registerUser(
       id: userId,
       email: normalizedEmail,
       name: data.name.trim(),
+      createdAt: now,
     },
     workspace: {
       id: workspaceId,
@@ -131,7 +138,7 @@ export async function registerUser(
 export async function loginUser(
   db: DatabaseContext['db'],
   data: { email: string; password: string; ipAddress?: string; userAgent?: string }
-): Promise<{ user: { id: string; email: string; name: string }; activeWorkspace: { id: string; name: string }; sessionToken: string }> {
+): Promise<{ user: { id: string; email: string; name: string; createdAt: number }; activeWorkspace: { id: string; name: string }; sessionToken: string }> {
   const normalizedEmail = data.email.trim().toLowerCase();
 
   if (!normalizedEmail || !data.password) {
@@ -179,6 +186,7 @@ export async function loginUser(
       id: user.id,
       email: user.email,
       name: user.name,
+      createdAt: Number(user.createdAt),
     },
     activeWorkspace: {
       id: activeWorkspace?.id ?? '',

@@ -6,8 +6,9 @@
 import { api } from './api.js';
 import { state } from './state.js';
 import { escapeHtml } from './markdown.js';
-import { showToast, triggerImagePicker, toggleSpeechRecognition, checkAndAddLinkPreview, extractImageFilesFromEvent } from './utils.js';
-import { openPalettePopover, openReminderPopover, applyQuickCapturePalette } from './keep-popovers.js';
+import { showToast, triggerImagePicker, checkAndAddLinkPreview, extractImageFilesFromEvent } from './utils.js';
+import { toggleSpeechRecognition } from './voice-notes.js';
+import { openPalettePopover, openReminderPopover, applyQuickCapturePalette, openLabelsPickerPopover } from './keep-popovers.js';
 import { openKeepDrawingModal } from './keep-drawing.js';
 
 export let quickCaptureDraft = {
@@ -164,6 +165,17 @@ export function setupKeepQuickCapture(callbacks = {}) {
     }
   });
 
+  // DATA-03: a draft with any content is unsaved work — mark it so the global
+  // beforeunload guard warns before a refresh/close discards it.
+  const markQuickCaptureDirty = () => {
+    const hasAny = !!(document.getElementById('quick-capture-title')?.value.trim() || contentTextarea?.value.trim()
+      || (quickCaptureDraft.checklistData || []).length || (quickCaptureDraft.pendingFiles || []).length);
+    state.set('hasUnsavedChanges', hasAny);
+  };
+  document.getElementById('quick-capture-title')?.addEventListener('input', markQuickCaptureDirty);
+  contentTextarea?.addEventListener('input', markQuickCaptureDirty);
+  checklistAddInput?.addEventListener('input', markQuickCaptureDirty);
+
   document.getElementById('qc-tool-palette')?.addEventListener('click', (e) => {
     e.stopPropagation();
     openPalettePopover(document.getElementById('qc-tool-palette'), quickCaptureDraft);
@@ -173,6 +185,13 @@ export function setupKeepQuickCapture(callbacks = {}) {
     e.stopPropagation();
     openReminderPopover(document.getElementById('qc-tool-reminder'), quickCaptureDraft, () => {
       renderQuickCaptureReminderChip();
+    });
+  });
+
+  document.getElementById('qc-tool-labels')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openLabelsPickerPopover(document.getElementById('qc-tool-labels'), quickCaptureDraft, () => {
+      renderQuickCaptureLabelsChips();
     });
   });
 
@@ -326,11 +345,12 @@ export function renderQuickCaptureLinks() {
   }
   container.style.display = 'flex';
   container.innerHTML = links.map((lp) => {
+    const lpImage = lp.image || lp.imageUrl || lp.faviconUrl || '';
     let domain = '';
     try { domain = new URL(lp.url).hostname; } catch {}
     return `
       <a href="${escapeHtml(lp.url)}" target="_blank" rel="noopener noreferrer" class="keep-link-card">
-        ${lp.image ? `<img src="${escapeHtml(lp.image)}" class="keep-link-thumb" alt="">` : ''}
+        ${lpImage ? `<img src="${escapeHtml(lpImage)}" class="keep-link-thumb" alt="">` : ''}
         <div class="keep-link-info">
           <span class="keep-link-title">${escapeHtml(lp.title || lp.url)}</span>
           <span class="keep-link-domain">${escapeHtml(domain || lp.url)}</span>
@@ -338,6 +358,33 @@ export function renderQuickCaptureLinks() {
       </a>
     `;
   }).join('');
+}
+
+export function renderQuickCaptureLabelsChips() {
+  const chipsRow = document.getElementById('qc-composer-chips');
+  const labelsContainer = document.getElementById('qc-labels-chips');
+  if (!chipsRow || !labelsContainer) return;
+
+  const tags = quickCaptureDraft.tags || [];
+  labelsContainer.innerHTML = tags.map((tag) => `
+    <span class="keep-chip-pill">
+      <span>#${escapeHtml(tag)}</span>
+      <button type="button" class="keep-chip-clear" data-qc-label-remove="${escapeHtml(tag)}" aria-label="Remove label ${escapeHtml(tag)}">&times;</button>
+    </span>
+  `).join('');
+
+  labelsContainer.querySelectorAll('[data-qc-label-remove]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const name = btn.dataset.qcLabelRemove.toLowerCase();
+      quickCaptureDraft.tags = (quickCaptureDraft.tags || []).filter((t) => String(t).trim().toLowerCase() !== name);
+      renderQuickCaptureLabelsChips();
+    });
+  });
+
+  const reminderChip = document.getElementById('qc-reminder-chip');
+  const hasVisibleChip = tags.length > 0 || (reminderChip && reminderChip.style.display !== 'none');
+  chipsRow.style.display = hasVisibleChip ? 'flex' : 'none';
 }
 
 export function renderQuickCaptureReminderChip() {
@@ -355,7 +402,7 @@ export function renderQuickCaptureReminderChip() {
     chipsRow.style.display = 'flex';
   } else {
     chip.style.display = 'none';
-    if (!chipsRow.querySelector('#qc-labels-chips')?.children.length) {
+    if (!(quickCaptureDraft.tags || []).length) {
       chipsRow.style.display = 'none';
     }
   }
@@ -367,6 +414,7 @@ export function resetQuickCaptureDraft() {
       try { URL.revokeObjectURL(item.previewUrl); } catch {}
     }
   });
+  state.set('hasUnsavedChanges', false);
 
   quickCaptureDraft = {
     title: '',
@@ -393,6 +441,7 @@ export function resetQuickCaptureDraft() {
   renderQuickCaptureAttachments();
   renderQuickCaptureLinks();
   renderQuickCaptureReminderChip();
+  renderQuickCaptureLabelsChips();
   applyQuickCapturePalette(quickCaptureDraft);
 }
 
@@ -417,7 +466,6 @@ export async function saveQuickCaptureDraft() {
     return;
   }
 
-  const categories = state.get('categories') || [];
   const folderId = state.get('activeFilter')?.type === 'folder' ? state.get('activeFilter').value : null;
   const fallbackTitle = (content || (checklistData[0]?.text) || 'Untitled Note').split(/\s+/).slice(0, 6).join(' ');
 
@@ -433,7 +481,8 @@ export async function saveQuickCaptureDraft() {
     theme: quickCaptureDraft.theme || 'none',
     isPinned: !!quickCaptureDraft.isPinned,
     isArchived: !!quickCaptureDraft.isArchived,
-    categoryId: categories[0]?.id || null,
+    tags: quickCaptureDraft.tags || [],
+    categoryId: null,
     folderId,
     priority: 'medium',
     status: 'pending'

@@ -33,6 +33,8 @@ export function setupKeepLightbox(callbacks = {}) {
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal.classList.contains('active')) {
+      // The lightbox overlays the Keep modal: keep Escape scoped to the lightbox only.
+      e.stopImmediatePropagation();
       closeLightbox();
     }
   });

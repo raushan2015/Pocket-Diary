@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_url TEXT,
   timezone TEXT NOT NULL DEFAULT 'UTC',
   status TEXT NOT NULL DEFAULT 'active',
+  is_instance_admin INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -129,6 +130,59 @@ CREATE TABLE IF NOT EXISTS attachments (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  memo_id TEXT NOT NULL REFERENCES memos(id) ON DELETE CASCADE,
+  type TEXT NOT NULL DEFAULT 'reminder',
+  title TEXT NOT NULL,
+  body TEXT,
+  reminder_time INTEGER,
+  email_sent_at INTEGER,
+  push_sent_at INTEGER,
+  read_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_dedup ON notifications(user_id, memo_id, reminder_time);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read_at);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id);
+
+CREATE TABLE IF NOT EXISTS workspace_invites (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'editor',
+  token TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  invited_by TEXT NOT NULL REFERENCES users(id),
+  email_sent_at INTEGER,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_invites_workspace ON workspace_invites(workspace_id, status);
+CREATE INDEX IF NOT EXISTS idx_workspace_invites_email ON workspace_invites(email);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);
+
 -- Full-Text Search 5 (FTS5) Virtual Table & Triggers
 CREATE VIRTUAL TABLE IF NOT EXISTS memos_fts USING fts5(
   title,
@@ -174,6 +228,19 @@ export function runMigrations(sqlite: Database.Database): void {
     if (!existingNames.has(col.name)) {
       sqlite.exec(col.def);
     }
+  }
+
+  // Users table additive migration: instance administrator flag (SEC-03).
+  const userColumns = sqlite.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+  if (!userColumns.some((col) => col.name === 'is_instance_admin')) {
+    sqlite.exec('ALTER TABLE users ADD COLUMN is_instance_admin INTEGER NOT NULL DEFAULT 0');
+  }
+  // Guarantee exactly one instance admin exists: the earliest registered user.
+  const adminCount = sqlite.prepare('SELECT COUNT(*) AS n FROM users WHERE is_instance_admin = 1').get() as { n: number };
+  if (Number(adminCount?.n ?? 0) === 0) {
+    sqlite.exec(
+      'UPDATE users SET is_instance_admin = 1 WHERE id = (SELECT id FROM users ORDER BY created_at ASC, rowid ASC LIMIT 1)'
+    );
   }
 
   try {

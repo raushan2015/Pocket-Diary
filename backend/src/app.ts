@@ -20,6 +20,16 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
       level: config.isProduction ? 'info' : 'info',
     },
     trustProxy: true,
+    // JSON API body budget. Memo content may embed imported images as data
+    // URIs (see /api/v1/memos content limit); 8 MB keeps every valid note well
+    // within reach while still bounding request sizes.
+    bodyLimit: 8 * 1024 * 1024,
+    ajv: {
+      customOptions: {
+        // Schemas use type unions (e.g. ['string', 'null']) for optional fields.
+        allowUnionTypes: true,
+      },
+    },
   });
 
   // Provide database context
@@ -54,7 +64,6 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
   // Cookie-authenticated state changes must originate from the same site.
   app.addHook('onRequest', async (request, reply) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return;
-
     const origin = request.headers.origin;
     if (!origin) return; // Non-browser clients do not send Origin; session auth still applies.
 
@@ -82,6 +91,15 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
 
   // Register auth decorator/plugin
   app.register(authPlugin);
+
+  // API responses are dynamic and session-scoped: never let browsers or proxies
+  // cache them (a stale GET /notifications must not mask fresh server state).
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (request.url.startsWith('/api/') || request.url.startsWith('/health')) {
+      reply.header('Cache-Control', 'no-store');
+    }
+    return payload;
+  });
 
   // Register API routes
   app.register(apiRoutes, { prefix: '/api/v1' });

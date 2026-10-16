@@ -33,6 +33,10 @@ class AppState {
       activeMemo: null,
       isLoadingMemos: false,
       apiStatus: 'online', // 'online' | 'offline' | 'checking'
+      // Global dirty flag: true while the editor / keep modal / quick capture
+      // holds edits that have not been persisted yet. Guarded by the global
+      // beforeunload handler so a closing tab warns before losing work (DATA-03).
+      hasUnsavedChanges: false,
     };
   }
 

@@ -6,16 +6,17 @@
 import { api } from './api.js';
 import { state } from './state.js';
 import { escapeHtml } from './markdown.js';
-import { showToast, openModal, closeModal, toggleTheme } from './utils.js';
+import { showToast, openModal, closeModal, toggleTheme, showConfirmDialog } from './utils.js';
 import { navigateTo } from './navigation.js';
 import {
   setAuthMode,
   handleAuthSubmit,
   handleLogout,
   closeUserDropdown,
-  toggleUserDropdown
+  toggleUserDropdown,
+  renderStrengthMeter
 } from './auth.js';
-import { refreshWorkspaceMemos, updateDashboardDateBadge } from './workspace-data.js';
+import { refreshWorkspaceMemos, updateDashboardDateBadge, loadMoreMemos } from './workspace-data.js';
 import { setFilter, filterAndRenderMemos } from './search-filter.js';
 import {
   renderSidebarCategories,
@@ -37,17 +38,20 @@ import {
   renderQuickCaptureAttachments
 } from './keep-quick-capture.js';
 import { setupKeepDrawingModal } from './keep-drawing.js';
-import { setupKeepPopovers } from './keep-popovers.js';
+import { setupKeepPopovers, closeKeepPopovers } from './keep-popovers.js';
 import { setupKeepLightbox } from './keep-lightbox.js';
 import { setupKeepSelection } from './keep-selection.js';
 import { setupKeepLabelsModal, openKeepLabelsModal } from './keep-labels-modal.js';
-import { setupKeepReminders } from './keep-reminders.js';
+import { setupServerNotifications } from './notifications.js';
+import { isTakeoutZipFile, buildPayloadFromTakeoutZip, buildPayloadFromLooseFiles, importIntoWorkspace } from './keep-import.js';
 import { setupKeepKeyboardShortcuts } from './keep-shortcuts.js';
 import { setupMultiTabSync } from './keep-sync.js';
+import { setupVoiceNotes } from './voice-notes.js';
 import {
   setupKeepModalListeners,
   activeKeepModalMemo,
-  renderKeepModalAttachments
+  renderKeepModalAttachments,
+  closeKeepNoteModal
 } from './keep-modal.js';
 import {
   setEditorRefreshCallback,
@@ -62,6 +66,14 @@ import {
 } from './editor.js';
 
 export function setupEventListeners() {
+  // Remote multi-tab sync broadcasts arrive in bursts; coalesce them so sibling
+  // tabs trigger at most one workspace refetch per change (ARCH-01 companion).
+  let remoteRefreshTimer = null;
+  const debouncedRemoteRefresh = () => {
+    clearTimeout(remoteRefreshTimer);
+    remoteRefreshTimer = setTimeout(() => void refreshWorkspaceMemos(false), 150);
+  };
+
   // Theme Toggle Buttons
   document.getElementById('theme-toggle-btn')?.addEventListener('click', toggleTheme);
   document.getElementById('dropdown-theme-btn')?.addEventListener('click', () => {
@@ -190,23 +202,44 @@ export function setupEventListeners() {
 
   document.getElementById('auth-form')?.addEventListener('submit', handleAuthSubmit);
 
-  ['social-google-btn', 'social-apple-btn', 'social-github-btn'].forEach((id) => {
-    document.getElementById(id)?.addEventListener('click', () => {
-      showToast('OAuth providers require client credentials. Please use email/password or Live Demo.', 'info', 3500);
-    });
-  });
+  // SOCIAL OAUTH (MOCK-04): the provider buttons were removed from the auth
+  // screen — this app has no OAuth integration, and email/password,
+  // invitations and the live demo are the supported sign-in paths.
 
   document.getElementById('auth-forgot-link')?.addEventListener('click', (event) => {
     event.preventDefault();
     setAuthMode('forgot');
   });
 
-  document.getElementById('nav-notifications-btn')?.addEventListener('click', () => {
-    const upcoming = (state.get('allWorkspaceMemos') || []).filter((memo) => !memo.deletedAt && memo.dueDate && (memo.status || '').toLowerCase() !== 'completed' && Number(memo.dueDate) <= Date.now() + 7 * 86400000);
-    setFilter('dueSoon');
-    if (!upcoming.length) showToast('No overdue or upcoming memos. Add a due date to a note to create a reminder.', 'info', 3500);
-    else showToast(`${upcoming.length} overdue or upcoming note${upcoming.length === 1 ? '' : 's'} shown.`, 'info', 2500);
+  // DATA-03: warn before closing or refreshing the tab while edits are pending.
+  window.addEventListener('beforeunload', (event) => {
+    if (state.get('hasUnsavedChanges')) {
+      // Standard API: preventDefault + returnValue trigger the browser's
+      // "Changes you made may not be saved" confirmation dialog.
+      event.preventDefault();
+      event.returnValue = '';
+    }
   });
+
+  // MOCK-01: landing page pricing CTAs now lead somewhere real.
+  document.getElementById('pricing-free-cta')?.addEventListener('click', () => {
+    navigateTo('auth', { mode: 'register' });
+  });
+  document.getElementById('pricing-pro-cta')?.addEventListener('click', () => {
+    // Self-hosted edition: every Pro capability is already enabled.
+    if (state.get('isAuthenticated')) {
+      showToast('All Pro features are already enabled on your self-hosted instance.', 'info', 3500);
+      navigateTo('dashboard');
+    } else {
+      navigateTo('auth', { mode: 'register' });
+    }
+  });
+  document.getElementById('pricing-enterprise-cta')?.addEventListener('click', () => {
+    document.getElementById('resources')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // The notification bell is wired by setupServerNotifications(): it opens the
+  // server-backed reminders dropdown instead of a static due-soon filter.
 
   // User Profile Pill & Dropdown
   const userPill = document.getElementById('user-menu-pill');
@@ -230,12 +263,7 @@ export function setupEventListeners() {
 
   document.getElementById('dropdown-profile-btn')?.addEventListener('click', () => {
     closeUserDropdown();
-    const user = state.get('currentUser');
-    const nameInput = document.getElementById('profile-name-input');
-    const emailInput = document.getElementById('profile-email-input');
-    if (nameInput && user) nameInput.value = user.name || '';
-    if (emailInput && user) emailInput.value = user.email || '';
-    openModal('modal-profile');
+    openAccountSettingsModal();
   });
 
   document.getElementById('dropdown-members-btn')?.addEventListener('click', async () => {
@@ -287,6 +315,53 @@ export function setupEventListeners() {
   document.getElementById('side-nav-trash')?.addEventListener('click', () => setFilter('trash'));
   document.getElementById('recent-memos-view-all')?.addEventListener('click', () => setFilter('all'));
 
+  // Empty Trash — permanently purge every soft-deleted note in the workspace.
+  document.getElementById('empty-trash-btn')?.addEventListener('click', () => {
+    const activeWs = state.get('activeWorkspace');
+    if (!activeWs?.id) {
+      showToast('Select a workspace first', 'error');
+      return;
+    }
+    const trashCount = (state.get('trashMemos') || []).length;
+    if (trashCount === 0) {
+      showToast('Trash is already empty', 'info', 1800);
+      return;
+    }
+    showConfirmDialog(
+      'Empty Trash',
+      `Permanently delete all ${trashCount} note${trashCount === 1 ? '' : 's'} in the Trash of "${activeWs.name || 'this workspace'}"? This cannot be undone.`,
+      async () => {
+        const btn = document.getElementById('empty-trash-btn');
+        const labelSpan = btn?.querySelector('span');
+        if (btn) btn.disabled = true;
+        if (labelSpan) labelSpan.textContent = 'Emptying…';
+        try {
+          const res = await api.emptyTrash(activeWs.id);
+          const deleted = res?.deletedCount ?? 0;
+          showToast(
+            deleted > 0
+              ? `Trash emptied — ${deleted} note${deleted === 1 ? '' : 's'} permanently deleted`
+              : 'Trash is already empty',
+            'success',
+            3000
+          );
+          state.set('trashMemos', []);
+          await refreshWorkspaceMemos();
+          await filterAndRenderMemos();
+        } catch (err) {
+          showToast(err.message || 'Failed to empty trash', 'error', 5000);
+        } finally {
+          // Re-sync the button state from the refreshed trash list — the render
+          // pass may have already disabled it because the trash is now empty.
+          if (btn) {
+            btn.disabled = ((state.get('trashMemos') || []).length) === 0;
+          }
+          if (labelSpan) labelSpan.textContent = 'Empty Trash';
+        }
+      }
+    );
+  });
+
   document.getElementById('clear-filter-btn')?.addEventListener('click', () => setFilter('all'));
 
   document.getElementById('dashboard-refresh-btn')?.addEventListener('click', () => {
@@ -294,17 +369,22 @@ export function setupEventListeners() {
     refreshWorkspaceMemos();
   });
 
+  // Pagination: append the next page of notes (stream or trash)
+  document.getElementById('load-more-btn')?.addEventListener('click', () => void loadMoreMemos());
+
   document.getElementById('filter-status-select')?.addEventListener('change', () => filterAndRenderMemos());
   document.getElementById('filter-priority-select')?.addEventListener('change', () => filterAndRenderMemos());
   document.getElementById('filter-type-select')?.addEventListener('change', () => filterAndRenderMemos());
   document.getElementById('filter-color-select')?.addEventListener('change', () => filterAndRenderMemos());
   document.getElementById('sort-memos-select')?.addEventListener('change', () => filterAndRenderMemos());
 
-  // View Mode Switcher (Grid vs List)
+  // View Mode Switcher (Grid vs List) — restore the user's saved preference.
   const gridBtn = document.getElementById('view-mode-grid-btn');
   const listBtn = document.getElementById('view-mode-list-btn');
-  state.set('viewMode', 'grid');
-  localStorage.setItem('memo_view_mode', 'grid');
+  const savedViewMode = localStorage.getItem('memo_view_mode') === 'list' ? 'list' : 'grid';
+  state.set('viewMode', savedViewMode);
+  gridBtn?.classList.toggle('active', savedViewMode === 'grid');
+  listBtn?.classList.toggle('active', savedViewMode === 'list');
 
   gridBtn?.addEventListener('click', () => {
     state.set('viewMode', 'grid');
@@ -357,6 +437,7 @@ export function setupEventListeners() {
   });
 
   setupKeepPopovers();
+  setupVoiceNotes();
   setupKeepLightbox({
     onDeleted: () => refreshWorkspaceMemos()
   });
@@ -376,17 +457,15 @@ export function setupEventListeners() {
       }
     }
   });
-  setupKeepReminders();
+  setupServerNotifications({
+    onOpenMemo: () => navigateTo('dashboard'),
+  });
   setupKeepKeyboardShortcuts({
     onRefresh: refreshWorkspaceMemos
   });
   setupMultiTabSync({
-    onMemosChanged: () => {
-      refreshWorkspaceMemos(false);
-    },
-    onLabelsChanged: () => {
-      refreshWorkspaceMemos(false);
-    }
+    onMemosChanged: debouncedRemoteRefresh,
+    onLabelsChanged: debouncedRemoteRefresh,
   });
 
   document.getElementById('sidebar-edit-labels-btn')?.addEventListener('click', () => {
@@ -402,17 +481,13 @@ export function setupEventListeners() {
 
   // Create New Memo Buttons
   const createNewMemoHandler = () => {
-    const activeWs = state.get('activeWorkspace');
-    const categories = state.get('categories') || [];
-    const defaultCat = categories.length > 0 ? categories[0].id : null;
     const requestedFolderId = state.get('activeFilter')?.type === 'folder' ? state.get('activeFilter').value : null;
-    const defaultFolderId = requestedFolderId || null;
 
     const newMemo = {
       title: '',
       content: '',
-      categoryId: defaultCat,
-      folderId: defaultFolderId,
+      categoryId: null,
+      folderId: requestedFolderId || null,
       priority: 'medium',
       status: 'pending',
       dueDate: null,
@@ -489,18 +564,11 @@ export function setupEventListeners() {
   document.getElementById('modal-share-close-btn')?.addEventListener('click', () => closeModal('modal-share'));
   document.getElementById('modal-share-cancel-btn')?.addEventListener('click', () => closeModal('modal-share'));
 
-  // Upgrade Plan Modal Handlers
+  // Upgrade Plan Modal Handlers (MOCK-02: the dialog is now an informational
+  // self-hosted notice — there is no billing backend, so no fake success toasts).
   document.getElementById('storage-upgrade-btn')?.addEventListener('click', () => openModal('modal-upgrade-plan'));
   document.getElementById('modal-plan-close-btn')?.addEventListener('click', () => closeModal('modal-upgrade-plan'));
   document.getElementById('modal-plan-close-footer-btn')?.addEventListener('click', () => closeModal('modal-upgrade-plan'));
-  document.getElementById('choose-pro-plan-btn')?.addEventListener('click', () => {
-    showToast('Upgraded to Pro plan! Your workspace storage is now 100 GB.', 'success');
-    closeModal('modal-upgrade-plan');
-  });
-  document.getElementById('choose-team-plan-btn')?.addEventListener('click', () => {
-    showToast('Upgraded to Team plan! Collaboration and 1 TB storage enabled.', 'success');
-    closeModal('modal-upgrade-plan');
-  });
 
   // Version History Modal Close Handlers
   document.getElementById('modal-history-close-btn')?.addEventListener('click', () => closeModal('modal-history'));
@@ -509,11 +577,150 @@ export function setupEventListeners() {
   // Account Profile Settings Modal Handlers
   document.getElementById('modal-profile-close-btn')?.addEventListener('click', () => closeModal('modal-profile'));
   document.getElementById('modal-profile-cancel-btn')?.addEventListener('click', () => closeModal('modal-profile'));
+
+  // Live password strength + confirmation in the settings modal
+  const profileNewPwdInput = document.getElementById('profile-new-pwd-input');
+  profileNewPwdInput?.addEventListener('input', () => {
+    renderStrengthMeter(
+      document.getElementById('profile-strength-meter'),
+      document.getElementById('profile-strength-label'),
+      profileNewPwdInput.value
+    );
+    document.getElementById('profile-confirm-pwd-error')?.classList.remove('active');
+  });
+  document.getElementById('profile-confirm-pwd-input')?.addEventListener('input', () => {
+    document.getElementById('profile-confirm-pwd-error')?.classList.remove('active');
+  });
+
+  document.getElementById('profile-revoke-sessions-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('profile-revoke-sessions-btn');
+    btn.disabled = true;
+    try {
+      const res = await api.revokeOtherSessions();
+      showToast(`Signed out of ${res.revoked} other session${res.revoked === 1 ? '' : 's'}`, 'success');
+      await loadSessionsIntoSettings();
+    } catch (err) {
+      showToast(err.message || 'Failed to revoke sessions', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Import & Export (Google Keep Takeout / JSON backups) in Account Settings
+  let pendingImportPrepared = null;
+
+  document.getElementById('settings-export-btn')?.addEventListener('click', async () => {
+    const activeWs = state.get('activeWorkspace');
+    if (!activeWs?.id) {
+      showToast('Select a workspace to export', 'error');
+      return;
+    }
+    try {
+      showToast('Generating workspace backup…', 'info', 1500);
+      const data = await api.exportWorkspace(activeWs.id);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `notes-backup-${(activeWs.name || 'workspace').toLowerCase()}-${Date.now()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showToast('Backup downloaded', 'success');
+    } catch (err) {
+      showToast(err.message || 'Export failed', 'error');
+    }
+  });
+
+  const importInput = document.getElementById('settings-import-file-input');
+  document.getElementById('settings-import-browse-btn')?.addEventListener('click', () => importInput?.click());
+
+  importInput?.addEventListener('change', async () => {
+    const files = Array.from(importInput.files || []);
+    importInput.value = '';
+    if (!files.length) return;
+
+    const selectionEl = document.getElementById('settings-import-selection');
+    const previewEl = document.getElementById('settings-import-preview');
+    const importBtn = document.getElementById('settings-import-btn');
+    pendingImportPrepared = null;
+    if (selectionEl) selectionEl.textContent = files.length === 1 ? files[0].name : `${files.length} files selected`;
+    if (previewEl) { previewEl.style.display = 'none'; previewEl.innerHTML = ''; }
+    if (importBtn) importBtn.disabled = true;
+
+    try {
+      const prepared = files.length === 1 && isTakeoutZipFile(files[0])
+        ? await buildPayloadFromTakeoutZip(files[0])
+        : await buildPayloadFromLooseFiles(files);
+      pendingImportPrepared = prepared;
+
+      if (previewEl) {
+        if (prepared.backupPayload) {
+          previewEl.innerHTML = `Detected a <strong>Notes JSON backup</strong> with <strong>${(prepared.backupPayload.memos || []).length}</strong> note(s).`;
+        } else {
+          const checks = prepared.notes.filter((n) => n.noteType === 'checklist').length;
+          if (prepared.source === 'markdown') {
+            previewEl.innerHTML = `Detected a <strong>Markdown import</strong> with <strong>${prepared.notes.length}</strong> note(s) — each file is imported as a new note with all of its content.`;
+            const tagNames = new Set();
+            for (const note of prepared.notes) for (const tag of note.tags || []) tagNames.add(tag);
+            if (tagNames.size) previewEl.innerHTML += ` <strong>${tagNames.size}</strong> label(s) from frontmatter.`;
+          } else if (prepared.source === 'mixed') {
+            previewEl.innerHTML = `Detected a <strong>mixed selection</strong> with <strong>${prepared.notes.length}</strong> note(s) from Google Keep exports and Markdown files, including <strong>${checks}</strong> checklist(s).`;
+          } else {
+            previewEl.innerHTML = `Detected a <strong>Google Keep export</strong> with <strong>${prepared.notes.length}</strong> note(s), `;
+            previewEl.innerHTML += `<strong>${checks}</strong> checklist(s), <strong>${prepared.labels.length}</strong> label(s).`;
+            if (prepared.embeddedImages) previewEl.innerHTML += ` ${prepared.embeddedImages} image(s) will be embedded.`;
+            if (prepared.skippedImages) previewEl.innerHTML += ` ${prepared.skippedImages} image(s) skipped (too large).`;
+            if (prepared.labels.length) previewEl.innerHTML += `<br><span style="color: var(--text-muted);">Google's export lists labels but not which note has which — labels are created so you can assign them.</span>`;
+          }
+        }
+        previewEl.style.display = 'block';
+      }
+      if (importBtn) importBtn.disabled = false;
+    } catch (err) {
+      showToast(err.message || 'Could not read the selected file', 'error', 4000);
+      if (selectionEl) selectionEl.textContent = 'No file selected';
+    }
+  });
+
+  document.getElementById('settings-import-btn')?.addEventListener('click', async () => {
+    if (!pendingImportPrepared) return;
+    const importBtn = document.getElementById('settings-import-btn');
+    importBtn.disabled = true;
+    importBtn.textContent = 'Importing…';
+    try {
+      const result = await importIntoWorkspace(pendingImportPrepared);
+      const labelPart = result.labels ? ` and ${result.labels} label(s)` : '';
+      showToast(`Imported ${result.memos} note(s)${labelPart}`, 'success', 4000);
+      pendingImportPrepared = null;
+      const selectionEl = document.getElementById('settings-import-selection');
+      const previewEl = document.getElementById('settings-import-preview');
+      if (selectionEl) selectionEl.textContent = 'No file selected';
+      if (previewEl) { previewEl.style.display = 'none'; previewEl.innerHTML = ''; }
+      closeModal('modal-profile');
+      await refreshWorkspaceMemos();
+    } catch (err) {
+      showToast(err.message || 'Import failed', 'error', 5000);
+      importBtn.disabled = false;
+    } finally {
+      importBtn.textContent = 'Import notes';
+    }
+  });
+
   document.getElementById('profile-settings-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('profile-name-input')?.value.trim();
     const currentPassword = document.getElementById('profile-current-pwd-input')?.value;
     const newPassword = document.getElementById('profile-new-pwd-input')?.value;
+    const confirmPassword = document.getElementById('profile-confirm-pwd-input')?.value;
+    const confirmError = document.getElementById('profile-confirm-pwd-error');
+
+    if (newPassword && newPassword !== confirmPassword) {
+      confirmError?.classList.add('active');
+      return;
+    }
+
     try {
       const payload = { name };
       if (newPassword) {
@@ -522,13 +729,24 @@ export function setupEventListeners() {
       }
       const res = await api.updateProfile(payload);
       const user = res.user;
-      state.set('currentUser', user);
+      state.set('user', { ...state.get('user'), ...user });
       const namePill = document.getElementById('user-menu-name');
       const fullnameEl = document.getElementById('dropdown-user-fullname');
+      const avatarCircle = document.getElementById('user-avatar-circle');
+      const profileAvatar = document.getElementById('profile-avatar-large');
+      const profileNameLarge = document.getElementById('profile-name-large');
       if (namePill) namePill.textContent = (user.name || '').split(' ')[0];
       if (fullnameEl) fullnameEl.textContent = user.name || '';
+      if (avatarCircle) avatarCircle.textContent = (user.name || 'U').charAt(0).toUpperCase();
+      if (profileAvatar) profileAvatar.textContent = (user.name || 'U').charAt(0).toUpperCase();
+      if (profileNameLarge) profileNameLarge.textContent = user.name || '';
+      ['profile-current-pwd-input', 'profile-new-pwd-input', 'profile-confirm-pwd-input'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      renderStrengthMeter(document.getElementById('profile-strength-meter'), document.getElementById('profile-strength-label'), '');
       closeModal('modal-profile');
-      showToast('Profile updated successfully', 'success');
+      showToast(newPassword ? 'Profile and password updated successfully' : 'Profile updated successfully', 'success');
     } catch (err) {
       showToast(err.message || 'Failed to update profile', 'error');
     }
@@ -541,14 +759,50 @@ export function setupEventListeners() {
     const activeWs = state.get('activeWorkspace');
     const email = document.getElementById('invite-email-input')?.value.trim();
     const role = document.getElementById('invite-role-select')?.value;
+    const alertEl = document.getElementById('invite-alert');
     if (!email || !activeWs?.id) return;
+
+    alertEl.className = 'auth-alert';
+    alertEl.textContent = '';
+
     try {
-      await api.addWorkspaceMember(activeWs.id, { email, role });
-      showToast(`Invited ${email} as ${role}!`, 'success');
+      const res = await api.createWorkspaceInvite(activeWs.id, { email, role });
       document.getElementById('invite-email-input').value = '';
+
+      // Build the shareable link from this app's own origin (the backend's
+      // APP_URL-based link is only used inside emails).
+      const inviteLink = res.invite?.token
+        ? `${window.location.origin}/#invite=${res.invite.token}`
+        : res.inviteUrl;
+
+      if (res.emailDelivery !== 'sent') {
+        alertEl.className = 'auth-alert active';
+        alertEl.innerHTML = res.emailDelivery === 'failed'
+          ? `Invitation email could not be delivered — share this invite link: <strong>${escapeHtml(inviteLink)}</strong>`
+          : `Email delivery is not configured on this server — share this invite link: <strong>${escapeHtml(inviteLink)}</strong>`;
+        alertEl.innerHTML += ` <button type="button" class="btn btn-secondary btn-xs" data-copy-invite="${escapeHtml(inviteLink)}">Copy link</button>`;
+      } else {
+        alertEl.className = 'auth-alert success active';
+        alertEl.textContent = `Invitation email sent to ${email}.`;
+      }
+
+      showToast(`Invitation created for ${email}`, 'success');
       await loadWorkspaceMembers();
     } catch (err) {
-      showToast(err.message || 'Failed to add member', 'error');
+      alertEl.className = 'auth-alert error active';
+      alertEl.textContent = err.message || 'Failed to create invitation';
+    }
+  });
+
+  // Delegate: "Copy link" buttons inside the invite alert
+  document.getElementById('invite-alert')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-copy-invite]');
+    if (!btn) return;
+    try {
+      await navigator.clipboard.writeText(btn.dataset.copyInvite);
+      showToast('Invitation link copied — share it with your teammate', 'success');
+    } catch {
+      showToast('Could not copy automatically — select the link text manually', 'error');
     }
   });
 
@@ -783,6 +1037,13 @@ export function setupEventListeners() {
   const sidebar = document.getElementById('app-sidebar');
   const overlay = document.getElementById('sidebar-overlay');
 
+  const closeMobileSidebar = () => {
+    sidebar?.classList.remove('open');
+    overlay?.classList.remove('active');
+    mobileToggle?.setAttribute('aria-expanded', 'false');
+  };
+  window.__closeMobileSidebar = closeMobileSidebar; // exposed for other modules (e.g. search-filter)
+
   mobileToggle?.addEventListener('click', () => {
     const open = !sidebar?.classList.contains('open');
     sidebar?.classList.toggle('open', open);
@@ -796,6 +1057,14 @@ export function setupEventListeners() {
     mobileToggle?.setAttribute('aria-expanded', 'false');
   });
 
+  // UX-04: tapping any navigation or modal-triggering control inside the
+  // mobile drawer closes it automatically, so menus never stack behind it.
+  sidebar?.addEventListener('click', (e) => {
+    if (e.target.closest('button, a, [role="button"]')) {
+      closeMobileSidebar();
+    }
+  });
+
   // Keyboard Shortcuts: ⌘K or Ctrl+K for search, Esc to close modals
   window.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -807,9 +1076,23 @@ export function setupEventListeners() {
       }
     }
     if (e.key === 'Escape') {
-      document.querySelectorAll('.modal-backdrop.active').forEach((modal) => {
-        modal.classList.remove('active');
-      });
+      // Layered Escape handling: close only the topmost overlay.
+      const drawingModal = document.getElementById('modal-keep-drawing');
+      if (drawingModal?.classList.contains('active')) {
+        closeModal('modal-keep-drawing');
+        closeUserDropdown();
+        return;
+      }
+      // The Keep in-place editor must save pending edits when closed via Escape.
+      const keepEditorModal = document.getElementById('modal-keep-editor');
+      if (keepEditorModal?.classList.contains('active')) {
+        closeKeepNoteModal();
+      } else {
+        document.querySelectorAll('.modal-backdrop.active').forEach((modal) => {
+          modal.classList.remove('active');
+        });
+        closeKeepPopovers();
+      }
       closeUserDropdown();
     }
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -825,28 +1108,155 @@ export async function loadWorkspaceMembers() {
   const activeWs = state.get('activeWorkspace');
   if (!activeWs?.id) return;
   const listEl = document.getElementById('workspace-members-list');
+  const invitesEl = document.getElementById('workspace-invites-list');
   const actListEl = document.getElementById('workspace-activities-list');
   if (listEl) listEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">Loading members...</span>';
+  if (invitesEl) invitesEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">Loading invitations...</span>';
   if (actListEl) actListEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">Loading activity...</span>';
+
   try {
-    const [membersRes, actRes] = await Promise.allSettled([
+    const [membersRes, actRes, invitesRes] = await Promise.allSettled([
       api.getWorkspaceMembers(activeWs.id),
       api.getWorkspaceActivities(activeWs.id),
+      api.listWorkspaceInvites(activeWs.id),
     ]);
     const members = (membersRes.status === 'fulfilled' && membersRes.value?.members) || [];
+
+    const currentUser = state.get('user');
+    // Derive the viewer's role from the members response itself — state.workspaces
+    // may not carry roles immediately after registration.
+    const meMember = members.find((m) => m.userId === currentUser?.id);
+    const canManage = meMember?.role === 'owner' || meMember?.role === 'admin';
+
     if (listEl) {
       if (!members.length) {
-        listEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">No other members in this workspace yet.</span>';
+        listEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">No members found.</span>';
       } else {
         listEl.innerHTML = members.map((m) => `
-          <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 6px;">
-            <div>
-              <div style="font-weight: 500; font-size: 0.85rem;">${escapeHtml(m.name || 'Member')}</div>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(m.email)}</div>
+          <div class="member-row" data-member-user-id="${escapeHtml(m.userId)}">
+            <div class="member-main">
+              <span class="member-avatar">${escapeHtml((m.name || 'M').charAt(0).toUpperCase())}</span>
+              <div>
+                <span class="member-name"></span>
+                <span class="member-email"></span>
+              </div>
             </div>
-            <span class="badge badge-sm badge-personal" style="text-transform: capitalize;">${escapeHtml(m.role)}</span>
+            <div class="member-actions">
+              ${m.role === 'owner'
+                ? '<span class="badge badge-sm badge-personal" style="text-transform: capitalize;">Owner</span>'
+                : canManage
+                  ? `<select class="filter-select member-role-select" data-member-user-id="${escapeHtml(m.userId)}" aria-label="Role for ${escapeHtml(m.name)}">
+                      <option value="admin" ${m.role === 'admin' ? 'selected' : ''}>Admin</option>
+                      <option value="editor" ${m.role === 'editor' ? 'selected' : ''}>Editor</option>
+                      <option value="viewer" ${m.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+                    </select>
+                    <button type="button" class="btn btn-ghost btn-xs" data-member-remove="${escapeHtml(m.userId)}" title="Remove member" style="color: var(--color-red);">×</button>`
+                  : `<span class="badge badge-sm" style="background: var(--bg-hover); color: var(--text-secondary); text-transform: capitalize;">${escapeHtml(m.role)}</span>`
+              }
+            </div>
           </div>
         `).join('');
+
+        // Text via textContent to avoid injection
+        listEl.querySelectorAll('.member-row').forEach((row, idx) => {
+          const m = members[idx];
+          row.querySelector('.member-name').textContent = `${m.name || 'Member'}${m.userId === currentUser?.id ? ' (you)' : ''}`;
+          row.querySelector('.member-email').textContent = m.email || '';
+        });
+
+        // Role change
+        listEl.querySelectorAll('.member-role-select').forEach((select) => {
+          select.addEventListener('change', async () => {
+            const userId = select.dataset.memberUserId;
+            try {
+              await api.changeMemberRole(activeWs.id, userId, select.value);
+              showToast(`Role updated to ${select.value}`, 'success', 1800);
+              await loadWorkspaceMembers();
+            } catch (err) {
+              showToast(err.message || 'Failed to change role', 'error');
+              await loadWorkspaceMembers();
+            }
+          });
+        });
+
+        // Remove member
+        listEl.querySelectorAll('[data-member-remove]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const userId = btn.dataset.memberRemove;
+            const member = members.find((m) => m.userId === userId);
+            showConfirmDialog(
+              'Remove Member',
+              `Remove ${member?.name || 'this member'} from this workspace? They lose access to its notes immediately.`,
+              async () => {
+                try {
+                  await api.removeWorkspaceMember(activeWs.id, userId);
+                  showToast('Member removed', 'success', 2000);
+                  await loadWorkspaceMembers();
+                } catch (err) {
+                  showToast(err.message || 'Failed to remove member', 'error');
+                }
+              }
+            );
+          });
+        });
+      }
+    }
+
+    // Pending invitations
+    if (invitesEl) {
+      const invites = (invitesRes.status === 'fulfilled' && invitesRes.value?.invites) || [];
+      const pending = invites.filter((i) => i.status === 'pending' && i.expiresAt > Date.now());
+      if (!pending.length) {
+        invitesEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">No pending invitations.</span>';
+      } else {
+        invitesEl.innerHTML = pending.map((i) => `
+          <div class="invite-row" data-invite-id="${escapeHtml(i.id)}">
+            <div class="invite-info">
+              <span class="invite-email"></span>
+              <span class="invite-meta"></span>
+            </div>
+            <div class="invite-actions">
+              <button type="button" class="btn btn-secondary btn-xs" data-invite-copy-link="${escapeHtml(i.id)}">Copy link</button>
+              ${canManage ? `<button type="button" class="btn btn-ghost btn-xs" data-invite-revoke="${escapeHtml(i.id)}" title="Revoke invitation" style="color: var(--color-red);">Revoke</button>` : ''}
+            </div>
+          </div>
+        `).join('');
+
+        invitesEl.querySelectorAll('.invite-row').forEach((row, idx) => {
+          const i = pending[idx];
+          row.querySelector('.invite-email').textContent = i.email;
+          row.querySelector('.invite-meta').textContent = `${i.role} · expires ${new Date(i.expiresAt).toLocaleDateString()}`;
+        });
+
+        invitesEl.querySelectorAll('[data-invite-copy-link]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const inviteId = btn.dataset.inviteCopyLink;
+            const activeWs2 = state.get('activeWorkspace');
+            try {
+              // Re-issuing returns the same pending invite; rebuild its shareable URL from this origin
+              const inviteRow = pending.find((inv) => inv.id === inviteId);
+              if (!inviteRow) return;
+              const res = await api.createWorkspaceInvite(activeWs2.id, { email: inviteRow.email, role: inviteRow.role });
+              const link = res.invite?.token ? `${window.location.origin}/#invite=${res.invite.token}` : res.inviteUrl;
+              await navigator.clipboard.writeText(link);
+              showToast('Invitation link copied', 'success', 2000);
+            } catch (err) {
+              showToast('Could not copy invitation link', 'error');
+            }
+          });
+        });
+
+        invitesEl.querySelectorAll('[data-invite-revoke]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            try {
+              await api.revokeWorkspaceInvite(activeWs.id, btn.dataset.inviteRevoke);
+              showToast('Invitation revoked', 'info', 2000);
+              await loadWorkspaceMembers();
+            } catch (err) {
+              showToast(err.message || 'Failed to revoke invitation', 'error');
+            }
+          });
+        });
       }
     }
 
@@ -875,6 +1285,97 @@ export async function loadWorkspaceMembers() {
     }
   } catch {
     if (listEl) listEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">Members available on active workspace.</span>';
+    if (invitesEl) invitesEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">Invitations unavailable.</span>';
     if (actListEl) actListEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">Activity log unavailable.</span>';
+  }
+}
+
+/** Open the upgraded Account Settings modal with live identity, sessions and backup data. */
+export async function openAccountSettingsModal() {
+  const user = state.get('user');
+  if (!user) return;
+
+  const nameInput = document.getElementById('profile-name-input');
+  const emailInput = document.getElementById('profile-email-input');
+  const avatarEl = document.getElementById('profile-avatar-large');
+  const nameLargeEl = document.getElementById('profile-name-large');
+  const memberSinceEl = document.getElementById('profile-member-since');
+
+  if (nameInput) nameInput.value = user.name || '';
+  if (emailInput) emailInput.value = user.email || '';
+  if (avatarEl) {
+    const initial = (user.name || user.email || 'U').charAt(0).toUpperCase();
+    avatarEl.textContent = initial;
+    // Deterministic hue from the user id/email so it stays stable per user
+    const seed = (user.id || user.email || 'u').split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    avatarEl.style.background = `hsl(${seed % 360} 62% 45%)`;
+  }
+  if (nameLargeEl) nameLargeEl.textContent = user.name || user.email || 'User';
+  if (memberSinceEl) {
+    memberSinceEl.textContent = user.createdAt
+      ? `Member since ${new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })}`
+      : '';
+  }
+
+  openModal('modal-profile');
+  void loadSessionsIntoSettings();
+  void loadBackupStatusIntoSettings();
+}
+
+async function loadSessionsIntoSettings() {
+  const listEl = document.getElementById('profile-sessions-list');
+  if (!listEl) return;
+  try {
+    const res = await api.listSessions();
+    const sessions = res.sessions || [];
+    if (!sessions.length) {
+      listEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">No active sessions found.</span>';
+      return;
+    }
+    listEl.innerHTML = sessions.map((s) => `
+      <div class="profile-session-item">
+        <span class="session-meta"></span>
+        ${s.current ? '<span class="badge badge-sm badge-personal">This device</span>' : '<span class="badge badge-sm" style="background: var(--bg-hover); color: var(--text-secondary);">Other device</span>'}
+      </div>
+    `).join('');
+    listEl.querySelectorAll('.profile-session-item').forEach((row, idx) => {
+      const s = sessions[idx];
+      const when = new Date(s.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const agent = (s.userAgent || 'unknown device').slice(0, 42);
+      row.querySelector('.session-meta').textContent = `${s.current ? 'Current session' : 'Session'} · ${s.ipAddress || 'unknown IP'} · ${agent} · ${when}`;
+    });
+  } catch (err) {
+    listEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">Session info unavailable.</span>';
+  }
+}
+
+async function loadBackupStatusIntoSettings() {
+  const el = document.getElementById('profile-backup-status');
+  if (!el) return;
+  try {
+    const status = await api.getBackupStatus();
+    const parts = [];
+    if (status.lastBackupAt) {
+      parts.push(`<span class="backup-ok">✓ Last local snapshot: ${new Date(status.lastBackupAt).toLocaleString()} (${status.localSnapshots} kept)</span>`);
+    } else {
+      parts.push('<span class="backup-warn">⚠ No local snapshot has been created yet.</span>');
+    }
+    if (status.replicationConfigured) {
+      if (status.lastReplicatedAt) {
+        parts.push(`<span class="backup-ok">✓ Off-host replication active: ${status.replicationSnapshots} snapshot(s) in ${escapeHtml(status.replicationDirectory)}</span>`);
+      } else {
+        parts.push(`<span class="backup-warn">⚠ Off-host replication is configured (${escapeHtml(status.replicationDirectory)}) but has not completed yet.</span>`);
+      }
+    } else {
+      parts.push('<span class="backup-warn">⚠ Off-host replication is NOT configured. Set BACKUP_REPLICATION_DIR to a location outside the data volume to survive volume/host loss.</span>');
+    }
+    el.innerHTML = parts.join('');
+  } catch (err) {
+    // SEC-03: backup telemetry is restricted to instance administrators.
+    if (err?.status === 403) {
+      el.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">Backup snapshots are managed by your instance administrator.</span>';
+      return;
+    }
+    el.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">Backup status unavailable.</span>';
   }
 }

@@ -270,11 +270,10 @@ export function updateSidebarBadges() {
 
   const activeWs = state.get('activeWorkspace');
   if (activeWs && activeWs.id) {
-    api.listMemos({ workspaceId: activeWs.id, includeDeleted: true, limit: 100 })
+    api.listMemos({ workspaceId: activeWs.id, deletedOnly: 'true', limit: 1 })
       .then((res) => {
-        const deleted = (res.memos || []).filter((m) => m.deletedAt !== null);
         const countTrash = document.getElementById('sidebar-count-trash');
-        if (countTrash) countTrash.textContent = deleted.length;
+        if (countTrash) countTrash.textContent = res.total ?? 0;
       })
       .catch(() => {});
   }

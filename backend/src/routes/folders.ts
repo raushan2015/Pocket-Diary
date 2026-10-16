@@ -31,6 +31,40 @@ interface UpdateFolderBody {
   parentId?: string | null;
 }
 
+const folderQuerySchema = {
+  querystring: {
+    type: 'object',
+    required: ['workspaceId'],
+    properties: { workspaceId: { type: 'string', minLength: 1, maxLength: 64 } },
+    additionalProperties: false,
+  },
+};
+
+const createFolderSchema = {
+  body: {
+    type: 'object',
+    required: ['workspaceId', 'name'],
+    properties: {
+      workspaceId: { type: 'string', minLength: 1, maxLength: 64 },
+      name: { type: 'string', minLength: 1, maxLength: 80 },
+      parentId: { type: ['string', 'null'], maxLength: 64 },
+    },
+    additionalProperties: false,
+  },
+};
+
+const updateFolderSchema = {
+  body: {
+    type: 'object',
+    properties: {
+      workspaceId: { type: 'string', maxLength: 64 },
+      name: { type: 'string', minLength: 1, maxLength: 80 },
+      parentId: { type: ['string', 'null'], maxLength: 64 },
+    },
+    additionalProperties: false,
+  },
+};
+
 export const folderRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
 
@@ -45,7 +79,9 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
   };
 
   // GET /api/v1/folders
-  fastify.get<{ Querystring: FolderQuery }>('/', async (request, reply) => {
+  fastify.get<{ Querystring: FolderQuery }>('/', {
+    schema: folderQuerySchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const { workspaceId } = request.query;
@@ -77,7 +113,9 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/folders
-  fastify.post<{ Body: CreateFolderBody }>('/', async (request, reply) => {
+  fastify.post<{ Body: CreateFolderBody }>('/', {
+    schema: createFolderSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const body = request.body || {};
@@ -113,7 +151,9 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // PATCH /api/v1/folders/:id
-  fastify.patch<{ Params: FolderParams; Body: UpdateFolderBody }>('/:id', async (request, reply) => {
+  fastify.patch<{ Params: FolderParams; Body: UpdateFolderBody }>('/:id', {
+    schema: updateFolderSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id } = request.params;

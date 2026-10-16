@@ -194,7 +194,7 @@ export function handleJsonFile(file) {
 }
 
 export function updateMigrationPreview(payload) {
-  const previewBox = document.getElementById('migration-preview-summary');
+  const previewBox = document.getElementById('migration-preview-container');
   const statMemos = document.getElementById('mig-stat-memos');
   const statCats = document.getElementById('mig-stat-categories');
   const statTags = document.getElementById('mig-stat-tags');
@@ -226,7 +226,7 @@ export function updateMigrationPreview(payload) {
   if (statTags) statTags.textContent = tags.length;
 
   if (previewBox) previewBox.style.display = 'block';
-  if (submitBtn) submitBtn.disabled = memos.length === 0 && categories.length === 0;
+  if (submitBtn) submitBtn.disabled = memos.length === 0;
 }
 
 export async function executeMigrationImport(payload) {

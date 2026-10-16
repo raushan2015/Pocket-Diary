@@ -33,6 +33,42 @@ interface UpdateCategoryBody {
   icon?: string | null;
 }
 
+const categoryQuerySchema = {
+  querystring: {
+    type: 'object',
+    required: ['workspaceId'],
+    properties: { workspaceId: { type: 'string', minLength: 1, maxLength: 64 } },
+    additionalProperties: false,
+  },
+};
+
+const createCategorySchema = {
+  body: {
+    type: 'object',
+    required: ['workspaceId', 'name'],
+    properties: {
+      workspaceId: { type: 'string', minLength: 1, maxLength: 64 },
+      name: { type: 'string', minLength: 1, maxLength: 80 },
+      color: { type: ['string', 'null'], maxLength: 32 },
+      icon: { type: ['string', 'null'], maxLength: 32 },
+    },
+    additionalProperties: false,
+  },
+};
+
+const updateCategorySchema = {
+  body: {
+    type: 'object',
+    properties: {
+      workspaceId: { type: 'string', maxLength: 64 },
+      name: { type: 'string', minLength: 1, maxLength: 80 },
+      color: { type: ['string', 'null'], maxLength: 32 },
+      icon: { type: ['string', 'null'], maxLength: 32 },
+    },
+    additionalProperties: false,
+  },
+};
+
 export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
 
@@ -48,7 +84,9 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
   };
 
   // GET /api/v1/categories
-  fastify.get<{ Querystring: CategoryQuery }>('/', async (request, reply) => {
+  fastify.get<{ Querystring: CategoryQuery }>('/', {
+    schema: categoryQuerySchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const { workspaceId } = request.query;
@@ -80,7 +118,9 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/categories
-  fastify.post<{ Body: CreateCategoryBody }>('/', async (request, reply) => {
+  fastify.post<{ Body: CreateCategoryBody }>('/', {
+    schema: createCategorySchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const body = request.body || {};
@@ -117,7 +157,9 @@ export const categoryRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // PATCH /api/v1/categories/:id
-  fastify.patch<{ Params: CategoryParams; Body: UpdateCategoryBody }>('/:id', async (request, reply) => {
+  fastify.patch<{ Params: CategoryParams; Body: UpdateCategoryBody }>('/:id', {
+    schema: updateCategorySchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id } = request.params;

@@ -8,6 +8,8 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   name: string;
+  createdAt: number;
+  isInstanceAdmin: boolean;
 }
 
 declare module 'fastify' {
@@ -53,6 +55,8 @@ async function authPluginAsync(fastify: FastifyInstance) {
       id: sessionData.user.id,
       email: sessionData.user.email,
       name: sessionData.user.name,
+      createdAt: Number(sessionData.user.createdAt),
+      isInstanceAdmin: Boolean(sessionData.user.isInstanceAdmin),
     };
     request.sessionToken = sessionToken;
   });

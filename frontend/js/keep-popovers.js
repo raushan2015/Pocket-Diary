@@ -4,6 +4,7 @@
  */
 
 import { api } from './api.js';
+import { state } from './state.js';
 import { showToast } from './utils.js';
 import { escapeHtml } from './markdown.js';
 
@@ -16,8 +17,12 @@ export function setupKeepPopovers() {
         !e.target.closest('#keep-modal-color-btn') &&
         !e.target.closest('#keep-modal-reminder-btn') &&
         !e.target.closest('#keep-modal-collab-btn') &&
+        !e.target.closest('#keep-modal-labels-btn') &&
         !e.target.closest('#qc-tool-palette') &&
-        !e.target.closest('#qc-tool-reminder')) {
+        !e.target.closest('#qc-tool-reminder') &&
+        !e.target.closest('#qc-tool-labels') &&
+        !e.target.closest('#qc-voice-lang-btn') &&
+        !e.target.closest('#keep-modal-voice-lang-btn')) {
       closeKeepPopovers();
     }
   });
@@ -83,6 +88,101 @@ export function positionPopover(popoverEl, anchorEl) {
 
 export function closeKeepPopovers() {
   document.querySelectorAll('.keep-popover').forEach((p) => { p.style.display = 'none'; });
+  const pickerInput = document.getElementById('keep-labels-picker-new-input');
+  if (pickerInput) pickerInput.value = '';
+}
+
+/**
+ * Labels picker popover: assign / remove workspace labels on a note or draft.
+ * Toggling a checkbox updates memoOrDraft.tags and fires onChange(tags).
+ */
+export function openLabelsPickerPopover(anchorEl, memoOrDraft, onChange = null) {
+  const popover = document.getElementById('keep-popover-labels');
+  if (!popover || !anchorEl || !memoOrDraft) return;
+  positionPopover(popover, anchorEl);
+
+  const activeWs = state.get('activeWorkspace');
+  if (!activeWs?.id) {
+    showToast('Select a workspace first', 'error');
+    closeKeepPopovers();
+    return;
+  }
+
+  const listContainer = document.getElementById('keep-labels-picker-list');
+  const createInput = document.getElementById('keep-labels-picker-new-input');
+  const createBtn = document.getElementById('keep-labels-picker-create-btn');
+
+  const normalize = (t) => String(t).trim().replace(/^[#\s]+/, '').toLowerCase();
+  const selectedTags = () => (Array.isArray(memoOrDraft.tags) ? memoOrDraft.tags : []);
+
+  const toggleLabel = (name, checked) => {
+    const tags = selectedTags();
+    if (checked) {
+      if (!tags.some((t) => normalize(t) === normalize(name))) tags.push(name);
+    } else {
+      memoOrDraft.tags = tags.filter((t) => normalize(t) !== normalize(name));
+    }
+    if (typeof onChange === 'function') onChange(memoOrDraft.tags);
+  };
+
+  const renderList = (tags) => {
+    if (!listContainer) return;
+    const selected = selectedTags().map(normalize);
+    if (!tags.length) {
+      listContainer.innerHTML = '<div class="keep-labels-picker-empty">No labels yet. Create one below.</div>';
+      return;
+    }
+    listContainer.innerHTML = tags.map((t) => `
+      <label class="keep-labels-picker-row">
+        <input type="checkbox" data-label-name="${escapeHtml(t.name)}" ${selected.includes(normalize(t.name)) ? 'checked' : ''}>
+        <span class="keep-labels-name">#${escapeHtml(t.name)}</span>
+      </label>
+    `).join('');
+
+    listContainer.querySelectorAll('input[data-label-name]').forEach((chk) => {
+      chk.addEventListener('change', () => toggleLabel(chk.dataset.labelName, chk.checked));
+    });
+  };
+
+  const refreshTags = async () => {
+    let tags = state.get('tags') || [];
+    try {
+      const res = await api.listTags(activeWs.id);
+      tags = res.tags || [];
+      state.set('tags', tags);
+    } catch {
+      // fall back to cached tags
+    }
+    renderList(tags);
+  };
+  refreshTags();
+
+  const handleCreate = async () => {
+    const name = (createInput?.value || '').trim().replace(/^[#\s]+/, '');
+    if (!name) return;
+    try {
+      await api.createTag({ workspaceId: activeWs.id, name });
+      if (createInput) createInput.value = '';
+      showToast(`Label "${name}" created`, 'success', 1500);
+      const res = await api.listTags(activeWs.id);
+      state.set('tags', res.tags || []);
+      renderList(res.tags || []);
+      toggleLabel(name, true);
+    } catch (err) {
+      showToast(err.message || 'Failed to create label', 'error');
+    }
+  };
+
+  if (createBtn) createBtn.onclick = (e) => { e.stopPropagation(); handleCreate(); };
+  if (createInput) {
+    createInput.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleCreate();
+      }
+    };
+  }
 }
 
 export function openPalettePopover(anchorEl, targetMemoOrContext, onUpdate = null) {

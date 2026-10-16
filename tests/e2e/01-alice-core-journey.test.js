@@ -1,39 +1,30 @@
+/**
+ * Alice end-to-end core story — journeys 1 through 9 run as ONE continuous
+ * scenario sharing a single browser: registration -> workspaces -> memos ->
+ * search -> migration -> tenant isolation -> session persistence.
+ *
+ * Every other journey lives in its own file and is fully independent.
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import fs from 'node:fs';
+import { BASE_URL, SCREENSHOT_DIR, launchBrowser } from './_helpers.js';
 
-// Playwright is installed as a project devDependency; do not rely on machine-specific global paths.
-import { chromium } from 'playwright';
-
-const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:8080';
-const CHROME_PATH = process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH) ? process.env.CHROME_PATH : undefined;
-const SCREENSHOT_DIR = path.resolve(process.cwd().endsWith('tests') ? '../.agents/browser' : '.agents/browser');
-
-if (!fs.existsSync(SCREENSHOT_DIR)) {
-  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-}
-
-// Global browser instance
 let browser;
 
 test.before(async () => {
-  console.log(`[QA Test Suite] Launching headless browser targeting ${BASE_URL}...`);
-  browser = await chromium.launch({
-    ...(CHROME_PATH ? { executablePath: CHROME_PATH } : {}),
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  });
+  console.log(`[Alice Story] Launching headless browser targeting ${BASE_URL}...`);
+  browser = await launchBrowser();
 });
 
 test.after(async () => {
   if (browser) {
     await browser.close();
-    console.log('[QA Test Suite] Browser closed cleanly.');
+    console.log('[Alice Story] Browser closed cleanly.');
   }
 });
 
-// Shared state between user journey stages
 const testRunId = Date.now();
 const aliceUser = {
   name: 'Alice QA Architect',
@@ -125,6 +116,7 @@ test('User Journey 2: User Registration & Default Workspace Landing', async () =
   await alicePage.fill('#auth-name-input', aliceUser.name);
   await alicePage.fill('#auth-email-input', aliceUser.email);
   await alicePage.fill('#auth-password-input', aliceUser.password);
+  await alicePage.fill('#auth-confirm-password-input', aliceUser.password);
 
   // Submit registration
   await alicePage.click('#auth-submit-btn');
@@ -526,6 +518,7 @@ test('User Journey 8: Strict Multi-Tenant Isolation & Cross-Workspace Barrier', 
   await bobPage.fill('#auth-name-input', bobUser.name);
   await bobPage.fill('#auth-email-input', bobUser.email);
   await bobPage.fill('#auth-password-input', bobUser.password);
+  await bobPage.fill('#auth-confirm-password-input', bobUser.password);
   await bobPage.click('#auth-submit-btn');
 
   await bobPage.waitForSelector('#view-dashboard.active', { timeout: 15000 });
@@ -617,7 +610,13 @@ test('User Journey 9: Sign Out, Session Persistence & Re-Authentication', async 
   await alicePage.waitForSelector('#view-dashboard.active', { timeout: 15000 });
   console.log('[Test 9] Alice successfully logged back in');
 
-  // Verify memo data persistence
+  // Re-login restores the first workspace ("Personal"), which legitimately has
+  // no notes — Alice's memos live in "Engineering Squad". Switch into it and
+  // verify the notes are still there, rendered from the server.
+  await alicePage.waitForSelector('.workspace-item', { timeout: 5000 });
+  const switchTarget = alicePage.locator('.workspace-item', { hasText: aliceUser.workspaceName }).first();
+  await switchTarget.click();
+  await alicePage.waitForFunction(() => document.querySelectorAll('.memo-card').length >= 1, undefined, { timeout: 10000 });
   const memoCards = await alicePage.$$('.memo-card');
   assert.ok(memoCards.length >= 1, 'Memos are persisted and rendered upon re-authentication');
 
@@ -627,3 +626,4 @@ test('User Journey 9: Sign Out, Session Persistence & Re-Authentication', async 
   // Clean up Alice's context
   await aliceContext.close();
 });
+

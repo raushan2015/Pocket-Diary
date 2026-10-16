@@ -26,7 +26,8 @@ const PRECACHE_ASSETS = [
   '/js/keep-selection.js',
   '/js/keep-lightbox.js',
   '/js/keep-labels-modal.js',
-  '/js/keep-reminders.js',
+  '/js/notifications.js',
+  '/js/keep-import.js',
   '/js/keep-shortcuts.js',
   '/js/keep-popovers.js',
   '/js/keep-drawing.js',
@@ -94,5 +95,53 @@ self.addEventListener('fetch', (event) => {
         }
         return new Response('Offline', { status: 503, statusText: 'Offline' });
       })
+  );
+});
+
+// ==========================================================================
+// Web Push: show server reminder notifications, focus the app on click
+// ==========================================================================
+
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = { title: 'Notes reminder', body: event.data ? event.data.text() : '' };
+  }
+
+  const title = payload.title || 'Notes reminder';
+  const options = {
+    body: payload.body || 'You have a note reminder.',
+    icon: '/icons/icon.svg',
+    badge: '/icons/icon.svg',
+    tag: payload.notificationId ? `note-reminder-${payload.notificationId}` : undefined,
+    data: {
+      memoId: payload.memoId || null,
+      url: payload.url || '/',
+    },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/';
+  const memoId = event.notification.data?.memoId;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.focus();
+          if (memoId) {
+            client.postMessage({ type: 'open-notification', memoId });
+          }
+          return;
+        }
+      }
+      return self.clients.openWindow(targetUrl);
+    })
   );
 });

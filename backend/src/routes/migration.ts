@@ -13,11 +13,28 @@ interface ExportQuery {
   workspaceId?: string;
 }
 
+const importLocalSchema = {
+  body: {
+    type: 'object',
+    required: ['workspaceId', 'memos'],
+    properties: {
+      workspaceId: { type: 'string', minLength: 1, maxLength: 64 },
+      // Legacy import payloads are intentionally flexible; items validated by the service.
+      memos: { type: 'array', maxItems: 10000, items: { type: 'object' } },
+      categories: { type: 'array', maxItems: 1000, items: { type: 'object', additionalProperties: true } },
+      tags: { type: 'array', maxItems: 1000, items: { type: ['string', 'object'] } },
+    },
+    additionalProperties: false,
+  },
+};
+
 export const migrationRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
 
   // POST /api/v1/migration/import-local
-  fastify.post<{ Body: ImportLocalPayload }>('/import-local', async (request, reply) => {
+  fastify.post<{ Body: ImportLocalPayload }>('/import-local', {
+    schema: importLocalSchema,
+  }, async (request, reply) => {
     try {
       const user = request.user!;
       const body = request.body || ({} as ImportLocalPayload);

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { eq, and, sql, inArray, isNotNull } from 'drizzle-orm';
 import {
   memos,
   categories,
@@ -76,7 +76,10 @@ export const VALID_THEMES = [
 export interface ChecklistItem {
   id: string;
   text: string;
-  completed: boolean;
+  /** Whether the item is done. Frontend writers use `checked`; legacy payloads use `completed`. */
+  checked?: boolean;
+  completed?: boolean;
+  sortOrder?: number;
 }
 
 export interface LinkPreview {
@@ -142,6 +145,7 @@ export interface ListMemosOptions {
   isArchived?: boolean | string;
   hasReminder?: boolean | string;
   includeDeleted?: boolean | string;
+  deletedOnly?: boolean | string;
   search?: string;
   page?: number;
   limit?: number;
@@ -361,6 +365,7 @@ export function listMemos(
     isArchived,
     hasReminder,
     includeDeleted,
+    deletedOnly,
     search,
     page = 1,
     limit = 50,
@@ -374,7 +379,10 @@ export function listMemos(
 
   // Soft deletion filtering
   const showDeleted = includeDeleted === true || includeDeleted === 'true';
-  if (!showDeleted) {
+  const onlyDeleted = deletedOnly === true || deletedOnly === 'true';
+  if (onlyDeleted) {
+    conditions.push('m.deleted_at IS NOT NULL');
+  } else if (!showDeleted) {
     conditions.push('m.deleted_at IS NULL');
   }
 
@@ -852,6 +860,40 @@ export function deleteMemo(
       .where(and(eq(memos.id, memoId), eq(memos.workspaceId, workspaceId)))
       .run();
   }
+}
+
+export interface EmptyTrashResult {
+  /** Number of memos permanently removed. */
+  deletedCount: number;
+  /** On-disk attachment files that belong to the purged memos (for caller-side cleanup). */
+  attachmentPaths: string[];
+}
+
+/**
+ * Permanently delete every soft-deleted memo in the workspace ("Empty Trash").
+ * Cascades remove memo_tags, memo_versions, notifications and attachment rows;
+ * the caller unlinks the returned attachment files from disk.
+ */
+export function emptyTrash(dbCtx: DatabaseContext, workspaceId: string): EmptyTrashResult {
+  const { db, sqlite } = dbCtx;
+
+  const attachmentRows = sqlite
+    .prepare(
+      `SELECT a.storage_path FROM attachments a
+       JOIN memos m ON m.id = a.memo_id
+       WHERE m.workspace_id = ? AND m.deleted_at IS NOT NULL`
+    )
+    .all(workspaceId) as Array<{ storage_path: string }>;
+
+  const deletedCount = db
+    .delete(memos)
+    .where(and(eq(memos.workspaceId, workspaceId), isNotNull(memos.deletedAt)))
+    .run().changes;
+
+  return {
+    deletedCount,
+    attachmentPaths: attachmentRows.map((row) => row.storage_path),
+  };
 }
 
 /**
