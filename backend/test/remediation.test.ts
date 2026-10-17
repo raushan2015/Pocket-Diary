@@ -70,7 +70,7 @@ describe('Audit remediation: SEC-01 SSRF guard on link preview', () => {
     expect(res.json().message).toBe('Valid http or https URL is required');
   });
 
-  it('accepts a public literal-IP URL without attempting a fetch when host is unreachable', async () => {
+  it('accepts a public literal-IP URL without attempting a fetch when host is unreachable', { timeout: 15_000 }, async () => {
     // A routable documentation address is public per the guard; the fetch
     // itself fails and the endpoint degrades to a hostname-style preview.
     const res = await postPreview('http://93.184.216.34/some-article');

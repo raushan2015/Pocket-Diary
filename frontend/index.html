@@ -1892,6 +1892,21 @@
 
         <!-- Body Area: Text or Checklist -->
         <div class="keep-modal-body">
+          <!-- Audit H-5: version-conflict resolution. Never silently overwrite
+               another session's edits — the user explicitly chooses. -->
+          <div class="keep-conflict-banner" id="keep-modal-conflict-banner" role="alert" style="display: none; border: 1px solid var(--color-orange-500, #f59e0b); background: rgba(245, 158, 11, 0.08); border-radius: 10px; padding: 0.7rem 0.85rem; margin-bottom: 0.6rem;">
+            <div style="display: flex; align-items: flex-start; gap: 0.5rem;">
+              <span style="font-size: 1.1rem;" aria-hidden="true">⚠️</span>
+              <div>
+                <strong style="display: block; font-size: 0.85rem;">This note was changed in another session</strong>
+                <span id="keep-modal-conflict-text" style="font-size: 0.78rem; color: var(--text-muted); display:block; margin-top:0.15rem;">Your edits were not saved to avoid overwriting the newer version.</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap;">
+              <button type="button" class="btn btn-sm btn-primary" id="keep-conflict-keep-mine-btn">Keep my changes</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="keep-conflict-load-theirs-btn">Load latest version</button>
+            </div>
+          </div>
           <!-- Text Mode Body -->
           <textarea class="keep-modal-textarea" id="keep-modal-content" placeholder="Note" rows="4"></textarea>
 

@@ -1,18 +1,10 @@
 import path from 'node:path';
 import { buildApp } from './app.js';
-import { config } from './config.js';
+import { config, resolveAppUrl } from './config.js';
 import { startBackupScheduler } from './services/backup.service.js';
 import { startReminderScheduler } from './services/notification.service.js';
 import { isEmailEnabled } from './services/mailer.service.js';
 import { isPushEnabled } from './services/push.service.js';
-
-/** Public URL used in reminder emails and invitation links. */
-function resolveAppUrl(): string {
-  const configured = process.env.APP_URL?.trim();
-  if (configured) return configured.replace(/\/$/, '');
-  const port = Number(process.env.FRONTEND_PORT ?? process.env.PORT ?? 8080);
-  return `http://localhost:${port}`;
-}
 
 async function start() {
   const app = buildApp();

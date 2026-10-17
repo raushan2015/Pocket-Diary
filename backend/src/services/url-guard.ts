@@ -162,17 +162,19 @@ function isBlockedHostname(hostname: string): boolean {
  * - Resolves with the parsed URL otherwise.
  */
 export async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new UrlGuardError('Valid http or https URL is required');
-  }
+  const parsed = parseHttpUrl(rawUrl);
+  await resolvePublicHttpAddresses(parsed);
+  return parsed;
+}
 
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new UrlGuardError('Valid http or https URL is required');
-  }
-
+/**
+ * Resolves AND validates every address a URL would connect to (audit M-11).
+ *
+ * Callers that perform the request themselves MUST use the returned addresses
+ * directly — re-resolving via fetch() would allow a DNS-rebinding attack to
+ * pass the check and then connect to a private address.
+ */
+export async function resolvePublicHttpAddresses(parsed: URL): Promise<string[]> {
   const hostname = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (!hostname) {
     throw new UrlGuardError('Valid http or https URL is required');
@@ -181,7 +183,7 @@ export async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
   // Literal IPs are checked directly, without DNS.
   if (net.isIPv4(hostname) || (hostname.includes(':') && net.isIPv6(hostname))) {
     assertPublicIpLiteral(hostname);
-    return parsed;
+    return [hostname];
   }
 
   if (isBlockedHostname(hostname)) {
@@ -204,5 +206,19 @@ export async function assertPublicHttpUrl(rawUrl: string): Promise<URL> {
     assertPublicIpLiteral(address);
   }
 
+  return addresses.map((a) => a.address);
+}
+
+function parseHttpUrl(rawUrl: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new UrlGuardError('Valid http or https URL is required');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new UrlGuardError('Valid http or https URL is required');
+  }
   return parsed;
 }

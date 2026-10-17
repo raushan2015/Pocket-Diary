@@ -3,6 +3,12 @@
  * Token-based invites that work with or without email delivery:
  *  - With SMTP configured, an invite email is sent automatically.
  *  - Without SMTP, the caller surfaces the invite link for manual sharing.
+ *
+ * Security (audit H-7, M-1): only the SHA-256 hash of an invitation token is
+ * stored. A database/backup reader can no longer accept invites. Re-inviting
+ * a pending (or expired-pending) address now issues a FRESH token and a new
+ * expiry window — the previous code returned the stale token with its old,
+ * possibly already-past, expiresAt, making the link dead on arrival.
  */
 import crypto from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
@@ -11,6 +17,11 @@ import type { DatabaseContext } from '../db/index.js';
 import { sendEmail, renderInviteEmail, isEmailEnabled } from './mailer.service.js';
 
 export const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+/** Hashes an invite token for storage/lookup — the raw token is only ever returned once at creation. */
+export function hashInviteToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
 
 export class InviteError extends Error {
   statusCode: number;
@@ -58,7 +69,9 @@ export function createInvite(
     throw new InviteError('This user is already a member of the workspace', 409);
   }
 
-  // Reuse a pending invite for the same email+role instead of stacking duplicates
+  // Reuse a pending invite row for the same email instead of stacking
+  // duplicates — but issue a FRESH token and reset the expiry window so the
+  // re-sent link actually works (audit M-1).
   const now = Date.now();
   const existingInvite = dbCtx.db
     .select()
@@ -72,17 +85,12 @@ export function createInvite(
     )
     .get();
 
-  let inviteId = existingInvite?.id;
-  let token = existingInvite?.token;
-  let createdAt = existingInvite?.createdAt ?? now;
-  let expiresAt = existingInvite?.expiresAt ?? now + INVITE_EXPIRY_MS;
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = hashInviteToken(token);
+  const expiresAt = now + INVITE_EXPIRY_MS;
+  const inviteId = existingInvite?.id ?? crypto.randomUUID();
 
   if (!existingInvite) {
-    inviteId = crypto.randomUUID();
-    token = crypto.randomBytes(32).toString('hex');
-    createdAt = now;
-    expiresAt = now + INVITE_EXPIRY_MS;
-
     dbCtx.db
       .insert(workspaceInvites)
       .values({
@@ -90,32 +98,32 @@ export function createInvite(
         workspaceId: params.workspaceId,
         email: normalizedEmail,
         role,
-        token,
+        token: tokenHash,
         status: 'pending',
         invitedBy: params.invitedByUserId,
         expiresAt,
-        createdAt,
+        createdAt: now,
       })
       .run();
-  } else if (existingInvite.role !== role) {
-    // Update role of the outstanding invitation
+  } else {
     dbCtx.db
       .update(workspaceInvites)
-      .set({ role })
-      .where(eq(workspaceInvites.id, inviteId!))
+      .set({ role, token: tokenHash, expiresAt })
+      .where(eq(workspaceInvites.id, inviteId))
       .run();
   }
 
   const inviteUrl = `${params.appUrl.replace(/\/$/, '')}/#invite=${token}`;
   return {
     invite: {
-      id: inviteId!,
+      id: inviteId,
       email: normalizedEmail,
       role,
       status: 'pending',
-      token: token!,
+      // Raw token — returned exactly once; only its hash is persisted.
+      token,
       expiresAt,
-      createdAt,
+      createdAt: existingInvite?.createdAt ?? now,
       emailSent: false,
     },
     inviteUrl,
@@ -125,7 +133,7 @@ export function createInvite(
 /** Send (or re-send) the invitation email for a pending invite. */
 export async function sendInviteEmail(
   dbCtx: DatabaseContext,
-  params: { inviteId: string; appUrl: string },
+  params: { inviteId: string; token: string; appUrl: string },
 ): Promise<boolean> {
   if (!isEmailEnabled()) return false;
 
@@ -136,7 +144,9 @@ export async function sendInviteEmail(
   const inviter = dbCtx.db.select().from(users).where(eq(users.id, invite.invitedBy)).get();
   if (!workspace || !inviter) return false;
 
-  const inviteUrl = `${params.appUrl.replace(/\/$/, '')}/#invite=${invite.token}`;
+  // Only the token hash is persisted (audit H-7); the raw token is passed in
+  // by the caller that just generated it.
+  const inviteUrl = `${params.appUrl.replace(/\/$/, '')}/#invite=${params.token}`;
   const email = renderInviteEmail({
     workspaceName: workspace.name,
     inviterName: inviter.name,
@@ -218,7 +228,7 @@ export function lookupInvite(dbCtx: DatabaseContext, token: string): InviteLooku
        JOIN workspaces w ON w.id = i.workspace_id
        WHERE i.token = ?`,
     )
-    .get(token) as any;
+    .get(hashInviteToken(token)) as any;
   if (!row) return null;
 
   return {

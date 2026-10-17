@@ -1,5 +1,4 @@
 import type { FastifyPluginAsync } from 'fastify';
-import crypto from 'node:crypto';
 import {
   getUserWorkspaces,
   createWorkspace,
@@ -16,6 +15,7 @@ import {
   InviteError,
 } from '../services/invite.service.js';
 import { isEmailEnabled } from '../services/mailer.service.js';
+import { resolveAppUrl } from '../config.js';
 
 const createWorkspaceSchema = {
   body: {
@@ -34,18 +34,6 @@ const updateWorkspaceSchema = {
     type: 'object',
     required: ['name'],
     properties: { name: { type: 'string', minLength: 1, maxLength: 120 } },
-    additionalProperties: false,
-  },
-};
-
-const addMemberSchema = {
-  body: {
-    type: 'object',
-    required: ['email'],
-    properties: {
-      email: { type: 'string', minLength: 3, maxLength: 254 },
-      role: { type: 'string', enum: ['admin', 'editor', 'viewer'] },
-    },
     additionalProperties: false,
   },
 };
@@ -71,13 +59,10 @@ const createInviteSchema = {
   },
 };
 
-/** Public base URL used in invitation links. */
-function resolveAppUrl(): string {
-  const configured = process.env.APP_URL?.trim();
-  if (configured) return configured.replace(/\/$/, '');
-  const port = Number(process.env.FRONTEND_PORT ?? process.env.PORT ?? 8080);
-  return `http://localhost:${port}`;
-}
+/**
+ * Public base URL used in invitation links. Single source of truth lives in
+ * config.ts (audit C-3): links are never built from request headers.
+ */
 
 export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -109,7 +94,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (err: unknown) {
       if (err instanceof WorkspaceAccessError) {
         return reply.status(err.statusCode).send({
-          error: 'Bad Request',
+          error: err.statusCode === 403 ? 'Forbidden' : err.statusCode === 409 ? 'Conflict' : 'Bad Request',
           message: err.message,
         });
       }
@@ -237,77 +222,14 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // POST /api/v1/workspaces/:id/members
-  fastify.post<{ Params: { id: string }; Body: { email?: string; role?: string } }>('/:id/members', {
-    schema: addMemberSchema,
-  }, async (request, reply) => {
-    try {
-      const user = request.user!;
-      const workspaceId = request.params.id;
-      verifyWorkspaceMembership(fastify.dbCtx.db, user.id, workspaceId, ['owner', 'admin']);
-
-      const { email, role = 'editor' } = request.body || {};
-      if (!email || !email.trim()) {
-        return reply.status(400).send({
-          error: 'Bad Request',
-          message: 'User email is required',
-        });
-      }
-
-      const targetUser = fastify.dbCtx.sqlite.prepare(
-        'SELECT id, name, email FROM users WHERE LOWER(email) = LOWER(?)'
-      ).get(email.trim()) as { id: string; name: string; email: string } | undefined;
-
-      if (!targetUser) {
-        return reply.status(404).send({
-          error: 'Not Found',
-          message: 'User with this email was not found. Please ask them to register first.',
-        });
-      }
-
-      const existing = fastify.dbCtx.sqlite.prepare(
-        'SELECT id FROM workspace_members WHERE workspace_id = ? AND user_id = ?'
-      ).get(workspaceId, targetUser.id);
-
-      if (existing) {
-        return reply.status(409).send({
-          error: 'Conflict',
-          message: 'User is already a member of this workspace',
-        });
-      }
-
-      const memberId = crypto.randomUUID();
-      const now = Date.now();
-      const assignedRole = ['owner', 'admin', 'editor', 'viewer'].includes(role) ? role : 'editor';
-
-      fastify.dbCtx.sqlite.prepare(
-        'INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)'
-      ).run(memberId, workspaceId, targetUser.id, assignedRole, now);
-
-      return reply.status(201).send({
-        member: {
-          id: memberId,
-          userId: targetUser.id,
-          name: targetUser.name,
-          email: targetUser.email,
-          role: assignedRole,
-          joinedAt: now,
-        },
-      });
-    } catch (err: unknown) {
-      if (err instanceof WorkspaceAccessError) {
-        return reply.status(err.statusCode).send({
-          error: 'Forbidden',
-          message: err.message,
-        });
-      }
-      fastify.log.error(err);
-      return reply.status(500).send({
-        error: 'Internal Server Error',
-        message: 'Failed to add workspace member',
-      });
-    }
-  });
+  // NOTE (audit H-3): there is deliberately no POST /workspaces/:id/members
+  // endpoint. Direct member insertion bypassed the invitation flow's email
+  // ownership check (admins could pull any registered account into a workspace
+  // without consent) and its 404-vs-201 response let any signed-in user
+  // enumerate which email addresses have accounts. All member additions go
+  // through POST /workspaces/:id/invites, which requires the invited user to
+  // accept from the matching email address and responds identically whether
+  // or not the address is registered.
 
   // GET /api/v1/workspaces/:id/activities
   fastify.get<{ Params: { id: string } }>('/:id/activities', async (request, reply) => {
@@ -448,7 +370,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
         appUrl: resolveAppUrl(),
       });
 
-      const emailSent = await sendInviteEmail(fastify.dbCtx, { inviteId: result.invite.id, appUrl: resolveAppUrl() });
+      const emailSent = await sendInviteEmail(fastify.dbCtx, { inviteId: result.invite.id, token: result.invite.token, appUrl: resolveAppUrl() });
 
       return reply.status(201).send({
         invite: { ...result.invite, emailSent },

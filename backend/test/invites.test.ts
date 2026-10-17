@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createDatabase } from '../src/db/index.js';
 import { createTestUser } from './helpers.js';
+import { hashSessionToken } from '../src/services/auth.service.js';
 import type { FastifyInstance } from 'fastify';
+import crypto from 'node:crypto';
 
 describe('Workspace invitations & member management', () => {
   let app: FastifyInstance;
@@ -27,6 +29,20 @@ describe('Workspace invitations & member management', () => {
       payload: { email, role },
     });
     return { statusCode: res.statusCode, body: res.json() };
+  };
+
+  /**
+   * Test fixture: place a registered user into a workspace with a role.
+   * The HTTP endpoint that used to do this (POST /workspaces/:id/members)
+   * was removed (audit H-3) because it bypassed invitation consent and
+   * allowed account enumeration — memberships are seeded directly in the DB.
+   */
+  const addMemberDirect = async (workspaceId: string, email: string, role: string) => {
+    const { user } = await createTestUser(app, email, email.split('@')[0]);
+    dbCtx.sqlite
+      .prepare('INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(crypto.randomUUID(), workspaceId, user.id, role, Date.now());
+    return { userId: user.id, email };
   };
 
   it('creates an invitation with a shareable link (email delivery disabled without SMTP)', async () => {
@@ -170,21 +186,9 @@ describe('Workspace invitations & member management', () => {
   it('removes members with role rules: owner untouchable, admins only removed by owner', async () => {
     const { workspace, cookieHeader } = await createTestUser(app, 'alpha-owner@example.com');
 
-    // Add members directly (registered users)
-    const addMember = async (email: string, role: string) => {
-      await createTestUser(app, email, email.split('@')[0]);
-      const res = await app.inject({
-        method: 'POST',
-        url: `/api/v1/workspaces/${workspace.id}/members`,
-        headers: { cookie: cookieHeader },
-        payload: { email, role },
-      });
-      expect(res.statusCode).toBe(201);
-      return res.json().member;
-    };
-
-    const admin = await addMember('ws-admin@example.com', 'admin');
-    const editor = await addMember('ws-editor@example.com', 'editor');
+    // Memberships are seeded directly (audit H-3 removed the direct-add endpoint)
+    const admin = await addMemberDirect(workspace.id, 'ws-admin@example.com', 'admin');
+    const editor = await addMemberDirect(workspace.id, 'ws-editor@example.com', 'editor');
 
     // Owner removes the editor
     const removeEditor = await app.inject({
@@ -209,7 +213,7 @@ describe('Workspace invitations & member management', () => {
       payload: { email: 'ws-admin@example.com', password: 'Password123!' },
     });
     const adminCookie = `memo_session=${adminLogin.cookies.find((c: any) => c.name === 'memo_session')?.value}`;
-    const addSecondAdmin = await addMember('ws-admin2@example.com', 'admin');
+    const addSecondAdmin = await addMemberDirect(workspace.id, 'ws-admin2@example.com', 'admin');
     const adminRemovesAdmin = await app.inject({
       method: 'DELETE',
       url: `/api/v1/workspaces/${workspace.id}/members/${addSecondAdmin.userId}`,
@@ -226,17 +230,11 @@ describe('Workspace invitations & member management', () => {
     expect(ownerRemovesAdmin.statusCode).toBe(200);
   });
 
-  it('changes member roles with permission rules', async () => {
+  it('changes member roles with permission rules (audit H-8: admin role is owner-only)', async () => {
     const { workspace, cookieHeader } = await createTestUser(app, 'role-owner@example.com');
-    await createTestUser(app, 'role-editor@example.com', 'Role Editor');
-    const add = await app.inject({
-      method: 'POST',
-      url: `/api/v1/workspaces/${workspace.id}/members`,
-      headers: { cookie: cookieHeader },
-      payload: { email: 'role-editor@example.com', role: 'editor' },
-    });
-    expect(add.statusCode).toBe(201);
-    const memberId = add.json().member.userId;
+    const editorMember = await addMemberDirect(workspace.id, 'role-editor@example.com', 'editor');
+    const memberId = editorMember.userId;
+    const adminMember = await addMemberDirect(workspace.id, 'role-admin@example.com', 'admin');
 
     // Owner promotes to admin
     const promote = await app.inject({
@@ -248,15 +246,57 @@ describe('Workspace invitations & member management', () => {
     expect(promote.statusCode).toBe(200);
     expect(promote.json().member.role).toBe('admin');
 
-    // Demote to viewer
+    // Audit H-8: a workspace admin may NOT demote a fellow admin — the
+    // previous privilege model allowed demote-then-remove of other admins.
+    const adminLogin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: 'role-admin@example.com', password: 'Password123!' },
+    });
+    const adminCookie = `memo_session=${adminLogin.cookies.find((c: any) => c.name === 'memo_session')?.value}`;
+    const adminDemotesAdmin = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/workspaces/${workspace.id}/members/${memberId}`,
+      headers: { cookie: adminCookie },
+      payload: { role: 'viewer' },
+    });
+    expect(adminDemotesAdmin.statusCode).toBe(403);
+
+    // Audit H-8: a workspace admin may NOT grant admin to a plain member
+    const plainMember = await addMemberDirect(workspace.id, 'role-plain@example.com', 'editor');
+    const adminGrantsAdmin = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/workspaces/${workspace.id}/members/${plainMember.userId}`,
+      headers: { cookie: adminCookie },
+      payload: { role: 'admin' },
+    });
+    expect(adminGrantsAdmin.statusCode).toBe(403);
+
+    // An admin may still change a plain editor's role (non-admin transitions)
+    const adminEditsEditor = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/workspaces/${workspace.id}/members/${plainMember.userId}`,
+      headers: { cookie: adminCookie },
+      payload: { role: 'viewer' },
+    });
+    expect(adminEditsEditor.statusCode).toBe(200);
+
+    // Owner demotes back to editor, then to viewer
     const demote = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/workspaces/${workspace.id}/members/${memberId}`,
+      headers: { cookie: cookieHeader },
+      payload: { role: 'editor' },
+    });
+    expect(demote.statusCode).toBe(200);
+    const demoteAgain = await app.inject({
       method: 'PATCH',
       url: `/api/v1/workspaces/${workspace.id}/members/${memberId}`,
       headers: { cookie: cookieHeader },
       payload: { role: 'viewer' },
     });
-    expect(demote.statusCode).toBe(200);
-    expect(demote.json().member.role).toBe('viewer');
+    expect(demoteAgain.statusCode).toBe(200);
+    expect(demoteAgain.json().member.role).toBe('viewer');
 
     // Owner role is immutable
     const ownerId = (await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie: cookieHeader } })).json().user.id;
@@ -280,14 +320,7 @@ describe('Workspace invitations & member management', () => {
 
   it('denies invite management to non-admin members', async () => {
     const { workspace, cookieHeader } = await createTestUser(app, 'no-invite-owner@example.com');
-    await createTestUser(app, 'no-invite-member@example.com', 'Member');
-    const add = await app.inject({
-      method: 'POST',
-      url: `/api/v1/workspaces/${workspace.id}/members`,
-      headers: { cookie: cookieHeader },
-      payload: { email: 'no-invite-member@example.com', role: 'editor' },
-    });
-    expect(add.statusCode).toBe(201);
+    await addMemberDirect(workspace.id, 'no-invite-member@example.com', 'editor');
 
     const login = await app.inject({
       method: 'POST',

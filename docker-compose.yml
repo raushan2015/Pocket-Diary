@@ -17,8 +17,12 @@ services:
       - BACKEND_PORT=3000
       - DATABASE_PATH=/app/data/memo_manager.db
       - COOKIE_SECRET=${COOKIE_SECRET:?Set a unique COOKIE_SECRET of at least 32 characters in your .env file}
-      # Public URL used in reminder emails and invitation links
-      - APP_URL=${APP_URL:-}
+      # Public URL used in reminder emails, invitation and password-reset links.
+      # REQUIRED (audit C-3): the backend refuses to start without it in
+      # production — email links are never derived from request headers.
+      - APP_URL=${APP_URL:?Set APP_URL to your public URL, e.g. https://notes.example.com (required for password-reset/invite links)}
+      # Whose X-Forwarded-For header is trusted for rate limiting (audit H-1).
+      - TRUST_PROXY=${TRUST_PROXY:-127.0.0.1}
       # Server-side reminder scanning (default 30s)
       - REMINDER_SCAN_INTERVAL_MS=${REMINDER_SCAN_INTERVAL_MS:-}
       # Optional SMTP email delivery for reminders and invitations
@@ -49,7 +53,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 30s
 
 volumes:
   memo_data:

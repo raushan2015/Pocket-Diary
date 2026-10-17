@@ -146,7 +146,7 @@ export function renderCardGridView(memos, container, isTrash, skipPinnedGrouping
     if (isChecklist && Array.isArray(memo.checklistData) && memo.checklistData.length > 0) {
       const itemsToShow = memo.checklistData.slice(0, 8);
       checklistHtml = `
-        <div class="keep-card-checklist" onclick="event.stopPropagation();">
+        <div class="keep-card-checklist">
           ${itemsToShow.map(item => `
             <div class="keep-checklist-item ${item.checked ? 'completed' : ''}">
               <input type="checkbox" ${item.checked ? 'checked' : ''} data-memo-id="${memo.id}" data-check-id="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.text || 'Item')}">
@@ -176,7 +176,7 @@ export function renderCardGridView(memos, container, isTrash, skipPinnedGrouping
       let domain = '';
       try { domain = new URL(lp.url).hostname; } catch {}
       linkPreviewsHtml = `
-        <a href="${escapeHtml(lp.url)}" target="_blank" rel="noopener noreferrer" class="keep-link-card" onclick="event.stopPropagation();" style="margin-bottom:0.5rem;">
+        <a href="${escapeHtml(lp.url)}" target="_blank" rel="noopener noreferrer" class="keep-link-card" style="margin-bottom:0.5rem;">
           ${lpImage ? `<img src="${escapeHtml(lpImage)}" class="keep-link-thumb" alt="">` : ''}
           <div class="keep-link-info">
             <span class="keep-link-title">${escapeHtml(lp.title || lp.url)}</span>
@@ -215,12 +215,12 @@ export function renderCardGridView(memos, container, isTrash, skipPinnedGrouping
 
     return `
       <div class="memo-card memo-color-${memoColor} ${memoTheme} ${isPinned ? 'pinned' : ''} ${isSelected ? 'is-selected' : ''}" draggable="true" data-memo-id="${memo.id}">
-        <button class="keep-card-select-btn ${isSelected ? 'active' : ''}" data-action="select" data-id="${memo.id}" title="Select note" aria-label="Select note" onclick="event.stopPropagation();">
+        <button class="keep-card-select-btn ${isSelected ? 'active' : ''}" data-action="select" data-id="${memo.id}" title="Select note" aria-label="Select note">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
         </button>
         <div class="memo-card-header">
           <h4 class="memo-card-title">${escapeHtml(memo.title || 'Untitled')}</h4>
-          <button class="keep-pin-btn ${isPinned ? 'active' : ''}" title="${isPinned ? 'Unpin note' : 'Pin note'}" data-action="pin" data-id="${memo.id}" onclick="event.stopPropagation();">
+          <button class="keep-pin-btn ${isPinned ? 'active' : ''}" title="${isPinned ? 'Unpin note' : 'Pin note'}" data-action="pin" data-id="${memo.id}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-2l-3-3V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v7l-3 3v2z"></path></svg>
           </button>
         </div>
@@ -229,13 +229,13 @@ export function renderCardGridView(memos, container, isTrash, skipPinnedGrouping
         ${checklistHtml}
         ${linkPreviewsHtml}
 
-        <div class="memo-card-chips-row" onclick="event.stopPropagation();" style="display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center; margin-top:0.4rem;">
+        <div class="memo-card-chips-row" style="display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center; margin-top:0.4rem;">
           ${reminderHtml}
           ${collabHtml}
           ${tagsHtml}
         </div>
 
-        <div class="memo-card-hover-toolbar" onclick="event.stopPropagation();">
+        <div class="memo-card-hover-toolbar">
           ${!isTrash ? `
             <button class="keep-tool-btn" data-action="quick-edit" data-id="${memo.id}" title="Keep In-place Editor">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
@@ -313,7 +313,7 @@ export function renderListView(memos, container, isTrash, skipPinnedGrouping = f
           </div>
         </div>
 
-        <div class="memo-row-meta" onclick="event.stopPropagation();">
+        <div class="memo-row-meta">
           <span class="badge badge-${categoryName.toLowerCase()}">${escapeHtml(categoryName)}</span>
 
           ${!isTrash ? `
@@ -343,9 +343,12 @@ export function attachMemoItemInteractions(container, memos) {
   // The in-place Keep modal is opened from the card hover toolbar (quick-edit pencil button).
   // A dblclick binding is intentionally avoided: dblclick also fires two click events,
   // which would navigate to the editor view *before* opening the modal on top of it.
+  // Interactive zones (formerly guarded by inline onclick attributes, removed
+  // for the strict CSP) are filtered here via one delegated closest() check.
+  const INTERACTIVE_ZONES = 'button, a, input, .keep-tool-btn, .tag-chip, .keep-checklist-item, .keep-link-card, .keep-card-checklist, .memo-card-chips-row, .memo-card-hover-toolbar, .memo-row-meta, .keep-attachment-item, .md-image';
   container.querySelectorAll('[data-memo-id]').forEach((el) => {
     el.addEventListener('click', (e) => {
-      if (e.target.closest('button, a, input, .keep-tool-btn, .tag-chip, .keep-checklist-item, .keep-link-card')) return;
+      if (e.target.closest(INTERACTIVE_ZONES)) return;
       const id = el.getAttribute('data-memo-id');
       const memo = memos.find((m) => m.id === id);
       if (memo) {

@@ -12,6 +12,8 @@ import { apiRoutes } from './routes/index.js';
 export interface AppOptions {
   dbCtx?: DatabaseContext;
   logger?: boolean | object;
+  /** Overrides the TRUST_PROXY setting for tests (audit H-1). */
+  trustProxy?: boolean | string;
 }
 
 export function buildApp(options: AppOptions = {}): FastifyInstance {
@@ -19,7 +21,14 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     logger: options.logger ?? {
       level: config.isProduction ? 'info' : 'info',
     },
-    trustProxy: true,
+    // Security (audit H-1): trustProxy decides whose X-Forwarded-For header
+    // may rewrite `request.ip`. Trusting everyone (the previous setting) let
+    // any client spoof its IP with a single header and walk straight past
+    // the login/brute-force rate limiter. Default trusts only the loopback
+    // reverse proxy this app ships with; set TRUST_PROXY to the proxy's
+    // address or subnet when deployed behind another proxy, or 'false' when
+    // the backend is exposed directly.
+    trustProxy: options.trustProxy ?? config.trustProxy,
     // JSON API body budget. Memo content may embed imported images as data
     // URIs (see /api/v1/memos content limit); 8 MB keeps every valid note well
     // within reach while still bounding request sizes.

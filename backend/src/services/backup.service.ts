@@ -6,6 +6,46 @@ import crypto from 'node:crypto';
 import { backupConfig } from '../config.js';
 
 const BACKUP_PATTERN = /^memo-manager-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-f0-9]{8}\.db$/;
+const ATTACHMENTS_MIRROR_DIR = 'attachments-mirror';
+
+/** Resolves the attachments directory exactly like the attachments route (audit M-12/M-13). */
+function resolveAttachmentsDir(): string {
+  return process.env.ATTACHMENTS_DIR || path.resolve(process.cwd(), '../data/attachments');
+}
+
+/**
+ * Incremental mirror of the attachments directory into the backup folder
+ * (audit M-12): attachments were previously NOT backed up at all. Files are
+ * immutable once written, so copying only files that are missing keeps each
+ * run cheap while making the backup set complete.
+ */
+async function mirrorAttachments(destinationDir: string, logger?: BackupOptions['logger']): Promise<void> {
+  const sourceDir = resolveAttachmentsDir();
+  let files: string[];
+  try {
+    files = (await fs.readdir(sourceDir, { withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+  } catch {
+    return; // no attachments dir yet — nothing to mirror
+  }
+
+  const mirrorDir = path.join(destinationDir, ATTACHMENTS_MIRROR_DIR);
+  try {
+    await fs.mkdir(mirrorDir, { recursive: true });
+    const existing = new Set(
+      (await fs.readdir(mirrorDir, { withFileTypes: true }))
+        .filter((entry) => entry.isFile())
+        .map((entry) => entry.name),
+    );
+    for (const name of files) {
+      if (existing.has(name)) continue;
+      await fs.copyFile(path.join(sourceDir, name), path.join(mirrorDir, name));
+    }
+  } catch (error) {
+    logger?.warn({ err: error, mirrorDir }, 'Attachment backup mirror failed');
+  }
+}
 
 export interface BackupOptions {
   directory: string;
@@ -75,6 +115,7 @@ export async function createDatabaseBackup(
   await enforceRetention(options.directory, retention, options.logger);
 
   options.logger?.info({ backupPath: destination, replicated: Boolean(options.replicationDirectory) }, 'SQLite database backup completed');
+  await mirrorAttachments(options.directory, options.logger);
   return destination;
 }
 
@@ -133,6 +174,8 @@ export interface BackupSchedulerOptions {
   retention?: number;
   replicationDirectory?: string;
   replicationRetention?: number;
+  /** Skip the startup snapshot when one already exists newer than this (hours). Default: min(1, interval/4). */
+  startupMinIntervalHours?: number;
 }
 
 export function startBackupScheduler(options: BackupSchedulerOptions): () => Promise<void> {
@@ -148,6 +191,21 @@ export function startBackupScheduler(options: BackupSchedulerOptions): () => Pro
     ?? path.join(path.dirname(path.resolve(options.databasePath)), 'backups');
 
   let inFlight: Promise<void> | null = null;
+
+  const newestSnapshotAt = async (): Promise<number | null> => {
+    try {
+      const entries = await fs.readdir(directory, { withFileTypes: true });
+      let newest: number | null = null;
+      for (const entry of entries) {
+        if (!entry.isFile() || !BACKUP_PATTERN.test(entry.name)) continue;
+        const stat = await fs.stat(path.join(directory, entry.name));
+        if (newest == null || stat.mtimeMs > newest) newest = stat.mtimeMs;
+      }
+      return newest;
+    } catch {
+      return null;
+    }
+  };
 
   const runBackup = (): Promise<void> => {
     if (inFlight) return inFlight;
@@ -171,7 +229,25 @@ export function startBackupScheduler(options: BackupSchedulerOptions): () => Pro
   };
 
   options.logger.info({ directory, intervalHours, retention }, 'SQLite database backup scheduler started');
-  void runBackup();
+
+  // Audit M-12: a backup on every startup meant a crash-looping container
+  // pushed all good snapshots out of retention within minutes. Only run the
+  // startup snapshot when the newest one is older than the minimum interval.
+  const startupMinIntervalHours = Math.max(
+    0.25,
+    options.startupMinIntervalHours ?? Math.min(1, intervalHours / 4),
+  );
+  void newestSnapshotAt().then((lastAt) => {
+    const ageHours = lastAt == null ? Infinity : (Date.now() - lastAt) / (60 * 60 * 1000);
+    if (ageHours >= startupMinIntervalHours) {
+      void runBackup();
+    } else {
+      options.logger.info(
+        { ageHours: Math.round(ageHours * 100) / 100 },
+        'Skipping startup backup: a recent snapshot already exists',
+      );
+    }
+  });
 
   const timer = setInterval(() => void runBackup(), intervalHours * 60 * 60 * 1000);
   timer.unref();

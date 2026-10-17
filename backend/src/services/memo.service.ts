@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eq, and, sql, inArray, isNotNull } from 'drizzle-orm';
+import { eq, and, sql, inArray, isNotNull, desc } from 'drizzle-orm';
 import {
   memos,
   categories,
@@ -59,6 +59,14 @@ export const VALID_MEMO_COLORS = [
   'brown',
   'gray',
 ] as const;
+
+/**
+ * Version-history retention (audit M-7): autosave fires ~400 ms after typing
+ * pauses, so snapshots are coalesced — a new one is only kept when the last
+ * one is older than this window — and history is pruned to this many entries.
+ */
+export const VERSION_COALESCE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+export const MAX_VERSIONS_PER_MEMO = 50;
 
 export const VALID_THEMES = [
   'default',
@@ -558,6 +566,75 @@ export function getMemoById(
 }
 
 /**
+ * Normalizes a tag list for storage (audit M-3): trims each name and drops
+ * duplicates case-insensitively. Previously `tags: ["x","x"]` hit the
+ * memo_tags primary key twice and produced a 500; mixed-case duplicates
+ * ("Work" / "work") also created shadow tags.
+ */
+export function normalizeTagNames(rawNames: unknown): string[] {
+  if (!Array.isArray(rawNames)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of rawNames) {
+    const name = String(raw ?? '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(name);
+  }
+  return result;
+}
+
+/** Case-insensitive tag lookup within a workspace (consistent with import, audit M-3). */
+function findTagCaseInsensitive(tx: any, workspaceId: string, name: string): { id: string; name: string } | undefined {
+  return tx
+    .select({ id: tags.id, name: tags.name })
+    .from(tags)
+    .where(and(eq(tags.workspaceId, workspaceId), sql`lower(${tags.name}) = ${name.toLowerCase()}`))
+    .get();
+}
+
+/**
+ * Audit L-5: link-preview URLs are user-suppliable through memo payloads and
+ * are rendered as card hrefs — only http(s) and same-origin /api/ URLs are
+ * stored. A `javascript:` URL previously round-tripped into the DOM.
+ */
+function sanitizeLinkPreviews(previews: unknown): LinkPreview[] {
+  if (!Array.isArray(previews)) return [];
+  const seen = new Set<string>();
+  const result: LinkPreview[] = [];
+  for (const item of previews) {
+    if (!item || typeof item !== 'object') continue;
+    const p = item as Record<string, unknown>;
+    const url = typeof p.url === 'string' ? p.url.trim() : '';
+    if (!/^https?:\/\//i.test(url) && !/^\/api\//i.test(url)) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    result.push({
+      url,
+      title: typeof p.title === 'string' ? p.title.slice(0, 300) : undefined,
+      description: typeof p.description === 'string' ? p.description.slice(0, 1000) : undefined,
+      imageUrl: typeof p.imageUrl === 'string' && /^https?:\/\/|^\//i.test(p.imageUrl) ? p.imageUrl.slice(0, 2048) : undefined,
+      faviconUrl: typeof p.faviconUrl === 'string' && /^https?:\/\/|^\//i.test(p.faviconUrl) ? p.faviconUrl.slice(0, 2048) : undefined,
+    });
+  }
+  return result.slice(0, 20);
+}
+
+function upsertMemoTags(tx: any, workspaceId: string, memoId: string, names: string[], now: number): void {
+  for (const name of names) {
+    let tag = findTagCaseInsensitive(tx, workspaceId, name);
+    if (!tag) {
+      const tagId = crypto.randomUUID();
+      tx.insert(tags).values({ id: tagId, workspaceId, name, createdAt: now }).run();
+      tag = { id: tagId, name };
+    }
+    tx.insert(memoTags).values({ memoId, tagId: tag.id }).run();
+  }
+}
+
+/**
  * Create a new memo.
  */
 export function createMemo(
@@ -578,7 +655,7 @@ export function createMemo(
     isFavorite = false,
     isPinned = false,
     dueDate = null,
-    tags: memoTagNames = [],
+    tags: memoTagNamesArg = [],
   } = data;
 
   if (!workspaceId) {
@@ -606,6 +683,9 @@ export function createMemo(
   const now = Date.now();
   const initialVersion = 1;
 
+  // Audit H-2: whoever creates the note owns its initial reminder/due date.
+  const hasInitialReminder = dueDate != null || data.reminderTime != null;
+
   db.transaction((tx) => {
     // 1. Insert memo
     tx.insert(memos).values({
@@ -627,9 +707,10 @@ export function createMemo(
       dueDate: dueDate ?? null,
       reminderTime: data.reminderTime ?? null,
       reminderLocation: data.reminderLocation ?? null,
+      reminderSetBy: hasInitialReminder ? userId : null,
       collaborators: JSON.stringify(data.collaborators || []),
       checklistData: JSON.stringify(data.checklistData || []),
-      linkPreviews: JSON.stringify(data.linkPreviews || []),
+      linkPreviews: JSON.stringify(sanitizeLinkPreviews(data.linkPreviews)),
       version: initialVersion,
       createdBy: userId,
       createdAt: now,
@@ -637,29 +718,10 @@ export function createMemo(
       deletedAt: null,
     }).run();
 
-    // 2. Handle tags
-    if (Array.isArray(memoTagNames) && memoTagNames.length > 0) {
-      for (const rawName of memoTagNames) {
-        const name = String(rawName).trim();
-        if (!name) continue;
-
-        let tag = tx.select().from(tags).where(and(eq(tags.workspaceId, workspaceId), eq(tags.name, name))).get();
-        if (!tag) {
-          const tagId = crypto.randomUUID();
-          tx.insert(tags).values({
-            id: tagId,
-            workspaceId,
-            name,
-            createdAt: now,
-          }).run();
-          tag = { id: tagId, workspaceId, name, createdAt: now };
-        }
-
-        tx.insert(memoTags).values({
-          memoId,
-          tagId: tag.id,
-        }).run();
-      }
+    // 2. Handle tags (deduped case-insensitively, audit M-3)
+    const memoTagNames = normalizeTagNames(memoTagNamesArg);
+    if (memoTagNames.length > 0) {
+      upsertMemoTags(tx, workspaceId, memoId, memoTagNames, now);
     }
 
     // 3. Snapshot initial version
@@ -722,10 +784,17 @@ export function updateMemo(
 
   const newTitle = data.title !== undefined ? data.title : existing.title;
   const newContent = data.content !== undefined ? data.content : existing.content;
+  // Audit M-2: validate only what the request actually changes. Re-validating
+  // the stored value made imported notes with legacy colors (e.g. `RED`)
+  // permanently unsaveable — even a pin-only PATCH returned 400.
   const newColor = data.color !== undefined ? data.color : (existing.color || 'default');
-  if (!VALID_MEMO_COLORS.includes(newColor as any)) throw new ValidationError('Invalid memo color');
+  if (data.color !== undefined && !VALID_MEMO_COLORS.includes(newColor as any)) {
+    throw new ValidationError('Invalid memo color');
+  }
   const newTheme = data.theme !== undefined ? data.theme : (existing.theme || 'default');
-  if (!VALID_THEMES.includes(newTheme as any)) throw new ValidationError('Invalid memo theme');
+  if (data.theme !== undefined && !VALID_THEMES.includes(newTheme as any)) {
+    throw new ValidationError('Invalid memo theme');
+  }
   const newPriority = data.priority !== undefined ? data.priority : existing.priority;
   const newStatus = data.status !== undefined ? data.status : existing.status;
   const newFolderId = data.folderId !== undefined ? data.folderId : existing.folder_id;
@@ -740,7 +809,7 @@ export function updateMemo(
   const newSortOrder = data.sortOrder !== undefined ? data.sortOrder : (existing.sort_order || 0);
   const newCollaborators = data.collaborators !== undefined ? JSON.stringify(data.collaborators) : (existing.collaborators || '[]');
   const newChecklistData = data.checklistData !== undefined ? JSON.stringify(data.checklistData) : (existing.checklist_data || '[]');
-  const newLinkPreviews = data.linkPreviews !== undefined ? JSON.stringify(data.linkPreviews) : (existing.link_previews || '[]');
+  const newLinkPreviews = data.linkPreviews !== undefined ? JSON.stringify(sanitizeLinkPreviews(data.linkPreviews)) : (existing.link_previews || '[]');
 
   if (newCategoryId && !sqlite.prepare('SELECT id FROM categories WHERE id = ? AND workspace_id = ?').get(newCategoryId, workspaceId)) {
     throw new ValidationError('Category must belong to the same workspace as the memo');
@@ -750,6 +819,19 @@ export function updateMemo(
   }
   const newIsFavorite = data.isFavorite !== undefined ? (data.isFavorite ? 1 : 0) : existing.is_favorite;
   const newIsPinned = data.isPinned !== undefined ? (data.isPinned ? 1 : 0) : existing.is_pinned;
+
+  // Audit H-2: the effective reminder is COALESCE(reminder_time, due_date).
+  // Whoever last changed it becomes the reminder owner — the reminder
+  // notifies that user only, never the whole workspace.
+  const oldReminderTime = existing.reminder_time ?? null;
+  const oldDueDate = existing.due_date ?? null;
+  const effectiveReminderChanged =
+    (newReminderTime ?? null) !== oldReminderTime
+    || ((newReminderTime ?? null) === null && (newDueDate ?? null) !== oldDueDate);
+  const hasReminder = newReminderTime != null || newDueDate != null;
+  const newReminderSetBy = effectiveReminderChanged
+    ? (hasReminder ? userId : null)
+    : (existing.reminder_set_by ?? null);
 
   db.transaction((tx) => {
     // 1. Update memo table
@@ -766,6 +848,7 @@ export function updateMemo(
         dueDate: newDueDate,
         reminderTime: newReminderTime,
         reminderLocation: newReminderLocation,
+        reminderSetBy: newReminderSetBy,
         isFavorite: newIsFavorite,
         isPinned: newIsPinned,
         isArchived: newIsArchived,
@@ -780,45 +863,54 @@ export function updateMemo(
       .where(and(eq(memos.id, memoId), eq(memos.workspaceId, workspaceId)))
       .run();
 
-    // 2. Handle tags if provided
+    // 2. Handle tags if provided (deduped case-insensitively, audit M-3)
     if (data.tags !== undefined) {
       // Remove current associations
       tx.delete(memoTags).where(eq(memoTags.memoId, memoId)).run();
-
-      for (const rawName of data.tags) {
-        const name = String(rawName).trim();
-        if (!name) continue;
-
-        let tag = tx.select().from(tags).where(and(eq(tags.workspaceId, workspaceId), eq(tags.name, name))).get();
-        if (!tag) {
-          const tagId = crypto.randomUUID();
-          tx.insert(tags).values({
-            id: tagId,
-            workspaceId,
-            name,
-            createdAt: now,
-          }).run();
-          tag = { id: tagId, workspaceId, name, createdAt: now };
-        }
-
-        tx.insert(memoTags).values({
-          memoId,
-          tagId: tag.id,
-        }).run();
-      }
+      upsertMemoTags(tx, workspaceId, memoId, normalizeTagNames(data.tags), now);
     }
 
-    // 3. Insert snapshot into memo_versions only when memo content changed.
+    // 3. Version snapshots (audit M-7): coalesce and prune.
+    // Autosave fires ~400 ms after the user stops typing, so the previous
+    // "snapshot on every content change" wrote a full copy of the note (up to
+    // 2 MB) per pause — hundreds of MB per editing session. Now a new
+    // snapshot is written only when the content differs from the last
+    // snapshot AND the last snapshot is older than the coalescing window;
+    // history keeps its most recent MAX_VERSIONS_PER_MEMO entries.
     const contentChanged = newTitle !== existing.title || newContent !== existing.content;
-    if (contentChanged) tx.insert(memoVersions).values({
-      id: crypto.randomUUID(),
-      memoId,
-      versionNumber: nextVersion,
-      title: newTitle,
-      content: newContent,
-      changedBy: userId,
-      createdAt: now,
-    }).run();
+    if (contentChanged) {
+      const last = tx
+        .select()
+        .from(memoVersions)
+        .where(eq(memoVersions.memoId, memoId))
+        .orderBy(desc(memoVersions.versionNumber))
+        .limit(1)
+        .get();
+      const sameContent = last != null && last.title === newTitle && last.content === newContent;
+      const withinWindow = last != null && now - Number(last.createdAt) < VERSION_COALESCE_WINDOW_MS;
+      if (!sameContent && !withinWindow) {
+        tx.insert(memoVersions).values({
+          id: crypto.randomUUID(),
+          memoId,
+          versionNumber: nextVersion,
+          title: newTitle,
+          content: newContent,
+          changedBy: userId,
+          createdAt: now,
+        }).run();
+      }
+
+      // Prune: keep only the newest MAX_VERSIONS_PER_MEMO snapshots.
+      if (Math.random() < 0.1) {
+        sqlite
+          .prepare(
+            `DELETE FROM memo_versions WHERE memo_id = ? AND id NOT IN (
+               SELECT id FROM memo_versions WHERE memo_id = ? ORDER BY version_number DESC LIMIT ?
+             )`
+          )
+          .run(memoId, memoId, MAX_VERSIONS_PER_MEMO);
+      }
+    }
   });
 
   const updated = getMemoById(dbCtx, memoId, workspaceId);

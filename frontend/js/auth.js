@@ -237,20 +237,52 @@ function renderInviteBanner() {
     return;
   }
 
-  const ctx = pendingInviteContext;
-  if (!ctx.usable) {
-    banner.className = 'auth-invite-banner invalid';
-    banner.innerHTML = `
-      <span class="invite-icon">⚠️</span>
-      <div><strong>This invitation is no longer valid</strong>
-      <span>${ctx.status === 'revoked' ? 'It was revoked by the workspace admin.' : ctx.expired ? 'It has expired.' : 'It was already used.'} You can still create your own workspace below.</span></div>`;
+  // Security (audit C-2): the banner is built with DOM APIs and textContent
+  // only — workspaceName is attacker-controlled (any user can name their
+  // workspace `<img src=x onerror=…>`) and must never pass through innerHTML.
+  banner.replaceChildren();
+  banner.className = pendingInviteContext.usable ? 'auth-invite-banner' : 'auth-invite-banner invalid';
+
+  const icon = document.createElement('span');
+  icon.className = 'invite-icon';
+  icon.textContent = pendingInviteContext.usable ? '✉️' : '⚠️';
+
+  const text = document.createElement('div');
+  if (!pendingInviteContext.usable) {
+    const headline = document.createElement('strong');
+    headline.textContent = 'This invitation is no longer valid';
+    const detail = document.createElement('span');
+    detail.textContent = pendingInviteContext.status === 'revoked'
+      ? 'It was revoked by the workspace admin.'
+      : pendingInviteContext.expired
+        ? 'It has expired.'
+        : 'It was already used.';
+    detail.textContent += ' You can still create your own workspace below.';
+    text.append(headline, detail);
   } else {
-    banner.className = 'auth-invite-banner';
-    banner.innerHTML = `
-      <span class="invite-icon">✉️</span>
-      <div><strong>You've been invited to join “${ctx.workspaceName}”</strong>
-      <span>Accepting creates your account and adds you to the workspace as <strong>${ctx.role}</strong> for <strong>${ctx.email}</strong>.</span></div>`;
+    const ctx = pendingInviteContext;
+    const headline = document.createElement('strong');
+    headline.append(
+      "You've been invited to join “",
+      document.createTextNode(ctx.workspaceName || 'a workspace'),
+      '”',
+    );
+    const detail = document.createElement('span');
+    const roleStrong = document.createElement('strong');
+    roleStrong.textContent = ctx.role || 'editor';
+    const emailStrong = document.createElement('strong');
+    emailStrong.textContent = ctx.email || '';
+    detail.append(
+      'Accepting creates your account and adds you to the workspace as ',
+      roleStrong,
+      ' for ',
+      emailStrong,
+      '.',
+    );
+    text.append(headline, detail);
   }
+
+  banner.append(icon, text);
   banner.style.display = 'flex';
 }
 

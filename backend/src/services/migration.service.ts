@@ -15,6 +15,7 @@ import type { DatabaseContext } from '../db/index.js';
 import {
   VALID_PRIORITIES,
   VALID_STATUSES,
+  VALID_MEMO_COLORS,
   type MemoPriority,
   type MemoStatus,
   listMemos,
@@ -226,7 +227,13 @@ export function importLocalData(
           })))
         : '[]';
       const noteType = m.noteType === 'checklist' || (rawChecklist && rawChecklist.length) ? 'checklist' : 'text';
-      const color = typeof m.color === 'string' && m.color ? m.color : 'default';
+      // Audit M-2: colors are normalized against the known palette. Storing
+      // arbitrary strings (e.g. Keep's `RED`) made the note permanently
+      // unsavable afterwards — every later PATCH re-validated the stored
+      // value and failed with `400 Invalid memo color`.
+      const rawColor = typeof m.color === 'string' ? m.color.trim().toLowerCase() : '';
+      const color = (rawColor && VALID_MEMO_COLORS.includes(rawColor as never)) ? rawColor : 'default';
+      const hasReminder = m.dueDate != null;
 
       // Insert memo
       tx.insert(memos).values({
@@ -244,6 +251,7 @@ export function importLocalData(
         isFavorite: m.isFavorite ? 1 : 0,
         isPinned: m.isPinned ? 1 : 0,
         dueDate: m.dueDate ?? null,
+        reminderSetBy: hasReminder ? userId : null, // audit H-2: reminder owner
         version: 1,
         createdBy: userId,
         createdAt,
@@ -251,10 +259,14 @@ export function importLocalData(
         deletedAt: null,
       }).run();
 
-      // Associate tags
+      // Associate tags (deduped case-insensitively — the memo_tags primary key
+      // makes duplicates a 500, audit M-3)
       if (Array.isArray(m.tags)) {
+        const seenTags = new Set<string>();
         for (const t of m.tags) {
           const lower = String(t).trim().toLowerCase();
+          if (!lower || seenTags.has(lower)) continue;
+          seenTags.add(lower);
           const tagId = tagNameToId.get(lower);
           if (tagId) {
             tx.insert(memoTags).values({

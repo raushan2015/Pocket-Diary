@@ -24,13 +24,23 @@ export function showToast(message, type = 'info', duration = 3500) {
     info: '<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>',
   }[type] || '';
 
-  toast.innerHTML = `
-    ${iconSvg}
-    <div class="toast-message">${message}</div>
-    <button class="toast-close-btn" aria-label="Close notification">&times;</button>
-  `;
+  // Security (audit L-4): the message can contain server or file data
+  // (e.g. a ZIP entry name), so it is inserted with textContent — never
+  // innerHTML. Only the static, fully-known icon markup uses insertAdjacentHTML.
+  if (iconSvg) {
+    toast.insertAdjacentHTML('afterbegin', iconSvg);
+  }
+  const messageEl = document.createElement('div');
+  messageEl.className = 'toast-message';
+  messageEl.textContent = String(message ?? '');
+  toast.append(messageEl);
 
-  const closeBtn = toast.querySelector('.toast-close-btn');
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'toast-close-btn';
+  closeBtn.setAttribute('aria-label', 'Close notification');
+  closeBtn.textContent = '×';
+  toast.append(closeBtn);
   const dismiss = () => {
     toast.classList.add('fade-out');
     setTimeout(() => toast.remove(), 200);

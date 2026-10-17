@@ -33,6 +33,64 @@ export function generateSessionToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/**
+ * Security (audit H-7): sessions are stored ONLY as SHA-256 hashes. Anyone
+ * with read access to the database, a backup snapshot or an off-host replica
+ * can no longer impersonate users — the raw token exists solely in the
+ * user's browser cookie. Mirrors the password-reset token design.
+ */
+export function hashSessionToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+// ---------------------------------------------------------------------------
+// Per-account login throttling (audit H-1)
+// ---------------------------------------------------------------------------
+// IP-based rate limiting can be bypassed with a spoofed X-Forwarded-For or
+// a distributed attack; a per-account lockout guarantees brute-force
+// protection for the account itself regardless of the source address.
+const LOGIN_MAX_FAILURES = 5;
+const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCKOUT_MS = 15 * 60 * 1000;
+const loginFailures = new Map<string, { count: number; firstAt: number; lockedUntil: number }>();
+
+function pruneLoginFailures(now: number): void {
+  if (loginFailures.size < 10_000) return;
+  for (const [email, rec] of loginFailures) {
+    if (rec.lockedUntil < now && rec.firstAt + LOGIN_FAILURE_WINDOW_MS < now) {
+      loginFailures.delete(email);
+    }
+  }
+}
+
+/** Throws AuthError(429) while the account is locked out after repeated failures. */
+function assertLoginNotLocked(normalizedEmail: string, now = Date.now()): void {
+  pruneLoginFailures(now);
+  const rec = loginFailures.get(normalizedEmail);
+  if (rec && rec.lockedUntil > now) {
+    throw new AuthError('Too many failed sign-in attempts for this account. Please try again in a few minutes.', 429);
+  }
+}
+
+function recordLoginFailure(normalizedEmail: string, now = Date.now()): void {
+  const rec = loginFailures.get(normalizedEmail);
+  if (!rec || now - rec.firstAt > LOGIN_FAILURE_WINDOW_MS) {
+    loginFailures.set(normalizedEmail, { count: 1, firstAt: now, lockedUntil: 0 });
+    return;
+  }
+  rec.count += 1;
+  if (rec.count >= LOGIN_MAX_FAILURES) {
+    rec.lockedUntil = now + LOGIN_LOCKOUT_MS;
+  }
+}
+
+function clearLoginFailures(normalizedEmail: string): void {
+  loginFailures.delete(normalizedEmail);
+}
+
+/** Dummy hash verified for unknown emails so response timing cannot reveal account existence (audit M-14). */
+const DUMMY_ARGON2_HASH = '$argon2id$v=19$m=65536,t=3,p=4$c2FsdGVkc2FsdGVkc2FsdGVkc2FsdA$RdescudvJCsgt3ub+b+dWRWJTmaaJObGing5CaQ3V1c';
+
 export async function registerUser(
   db: DatabaseContext['db'],
   data: { email: string; password: string; name: string; ipAddress?: string; userAgent?: string }
@@ -69,13 +127,15 @@ export async function registerUser(
   const slug = `personal-${userId.slice(0, 8)}`;
   const workspaceName = 'Personal';
 
-  // The very first account created on an instance becomes the instance
-  // administrator (self-hosted bootstrap owner). Admins can access system
-  // telemetry such as backup status (see /api/v1/system/*).
-  const isFirstUser = db.select({ id: users.id }).from(users).limit(1).get() === undefined;
-
-  // Insert within transaction
+  // Insert within transaction. The first-user check runs INSIDE the
+  // transaction (audit H-9): reading it outside allowed two simultaneous
+  // sign-ups on a fresh instance to both become instance administrator.
   db.transaction((tx) => {
+    // The very first account created on an instance becomes the instance
+    // administrator (self-hosted bootstrap owner). Admins can access system
+    // telemetry such as backup status (see /api/v1/system/*).
+    const isFirstUser = tx.select({ id: users.id }).from(users).limit(1).get() === undefined;
+
     // 1. Create user
     tx.insert(users).values({
       id: userId,
@@ -108,9 +168,9 @@ export async function registerUser(
       createdAt: now,
     }).run();
 
-    // 4. Create session
+    // 4. Create session (audit H-7: store only the SHA-256 hash of the token)
     tx.insert(sessions).values({
-      id: sessionToken,
+      id: hashSessionToken(sessionToken),
       userId,
       ipAddress: data.ipAddress,
       userAgent: data.userAgent,
@@ -145,13 +205,21 @@ export async function loginUser(
     throw new AuthError('Email and password are required', 400);
   }
 
+  // Audit H-1: per-account lockout — checked before any password work so a
+  // locked account cannot be probed further, regardless of source IP.
+  assertLoginNotLocked(normalizedEmail);
+
   const user = db.select().from(users).where(eq(users.email, normalizedEmail)).get();
   if (!user) {
+    // Timing equalization (audit M-14): run argon2 against a dummy hash so
+    // response time cannot reveal whether the account exists.
+    await verifyPassword(DUMMY_ARGON2_HASH, data.password);
     throw new AuthError('Invalid email or password', 401);
   }
 
   const isValidPassword = await verifyPassword(user.passwordHash, data.password);
   if (!isValidPassword) {
+    recordLoginFailure(normalizedEmail);
     throw new AuthError('Invalid email or password', 401);
   }
 
@@ -159,12 +227,14 @@ export async function loginUser(
     throw new AuthError('Account is suspended or inactive', 403);
   }
 
+  clearLoginFailures(normalizedEmail);
+
   const sessionToken = generateSessionToken();
   const now = Date.now();
   const expiresAt = now + config.sessionDurationMs;
 
   db.insert(sessions).values({
-    id: sessionToken,
+    id: hashSessionToken(sessionToken),
     userId: user.id,
     ipAddress: data.ipAddress,
     userAgent: data.userAgent,
@@ -198,7 +268,7 @@ export async function loginUser(
 
 export async function logoutUser(db: DatabaseContext['db'], sessionToken: string): Promise<void> {
   if (sessionToken) {
-    db.delete(sessions).where(eq(sessions.id, sessionToken)).run();
+    db.delete(sessions).where(eq(sessions.id, hashSessionToken(sessionToken))).run();
   }
 }
 
@@ -209,10 +279,11 @@ export async function validateSession(
   if (!sessionToken) return null;
 
   const now = Date.now();
+  // Audit H-7: look sessions up by their SHA-256 hash, never by raw token.
   const session = db
     .select()
     .from(sessions)
-    .where(and(eq(sessions.id, sessionToken), gt(sessions.expiresAt, now)))
+    .where(and(eq(sessions.id, hashSessionToken(sessionToken)), gt(sessions.expiresAt, now)))
     .get();
 
   if (!session) return null;

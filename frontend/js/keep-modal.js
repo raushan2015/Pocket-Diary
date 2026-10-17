@@ -16,6 +16,12 @@ export let activeKeepModalMemo = null;
 let keepModalAutosaveTimer = null;
 let onMemoChangedCallback = null;
 
+// Audit H-5: snapshot of the memo as this modal last loaded it (server state
+// base). Used to decide whether a 409 conflict can be resolved safely.
+let keepModalBaseSnapshot = null;
+// Active conflict awaiting an explicit user decision (Keep mine / Load latest).
+let keepModalConflict = null;
+
 // DATA-02 remediation: saves are serialized through a promise chain so rapid
 // edits can never issue overlapping PATCH requests with a stale version.
 let keepModalSaveChain = Promise.resolve();
@@ -23,9 +29,47 @@ let keepModalSaveChain = Promise.resolve();
 // Aligned with the backend memo content limit (see backend/src/routes/memos.ts).
 const MAX_MEMO_CONTENT_CHARS = 2000000;
 
+/** Whether the note's visible content on the server still matches what we loaded. */
+function baseMatchesServer(serverMemo) {
+  const base = keepModalBaseSnapshot;
+  if (!base) return false;
+  return (serverMemo.title || '') === base.title
+    && (serverMemo.content || '') === base.content
+    && JSON.stringify(serverMemo.checklistData || []) === base.checklistData
+    && (serverMemo.noteType || 'text') === base.noteType;
+}
+
+function snapshotMemo(memo) {
+  return {
+    title: memo.title || '',
+    content: memo.content || '',
+    checklistData: JSON.stringify(memo.checklistData || []),
+    noteType: memo.noteType || 'text',
+  };
+}
+
+function hideKeepConflictBanner() {
+  document.getElementById('keep-modal-conflict-banner')?.style.setProperty('display', 'none');
+}
+
+function showKeepConflictBanner(message) {
+  const banner = document.getElementById('keep-modal-conflict-banner');
+  if (!banner) return;
+  const text = document.getElementById('keep-modal-conflict-text');
+  if (text && message) text.textContent = message;
+  banner.style.setProperty('display', 'block');
+}
+
+function notifyMemoChanged() {
+  if (typeof onMemoChangedCallback === 'function') onMemoChangedCallback();
+}
+
 export function openKeepNoteModal(memo, callbacks = {}) {
   closeKeepPopovers();
   activeKeepModalMemo = memo;
+  keepModalBaseSnapshot = snapshotMemo(memo);
+  keepModalConflict = null;
+  hideKeepConflictBanner();
   if (callbacks.onChanged) onMemoChangedCallback = callbacks.onChanged;
 
   const titleInput = document.getElementById('keep-modal-title');
@@ -70,6 +114,13 @@ export function openKeepNoteModal(memo, callbacks = {}) {
 
 export async function closeKeepNoteModal() {
   clearTimeout(keepModalAutosaveTimer);
+  if (keepModalConflict) {
+    // Audit H-5: an unresolved conflict requires an explicit decision —
+    // closing now would either lose the user's edits or overwrite someone
+    // else's without consent.
+    showToast('This note changed elsewhere. Choose "Keep my changes" or "Load latest version" first.', 'warning', 4500);
+    return;
+  }
   if (activeKeepModalMemo?.id) {
     // Flush pending edits through the serialized save chain before closing,
     // so nothing typed/toggled in the last milliseconds is lost.
@@ -78,10 +129,10 @@ export async function closeKeepNoteModal() {
   closeModal('modal-keep-editor');
   closeKeepPopovers();
   activeKeepModalMemo = null;
+  keepModalBaseSnapshot = null;
+  keepModalConflict = null;
   state.set('hasUnsavedChanges', false);
-  if (typeof onMemoChangedCallback === 'function') {
-    onMemoChangedCallback();
-  }
+  notifyMemoChanged();
 }
 
 export function scheduleKeepModalAutosave(immediate = false) {
@@ -112,6 +163,10 @@ export function saveKeepModalNote(quiet = true) {
 
 async function performKeepModalSave(quiet = true) {
   if (!activeKeepModalMemo || !activeKeepModalMemo.id) return;
+  // Audit H-5: while a conflict is pending, no save may proceed — neither an
+  // autosave nor a modal close may silently overwrite the other session's
+  // edits. The banner's explicit buttons resolve it.
+  if (keepModalConflict) return;
   const memo = activeKeepModalMemo;
   const title = document.getElementById('keep-modal-title')?.value.trim() || '';
   memo.title = title;
@@ -151,18 +206,33 @@ async function performKeepModalSave(quiet = true) {
       res = await api.updateMemo(memo.id, payload);
     } catch (err) {
       if (err?.status !== 409) throw err;
-      // Version conflict (DATA-02): re-sync with the server's current version
-      // and retry once so the user is never locked out of saving by a stale
-      // optimistic-concurrency counter.
+      // Version conflict (audit H-5). The previous behavior re-fetched the
+      // version number and re-sent this client's FULL payload, silently
+      // overwriting the other session's edits and making optimistic locking
+      // useless. Now: only an auto-retry when the server's note content still
+      // matches the base we loaded (a metadata-only change elsewhere); a real
+      // content conflict is surfaced for an explicit decision.
       const fresh = await api.getMemo(memo.id);
-      if (fresh?.memo?.version) {
-        memo.version = fresh.memo.version;
+      const freshMemo = fresh?.memo;
+      if (!freshMemo?.version) throw err;
+      memo.version = freshMemo.version;
+      if (baseMatchesServer(freshMemo)) {
+        // Concurrent change did not touch title/content/checklist — safe retry.
+        res = await api.updateMemo(memo.id, { ...payload, version: memo.version });
+      } else {
+        keepModalConflict = { freshMemo, payload };
+        showKeepConflictBanner(
+          `Someone else saved this note (v${freshMemo.version}) while you were editing. Your changes are still in the editor.`,
+        );
+        if (statusEl) statusEl.textContent = 'Conflict';
+        state.set('hasUnsavedChanges', true);
+        return;
       }
-      res = await api.updateMemo(memo.id, { ...payload, version: memo.version });
     }
     if (res && res.memo) {
       memo.version = res.memo.version;
     }
+    keepModalBaseSnapshot = snapshotMemo(memo);
     if (statusEl) statusEl.textContent = 'Saved';
     state.set('hasUnsavedChanges', false);
 
@@ -175,6 +245,52 @@ async function performKeepModalSave(quiet = true) {
     state.set('hasUnsavedChanges', true);
     if (!quiet) showToast(err.message || 'Failed to save note', 'error', 5000);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Audit H-5: conflict resolution — explicit user choice, never silent overwrite
+// ---------------------------------------------------------------------------
+
+async function resolveConflictKeepMine() {
+  if (!keepModalConflict || !activeKeepModalMemo?.id) return;
+  const memo = activeKeepModalMemo;
+  const { freshMemo, payload } = keepModalConflict;
+  const statusEl = document.getElementById('keep-modal-status');
+  try {
+    if (statusEl) statusEl.textContent = 'Saving…';
+    const res = await api.updateMemo(memo.id, { ...payload, version: freshMemo.version });
+    if (res?.memo) {
+      memo.version = res.memo.version;
+      Object.assign(memo, {
+        title: res.memo.title,
+        content: res.memo.content,
+        checklistData: res.memo.checklistData,
+        noteType: res.memo.noteType,
+      });
+    }
+    keepModalConflict = null;
+    keepModalBaseSnapshot = snapshotMemo(memo);
+    hideKeepConflictBanner();
+    if (statusEl) statusEl.textContent = 'Saved';
+    state.set('hasUnsavedChanges', false);
+    notifyMemoChanged();
+    showToast('Your changes were saved (the other version is available in History).', 'success', 3000);
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Conflict';
+    showToast(err.message || 'Could not save your changes', 'error', 5000);
+  }
+}
+
+function resolveConflictLoadTheirs() {
+  if (!keepModalConflict || !activeKeepModalMemo) return;
+  const freshMemo = keepModalConflict.freshMemo;
+  keepModalConflict = null;
+  // Re-open the modal hydrated with the server's latest version. The user's
+  // local edits are discarded — the button says exactly that.
+  openKeepNoteModal({ ...activeKeepModalMemo, ...freshMemo }, { onChanged: onMemoChangedCallback });
+  state.set('hasUnsavedChanges', false);
+  notifyMemoChanged();
+  showToast('Loaded the latest version of this note.', 'info', 3000);
 }
 
 export function renderKeepModalChecklist(memo) {
@@ -481,17 +597,25 @@ export function setupKeepModalListeners(callbacks = {}) {
 
   closeBtn?.addEventListener('click', closeKeepNoteModal);
 
+  // Audit H-5: explicit conflict-resolution actions (see performKeepModalSave)
+  document.getElementById('keep-conflict-keep-mine-btn')?.addEventListener('click', () => { void resolveConflictKeepMine(); });
+  document.getElementById('keep-conflict-load-theirs-btn')?.addEventListener('click', () => { resolveConflictLoadTheirs(); });
+
   expandBtn?.addEventListener('click', async () => {
     if (!activeKeepModalMemo) return;
+    if (keepModalConflict) {
+      showToast('Resolve the version conflict first — keep your changes or load the latest version.', 'warning', 4500);
+      return;
+    }
     const memoToOpen = { ...activeKeepModalMemo };
     await saveKeepModalNote(true);
     // Close without saving again: the note was just persisted above.
     activeKeepModalMemo = null;
+    keepModalBaseSnapshot = null;
+    keepModalConflict = null;
     closeModal('modal-keep-editor');
     closeKeepPopovers();
-    if (typeof onMemoChangedCallback === 'function') {
-      onMemoChangedCallback();
-    }
+    notifyMemoChanged();
     if (typeof callbacks.onExpand === 'function') {
       callbacks.onExpand(memoToOpen);
     }
@@ -515,6 +639,10 @@ export function setupKeepModalListeners(callbacks = {}) {
 
   archiveBtn?.addEventListener('click', async () => {
     if (!activeKeepModalMemo) return;
+    if (keepModalConflict) {
+      showToast('Resolve the version conflict first — keep your changes or load the latest version.', 'warning', 4500);
+      return;
+    }
     activeKeepModalMemo.isArchived = !activeKeepModalMemo.isArchived;
     await saveKeepModalNote(true);
     showToast(activeKeepModalMemo.isArchived ? 'Note archived' : 'Note unarchived', 'info', 1800);

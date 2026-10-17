@@ -272,14 +272,12 @@ class ApiClient {
 
   /**
    * Add / invite workspace member
-   * POST /api/v1/workspaces/:id/members
+   *
+   * Removed (audit H-3): direct member insertion bypassed invitation consent
+   * and allowed account enumeration. All additions now go through
+   * createWorkspaceInvite(), which returns an identical response whether or
+   * not the email has an account.
    */
-  async addWorkspaceMember(workspaceId, { email, role }) {
-    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`, {
-      method: 'POST',
-      body: { email, role },
-    });
-  }
 
   /** Remove a member from a workspace. */
   async removeWorkspaceMember(workspaceId, userId) {

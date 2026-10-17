@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { pushSubscriptions } from '../db/schema.js';
 import { getPushPublicKey } from '../services/push.service.js';
+import { assertPublicHttpUrl, UrlGuardError, UrlResolutionError } from '../services/url-guard.js';
 
 export const pushRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -39,6 +40,34 @@ export const pushRoutes: FastifyPluginAsync = async (fastify) => {
     const { endpoint, keys } = request.body || {};
     if (!endpoint || !keys?.p256dh || !keys?.auth) {
       return reply.status(400).send({ error: 'Bad Request', message: 'endpoint and keys (p256dh, auth) are required' });
+    }
+
+    // Audit M-10 (SSRF): the stored endpoint is fetched by the server later,
+    // so it must be an https URL resolving to a public address. Previously
+    // any string was accepted — the reminder job would happily POST to
+    // http://localhost or a cloud-metadata address.
+    if (!/^https:\/\//i.test(endpoint)) {
+      return reply.status(400).send({
+        error: 'Bad Request',
+        message: 'Push endpoint must be an https URL (standard Web Push endpoints are https)',
+      });
+    }
+    try {
+      await assertPublicHttpUrl(endpoint);
+    } catch (err) {
+      if (err instanceof UrlGuardError) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Push endpoint must resolve to a public address',
+        });
+      }
+      if (err instanceof UrlResolutionError) {
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: 'Push endpoint hostname could not be resolved',
+        });
+      }
+      throw err;
     }
 
     const existing = fastify.dbCtx.db

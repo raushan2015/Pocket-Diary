@@ -42,10 +42,11 @@ cleanup() {
   fi
   wait
   echo "Memo Manager services terminated cleanly."
-  exit 0
 }
 
-trap cleanup SIGTERM SIGINT
+# Graceful shutdown on signals: children are stopped and the container exits 0.
+# A crashing child is handled separately in the main flow below (audit L-14).
+trap 'cleanup; exit 0' SIGTERM SIGINT
 
 # 1. Start Backend Fastify service
 echo "Starting Memo Manager Backend service on ${BACKEND_HOST}:${BACKEND_PORT}..."
@@ -97,6 +98,18 @@ echo " Health Check: http://0.0.0.0:${FRONTEND_PORT}/health"
 echo " API Endpoint: http://0.0.0.0:${FRONTEND_PORT}/api/v1"
 echo "========================================================"
 
-# Wait for child processes
-wait -n "${BACKEND_PID}" "${FRONTEND_PID}"
+# Wait for either child process to exit (audit L-14). The previous handler
+# always exited 0, hiding crashes from Docker/orchestrator restart policies
+# and letting a crash-looping container look "successful".
+EXIT_CODE=0
+set +e
+wait -n "${BACKEND_PID}" "${FRONTEND_PID}"; EXIT_CODE=$?
+set -e
+if [ "${EXIT_CODE}" -ne 0 ]; then
+  echo "A Memo Manager service exited unexpectedly with code ${EXIT_CODE}."
+fi
 cleanup
+if [ "${EXIT_CODE}" -ne 0 ]; then
+  echo "Memo Manager shutting down with exit code ${EXIT_CODE}."
+  exit "${EXIT_CODE}"
+fi

@@ -275,10 +275,12 @@ describe('Memos Management API (/api/v1/memos)', () => {
     });
     expect(versionsRes.statusCode).toBe(200);
     const { versions } = versionsRes.json();
-    expect(versions.length).toBe(3); // v1 (created), v2 (updated), v3 (updated)
+    // Audit M-7: rapid successive saves are coalesced into the existing
+    // snapshot (within VERSION_COALESCE_WINDOW_MS) instead of writing a full
+    // copy per autosave pause. Both updates happened within the window, so
+    // only the initial v1 snapshot is retained.
+    expect(versions.length).toBe(1);
     expect(versions[0].versionNumber).toBe(1);
-    expect(versions[1].versionNumber).toBe(2);
-    expect(versions[2].versionNumber).toBe(3);
   });
 
   it('supports soft delete and restore', async () => {

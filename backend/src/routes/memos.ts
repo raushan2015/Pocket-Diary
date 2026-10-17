@@ -25,6 +25,7 @@ import {
   assertPublicHttpUrl,
   UrlGuardError,
 } from '../services/url-guard.js';
+import { guardedFetch, type GuardedResponse } from '../services/safe-fetch.js';
 
 interface MemoQuery {
   workspaceId?: string;
@@ -507,6 +508,9 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/memos/reorder (Google Keep card drag & drop order)
+  // Reordering changes shared state for every member (audit H-4): viewers
+  // previously passed the unrestricted membership check and could reshuffle
+  // everyone's board.
   fastify.post<{ Body: { workspaceId: string; memoIds: string[] } }>('/reorder', {
     schema: reorderSchema,
   }, async (request, reply) => {
@@ -519,7 +523,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
           message: 'workspaceId and memoIds array are required',
         });
       }
-      verifyWorkspaceMembership(fastify.dbCtx.db, user.id, workspaceId);
+      verifyWorkspaceMembership(fastify.dbCtx.db, user.id, workspaceId, ['owner', 'admin', 'editor']);
       reorderMemos(fastify.dbCtx, workspaceId, memoIds);
       return reply.status(200).send({ success: true, count: memoIds.length });
     } catch (err: unknown) {
@@ -590,30 +594,14 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/memos/link-preview (Scrape OpenGraph / Metadata for URLs)
   //
-  // SSRF protection (SEC-01): every target — the initial URL and each redirect
-  // hop — must resolve to a public address. Private, loopback, link-local and
-  // cloud-metadata destinations are rejected with HTTP 400.
+  // SSRF protection (SEC-01 + audit M-11): every target — the initial URL and
+  // each redirect hop — must resolve to a public address, and the request is
+  // made with guardedFetch(), which connects to the exact validated IPs
+  // (Host header + TLS SNI preserved). Private, loopback, link-local and
+  // cloud-metadata destinations are rejected with HTTP 400; a DNS-rebinding
+  // server can no longer pass validation and then connect elsewhere.
   const LINK_PREVIEW_MAX_HTML_BYTES = 256 * 1024;
   const LINK_PREVIEW_MAX_REDIRECTS = 4;
-
-  const readBodyWithLimit = async (res: Response, limitBytes: number): Promise<string> => {
-    if (!res.body) return '';
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let received = 0;
-    let text = '';
-    while (received < limitBytes) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      text += decoder.decode(value, { stream: true });
-      if (received >= limitBytes) {
-        try { await reader.cancel(); } catch { /* already closed */ }
-        break;
-      }
-    }
-    return text;
-  };
 
   fastify.post<{ Body: { url: string } }>('/link-preview', {
     schema: linkPreviewSchema,
@@ -637,9 +625,8 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       // Validate the requested destination before any request leaves the server.
-      let currentUrl: URL;
       try {
-        currentUrl = await assertPublicHttpUrl(url);
+        await assertPublicHttpUrl(url);
       } catch (err) {
         if (err instanceof UrlGuardError) {
           return reply.status(400).send({
@@ -652,63 +639,63 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.send(fallbackPreview(url));
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      // Redirects are followed manually so every hop is re-validated against
+      // the SSRF guard inside guardedFetch before the server connects to it.
+      let res: GuardedResponse;
       try {
-        // Redirects are followed manually so every hop is re-validated against
-        // the SSRF guard before the server connects to it.
-        let res = await fetch(currentUrl, {
-          signal: controller.signal,
-          redirect: 'manual',
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NotesBot/1.0)' },
+        res = await guardedFetch(url, {
+          timeoutMs: 4000,
+          maxBytes: LINK_PREVIEW_MAX_HTML_BYTES,
         });
-        let redirects = 0;
-        while (res.status >= 300 && res.status < 400) {
-          const location = res.headers.get('location');
-          try { await res.body?.cancel(); } catch { /* drain */ }
-          if (!location) break; // malformed redirect — fall through to the !res.ok path
-          if (redirects++ >= LINK_PREVIEW_MAX_REDIRECTS) {
-            clearTimeout(timeoutId);
-            return reply.send(fallbackPreview(url));
-          }
-          let nextUrl: URL;
-          try {
-            nextUrl = new URL(location, currentUrl);
-          } catch {
-            clearTimeout(timeoutId);
-            return reply.send(fallbackPreview(url));
-          }
-          try {
-            currentUrl = await assertPublicHttpUrl(nextUrl.href);
-          } catch (guardErr) {
-            clearTimeout(timeoutId);
-            if (guardErr instanceof UrlGuardError) {
-              return reply.status(400).send({
-                error: 'Bad Request',
-                message: 'Private or internal IP addresses are prohibited',
-              });
-            }
-            return reply.send(fallbackPreview(url));
-          }
-          res = await fetch(currentUrl, {
-            signal: controller.signal,
-            redirect: 'manual',
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NotesBot/1.0)' },
+      } catch (fetchErr) {
+        if (fetchErr instanceof UrlGuardError) {
+          return reply.status(400).send({
+            error: 'Bad Request',
+            message: fetchErr.message,
           });
         }
+        return reply.send(fallbackPreview(url));
+      }
 
-        const parsed = new URL(url);
-        if (!res.ok) {
-          clearTimeout(timeoutId);
-          return reply.send({
-            url,
-            title: parsed.hostname,
-            faviconUrl: `${parsed.origin}/favicon.ico`,
-          });
+      let redirects = 0;
+      while (res.status >= 300 && res.status < 400) {
+        const location = Array.isArray(res.headers.location) ? res.headers.location[0] : res.headers.location;
+        if (!location) break; // malformed redirect — fall through to the !res.ok path
+        if (redirects++ >= LINK_PREVIEW_MAX_REDIRECTS) {
+          return reply.send(fallbackPreview(url));
         }
-        const html = await readBodyWithLimit(res, LINK_PREVIEW_MAX_HTML_BYTES);
-        clearTimeout(timeoutId);
-        const getMeta = (prop: string) => {
+        let nextUrl: URL;
+        try {
+          nextUrl = new URL(location, res.url);
+        } catch {
+          return reply.send(fallbackPreview(url));
+        }
+        try {
+          res = await guardedFetch(nextUrl, {
+            timeoutMs: 4000,
+            maxBytes: LINK_PREVIEW_MAX_HTML_BYTES,
+          });
+        } catch (guardErr) {
+          if (guardErr instanceof UrlGuardError) {
+            return reply.status(400).send({
+              error: 'Bad Request',
+              message: 'Private or internal IP addresses are prohibited',
+            });
+          }
+          return reply.send(fallbackPreview(url));
+        }
+      }
+
+      const parsed = new URL(url);
+      if (res.status < 200 || res.status >= 300) {
+        return reply.send({
+          url,
+          title: parsed.hostname,
+          faviconUrl: `${parsed.origin}/favicon.ico`,
+        });
+      }
+      const html = res.body;
+      const getMeta = (prop: string) => {
           const m = html.match(new RegExp(`<meta\\s+[^>]*(?:property|name)=["'](?:og:)?${prop}["'][^>]*content=["']([^"']+)["']`, 'i'))
             || html.match(new RegExp(`<meta\\s+[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:)?${prop}["']`, 'i'));
           return m ? m[1].trim() : undefined;
@@ -734,10 +721,6 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
           imageUrl,
           faviconUrl,
         });
-      } catch {
-        clearTimeout(timeoutId);
-        return reply.send(fallbackPreview(url));
-      }
     } catch (err: unknown) {
       fastify.log.error(err);
       return reply.status(500).send({

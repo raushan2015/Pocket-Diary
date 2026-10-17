@@ -84,24 +84,34 @@ export function createWorkspace(
   const slug = (data.slug?.trim() || `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${workspaceId.slice(0, 8)}`).toLowerCase();
   const now = Date.now();
 
-  db.transaction((tx) => {
-    tx.insert(workspaces).values({
-      id: workspaceId,
-      name,
-      slug,
-      ownerId: userId,
-      createdAt: now,
-      updatedAt: now,
-    }).run();
+  try {
+    db.transaction((tx) => {
+      tx.insert(workspaces).values({
+        id: workspaceId,
+        name,
+        slug,
+        ownerId: userId,
+        createdAt: now,
+        updatedAt: now,
+      }).run();
 
-    tx.insert(workspaceMembers).values({
-      id: memberId,
-      workspaceId,
-      userId,
-      role: 'owner',
-      createdAt: now,
-    }).run();
-  });
+      tx.insert(workspaceMembers).values({
+        id: memberId,
+        workspaceId,
+        userId,
+        role: 'owner',
+        createdAt: now,
+      }).run();
+    });
+  } catch (err: unknown) {
+    // Audit M-6: a duplicate slug previously escaped as an unhandled UNIQUE
+    // constraint violation (HTTP 500). Surface it as a 409 Conflict.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/unique/i.test(message) && /slug/i.test(message)) {
+      throw new WorkspaceAccessError('A workspace with this slug already exists. Choose a different slug.', 409);
+    }
+    throw err;
+  }
 
   return {
     id: workspaceId,
@@ -144,7 +154,14 @@ export function removeWorkspaceMember(
     .run();
 }
 
-/** Change a member's role. The owner's role cannot be changed. */
+/**
+ * Change a member's role. The owner's role cannot be changed.
+ *
+ * Audit H-8: the privilege model is now consistent with removeWorkspaceMember —
+ * only the owner may change an admin's role or grant admin to anyone.
+ * Previously a workspace admin could demote a fellow admin to viewer and
+ * then remove them, sidestepping the protection that removal had.
+ */
 export function changeMemberRole(
   db: DatabaseContext['db'],
   actorUserId: string,
@@ -166,6 +183,14 @@ export function changeMemberRole(
   }
   if (actor.role !== 'owner' && actor.role !== 'admin') {
     throw new WorkspaceAccessError('Only owners and admins can change member roles', 403);
+  }
+
+  // Audit H-8: touching the admin role in either direction is owner-only.
+  if (actor.role !== 'owner' && (target.role === 'admin' || newRole === 'admin')) {
+    throw new WorkspaceAccessError(
+      'Only the workspace owner can change an admin\'s role or grant admin permissions',
+      403,
+    );
   }
 
   db.update(workspaceMembers)

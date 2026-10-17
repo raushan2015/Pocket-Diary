@@ -116,6 +116,12 @@ export const memos = sqliteTable('memos', {
   dueDate: integer('due_date'), // Unix epoch ms
   reminderTime: integer('reminder_time'), // Unix epoch ms for specific alarm
   reminderLocation: text('reminder_location'), // Location string or geo description
+  /**
+   * Audit H-2: the user who set the effective reminder
+   * (COALESCE(reminder_time, due_date)). Reminders notify exactly this
+   * person — never the whole workspace.
+   */
+  reminderSetBy: text('reminder_set_by').references(() => users.id),
   collaborators: text('collaborators').notNull().default('[]'), // JSON array of collaborator emails
   checklistData: text('checklist_data').notNull().default('[]'), // JSON array of items: [{id, text, completed}]
   linkPreviews: text('link_previews').notNull().default('[]'), // JSON array of {url, title, description, imageUrl, faviconUrl}
@@ -219,6 +225,8 @@ export const pushSubscriptions = sqliteTable('push_subscriptions', {
 ]);
 
 // 14. Workspace Invitations
+// Stores the SHA-256 hash of the invitation token (audit H-7): the raw token
+// is returned to the invader exactly once and never persisted.
 export const workspaceInvites = sqliteTable('workspace_invites', {
   id: text('id').primaryKey(),
   workspaceId: text('workspace_id')
@@ -226,7 +234,7 @@ export const workspaceInvites = sqliteTable('workspace_invites', {
     .references(() => workspaces.id, { onDelete: 'cascade' }),
   email: text('email').notNull(),
   role: text('role').notNull().default('editor'), // viewer, editor, admin
-  token: text('token').notNull().unique(),
+  token: text('token').notNull().unique(), // sha256(raw token)
   status: text('status').notNull().default('pending'), // pending, accepted, revoked
   invitedBy: text('invited_by')
     .notNull()

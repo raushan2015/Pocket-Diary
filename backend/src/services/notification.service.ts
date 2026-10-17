@@ -105,7 +105,8 @@ export async function scanDueReminders(
 
   const dueMemos = dbCtx.sqlite
     .prepare(
-      `SELECT id, workspace_id, title, content, reminder_time, due_date, created_by
+      `SELECT id, workspace_id, title, content, reminder_time, due_date, created_by,
+              COALESCE(reminder_set_by, created_by) AS reminder_owner_id
        FROM memos
        WHERE deleted_at IS NULL
          AND is_archived = 0
@@ -121,6 +122,7 @@ export async function scanDueReminders(
     reminder_time: number | null;
     due_date: number | null;
     created_by: string;
+    reminder_owner_id: string;
   }>;
 
   let created = 0;
@@ -131,16 +133,21 @@ export async function scanDueReminders(
     const reminderTime = memo.reminder_time ?? memo.due_date;
     if (reminderTime == null) continue;
 
-    // Notify every member of the workspace (except viewers) — for personal
-    // workspaces this is exactly the note creator.
-    const members = dbCtx.sqlite
+    // Audit H-2: a reminder notifies ONLY the user who set it. The previous
+    // behavior fanned every due reminder out to every non-viewer member of
+    // the workspace — leaking personal note titles and bodies to colleagues.
+    // reminder_set_by is backfilled to created_by for legacy rows.
+    const member = dbCtx.sqlite
       .prepare(
-        `SELECT wm.user_id, u.email, u.name
-         FROM workspace_members wm
-         JOIN users u ON u.id = wm.user_id
-         WHERE wm.workspace_id = ? AND wm.role != 'viewer'`,
+        `SELECT u.id AS user_id, u.email, u.name, u.status
+         FROM users u WHERE u.id = ?`,
       )
-      .all(memo.workspace_id) as Array<{ user_id: string; email: string; name: string }>;
+      .get(memo.reminder_owner_id) as
+      | { user_id: string; email: string; name: string; status: string }
+      | undefined;
+
+    if (!member || member.status !== 'active') continue;
+    const members = [member];
 
     for (const member of members) {
       const body = (memo.content || '').replace(/[#*`>\-[\]]/g, '').trim().slice(0, 160) || null;
@@ -219,7 +226,12 @@ export function startReminderScheduler(
   const intervalMs = Math.max(10_000, options.intervalMs ?? 30_000);
   const appUrl = options.appUrl ?? '';
 
+  // Audit M-9: an async tick that outlives its interval could previously
+  // overlap with the next one (duplicate scans under load). One tick at a time.
+  let scanInFlight = false;
   const tick = async () => {
+    if (scanInFlight) return;
+    scanInFlight = true;
     try {
       const result = await scanDueReminders(dbCtx, { appUrl });
       if (result.created > 0) {
@@ -229,6 +241,8 @@ export function startReminderScheduler(
       }
     } catch (error) {
       options.logger?.error?.('reminder scan failed:', error);
+    } finally {
+      scanInFlight = false;
     }
   };
 

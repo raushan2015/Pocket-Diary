@@ -129,13 +129,21 @@ export async function consumePasswordReset(
   const now = Date.now();
 
   dbCtx.db.transaction((tx) => {
+    // Audit M-15: claim the token CONDITIONALLY. The usedAt pre-check above
+    // runs before the async hash, so two concurrent requests could both pass
+    // it; only this conditional UPDATE decides the winner, and the loser
+    // rolls back instead of consuming the token twice.
+    const claim = tx.update(passwordResets)
+      .set({ usedAt: now })
+      .where(and(eq(passwordResets.id, record.id), isNull(passwordResets.usedAt)))
+      .run();
+    if (claim.changes === 0) {
+      throw new PasswordResetError('This password reset link has already been used', 400);
+    }
+
     tx.update(users)
       .set({ passwordHash: newHash, updatedAt: now })
       .where(eq(users.id, record.userId))
-      .run();
-    tx.update(passwordResets)
-      .set({ usedAt: now })
-      .where(eq(passwordResets.id, record.id))
       .run();
     // Security: a reset invalidates every session on every device.
     tx.delete(sessions).where(eq(sessions.userId, record.userId)).run();

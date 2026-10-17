@@ -26,13 +26,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV NODE_ENV=production \
     PORT=3000 \
     HOST=0.0.0.0 \
-    DATABASE_PATH=/app/data/memo_manager.db
+    DATABASE_PATH=/app/data/memo_manager.db \
+    ATTACHMENTS_DIR=/app/data/attachments
 
-RUN mkdir -p /app/data && chmod 755 /app/data
+# Audit M-13: attachments must live inside the /app/data volume. The default
+# relative path (../data/attachments) resolved to /data/attachments outside
+# the volume, losing uploads when the container was recreated.
+RUN mkdir -p /app/data /app/data/attachments && chmod 755 /app/data /app/data/attachments
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY package.json ./
+
+# Security (audit L-3): run as the unprivileged node user, not root.
+RUN chown -R node:node /app
+USER node
 
 EXPOSE 3000
 VOLUME ["/app/data"]

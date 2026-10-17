@@ -153,8 +153,11 @@ describe('SQLite online backups', () => {
         },
       });
 
-      const localFiles = await fs.readdir(backupDirectory);
-      expect(localFiles).toHaveLength(1);
+      const localEntries = await fs.readdir(backupDirectory);
+      // Audit M-12: one .db snapshot plus the attachments-mirror directory.
+      const snapshotFiles = localEntries.filter((name) => name.endsWith('.db'));
+      expect(snapshotFiles).toHaveLength(1);
+      expect(localEntries).toContain('attachments-mirror');
       const restored = new Database(backupPath, { readonly: true });
       restored.close();
       expect(warnings).toHaveLength(1);

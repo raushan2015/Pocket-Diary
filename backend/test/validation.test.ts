@@ -151,14 +151,18 @@ describe('Request schema validation at API boundaries', () => {
     expect(badPreview.statusCode).toBe(400);
   });
 
-  it('rejects malformed workspace member payloads', async () => {
-    const badRole = await app.inject({
+  it('no longer exposes a direct member-add endpoint (audit H-3)', async () => {
+    // POST /workspaces/:id/members was removed: it bypassed invitation consent
+    // (admins could pull any registered account into a workspace) and its
+    // 404-vs-201 responses let any signed-in user enumerate registered emails.
+    // All additions flow through POST /workspaces/:id/invites.
+    const directAdd = await app.inject({
       method: 'POST',
       url: `/api/v1/workspaces/${workspaceId}/members`,
       headers: { cookie: cookieHeader },
-      payload: { email: 'x@example.com', role: 'supreme-leader' },
+      payload: { email: 'x@example.com', role: 'editor' },
     });
-    expect(badRole.statusCode).toBe(400);
+    expect(directAdd.statusCode).toBe(404);
 
     const badWorkspace = await app.inject({
       method: 'POST',

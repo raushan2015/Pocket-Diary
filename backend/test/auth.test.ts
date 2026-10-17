@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createDatabase } from '../src/db/index.js';
 import { users, sessions } from '../src/db/schema.js';
+import { hashSessionToken } from '../src/services/auth.service.js';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 
@@ -60,10 +61,14 @@ describe('Authentication API (/api/v1/auth)', () => {
       expect(dbUser).toBeDefined();
       expect(dbUser?.passwordHash).toMatch(/^\$argon2id\$/); // verified argon2id
 
-      // Verify session exists in DB
-      const dbSession = dbCtx.db.select().from(sessions).where(eq(sessions.id, sessionCookie!.value)).get();
+      // Verify session exists in DB. Audit H-7: sessions are stored as SHA-256
+      // hashes — the raw cookie value must never appear in the sessions table.
+      const dbSession = dbCtx.db.select().from(sessions).where(eq(sessions.id, hashSessionToken(sessionCookie!.value))).get();
       expect(dbSession).toBeDefined();
       expect(dbSession?.userId).toBe(dbUser?.id);
+      // The plaintext token must NOT be present in the database
+      const rawSession = dbCtx.db.select().from(sessions).where(eq(sessions.id, sessionCookie!.value)).get();
+      expect(rawSession).toBeUndefined();
     });
 
     it('rejects registration with invalid or missing inputs', async () => {

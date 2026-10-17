@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
-import { config, resolveAppUrlForRequest } from '../config.js';
+import { config, resolveAppUrl } from '../config.js';
 import {
   registerUser,
   loginUser,
@@ -7,6 +7,7 @@ import {
   getUserWorkspaces,
   hashPassword,
   verifyPassword,
+  hashSessionToken,
   AuthError,
 } from '../services/auth.service.js';
 import { acceptInvite, InviteError } from '../services/invite.service.js';
@@ -207,7 +208,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (err: unknown) {
       if (err instanceof AuthError) {
         return reply.status(err.statusCode).send({
-          error: err.statusCode === 401 ? 'Unauthorized' : 'Bad Request',
+          error: err.statusCode === 401 ? 'Unauthorized' : err.statusCode === 429 ? 'Too Many Requests' : 'Bad Request',
           message: err.message,
         });
       }
@@ -236,8 +237,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     try {
-      const appUrl = resolveAppUrlForRequest(request.protocol, request.headers.host);
-      const result = await requestPasswordReset(fastify.dbCtx, email, appUrl);
+      // Security (audit C-3): reset links are always built from the configured
+      // APP_URL — never from request headers, which an attacker can forge.
+      const result = await requestPasswordReset(fastify.dbCtx, email, resolveAppUrl());
       return reply.status(200).send({
         success: true,
         message: 'If an account exists with this email, password recovery instructions have been sent.',
@@ -329,6 +331,15 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         fastify.dbCtx.sqlite.prepare(
           'UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?'
         ).run(newHash, now, user.id);
+
+        // Security (audit H-6): a password change must revoke every OTHER
+        // session for the account. Without this, a stolen session cookie
+        // survives the user changing their password — the usual first fix.
+        // Sessions are stored hashed (H-7), so compare against the hash.
+        const currentSessionId = hashSessionToken(request.sessionToken ?? '');
+        fastify.dbCtx.sqlite.prepare(
+          'DELETE FROM sessions WHERE user_id = ? AND id != ?'
+        ).run(user.id, currentSessionId);
       }
 
       if (name && name.trim()) {
@@ -399,7 +410,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     preHandler: fastify.authenticate,
   }, async (request, reply) => {
     const user = request.user!;
-    const currentToken = request.sessionToken ?? '';
+    // Sessions are stored as SHA-256 hashes (H-7); identify the current one by hashing the cookie value.
+    const currentSessionId = hashSessionToken(request.sessionToken ?? '');
     const rows = fastify.dbCtx.sqlite
       .prepare(
         'SELECT id, ip_address, user_agent, created_at, expires_at FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC'
@@ -410,7 +422,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       sessions: rows.map((row) => ({
         // Expose only a short fingerprint — the session token itself must never leave the server.
         id: `${row.id.slice(0, 8)}…${row.id.slice(-4)}`,
-        current: row.id === currentToken,
+        current: row.id === currentSessionId,
         ipAddress: row.ip_address,
         userAgent: row.user_agent,
         createdAt: row.created_at,
@@ -424,10 +436,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     preHandler: fastify.authenticate,
   }, async (request, reply) => {
     const user = request.user!;
-    const currentToken = request.sessionToken ?? '';
+    const currentSessionId = hashSessionToken(request.sessionToken ?? '');
     const result = fastify.dbCtx.sqlite
       .prepare('DELETE FROM sessions WHERE user_id = ? AND id != ?')
-      .run(user.id, currentToken);
+      .run(user.id, currentSessionId);
 
     return reply.status(200).send({ success: true, revoked: result.changes });
   });

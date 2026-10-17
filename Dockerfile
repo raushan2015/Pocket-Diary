@@ -42,9 +42,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV NODE_ENV=production \
     PORT=8080 \
     BACKEND_PORT=3000 \
-    DATABASE_PATH=/app/data/memo_manager.db
+    DATABASE_PATH=/app/data/memo_manager.db \
+    ATTACHMENTS_DIR=/app/data/attachments
 
-# Ensure persistent data directory exists
+# Ensure persistent data directory exists (audit M-13: ATTACHMENTS_DIR must
+# point INSIDE the /app/data volume — the default relative path previously
+# resolved to /data/attachments outside it, silently losing uploads when
+# the container was recreated)
 RUN mkdir -p /app/data /app/data/attachments && chmod 755 /app/data /app/data/attachments
 
 # Copy backend distribution and production node_modules
@@ -59,6 +63,12 @@ COPY frontend /app/frontend
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
+# Security (audit L-3): the container runs as the unprivileged `node` user
+# instead of root. Data directories are chowned so the named volume
+# initializes with the right ownership.
+RUN chown -R node:node /app/data /app/frontend /app/backend /app/docker-entrypoint.sh
+USER node
+
 # Expose unified public application port
 EXPOSE 8080
 
@@ -66,7 +76,7 @@ EXPOSE 8080
 VOLUME ["/app/data"]
 
 # Health check probing frontend proxy to backend /health
-HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -f http://127.0.0.1:8080/health || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

@@ -6,12 +6,35 @@ if (isProduction && (!configuredCookieSecret || configuredCookieSecret.length < 
 }
 
 // Public URL used in reminder emails, invitations and password-reset links.
-// When unset, request handlers fall back to the request's own host header.
+//
+// Security (audit C-3): APP_URL is REQUIRED in production. Links that are
+// emailed to users must never be derived from request headers — a forged
+// `Host` or `X-Forwarded-Host` header would otherwise let an attacker
+// poison a victim's password-reset link and steal the reset token.
 const configuredAppUrl = process.env.APP_URL?.trim() || '';
 export const appUrl = configuredAppUrl.replace(/\/$/, '');
-export function resolveAppUrlForRequest(requestProtocol: string, requestHost: string | undefined): string {
-  if (appUrl) return appUrl;
-  return `${requestProtocol}://${String(requestHost || 'localhost').split(',')[0].trim()}`;
+
+if (isProduction && !appUrl) {
+  throw new Error(
+    'APP_URL must be set in production (e.g. https://notes.example.com). ' +
+    'It is the only source for links in reminder emails, invitations and password-reset messages; ' +
+    'deriving them from request headers would allow reset-link poisoning.',
+  );
+}
+
+if (appUrl && !/^https?:\/\/[^\s]+$/i.test(appUrl)) {
+  throw new Error('APP_URL must be an absolute http(s) URL, e.g. https://notes.example.com');
+}
+
+/** Development-only fallback when APP_URL is unset (production refuses to start). */
+const devFallbackAppUrl = `http://localhost:${Number(process.env.PORT ?? 8080)}`;
+
+/**
+ * Single source of truth for the public base URL used in every emailed link
+ * (password resets, invitations, reminders). Never reads request headers.
+ */
+export function resolveAppUrl(): string {
+  return appUrl || devFallbackAppUrl;
 }
 
 // Optional SMTP transport for reminder emails and workspace invitations.
@@ -56,4 +79,11 @@ export const config = {
   sessionDurationMs: 7 * 24 * 60 * 60 * 1000, // 7 days
   cookieName: 'memo_session',
   isProduction,
+  /**
+   * Proxy trust setting (audit H-1). Only requests from these addresses may
+   * rewrite `request.ip` via X-Forwarded-For. Default trusts the loopback
+   * reverse proxy this app ships with; set TRUST_PROXY=false when the
+   * backend is exposed directly, or to the proxy's address/subnet.
+   */
+  trustProxy: process.env.TRUST_PROXY ?? '127.0.0.1',
 };

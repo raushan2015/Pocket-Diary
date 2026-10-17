@@ -255,14 +255,15 @@ describe('Workspace Tenant Isolation & RBAC Protection', () => {
     const member = await createTestUser(app, 'audit-member@test.com', 'Audit Member');
     const outsider = await createTestUser(app, 'audit-outsider@test.com', 'Audit Outsider');
 
-    // Add member to owner workspace
-    const addRes = await app.inject({
-      method: 'POST',
-      url: `/api/v1/workspaces/${owner.workspace.id}/members`,
-      headers: { cookie: owner.cookieHeader },
-      payload: { email: 'audit-member@test.com', role: 'editor' },
-    });
-    expect(addRes.statusCode).toBe(201);
+    // Add member to owner workspace (membership seeded directly — audit H-3
+    // removed the direct-add HTTP endpoint)
+    dbCtx.db.insert(workspaceMembers).values({
+      id: crypto.randomUUID(),
+      workspaceId: owner.workspace.id,
+      userId: member.user.id,
+      role: 'editor',
+      createdAt: Date.now(),
+    }).run();
 
     // Create a memo
     const createMemoRes = await app.inject({

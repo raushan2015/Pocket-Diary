@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS folders (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  parent_id TEXT REFERENCES folders(id) ON DELETE CASCADE,
+  parent_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -199,11 +199,17 @@ CREATE TRIGGER IF NOT EXISTS memos_ad AFTER DELETE ON memos BEGIN
   INSERT INTO memos_fts(memos_fts, rowid, title, content) VALUES('delete', old.rowid, old.title, old.content);
 END;
 
-CREATE TRIGGER IF NOT EXISTS memos_au AFTER UPDATE ON memos BEGIN
+CREATE TRIGGER IF NOT EXISTS memos_au AFTER UPDATE ON memos
+WHEN new.title != old.title OR new.content != old.content
+BEGIN
   INSERT INTO memos_fts(memos_fts, rowid, title, content) VALUES('delete', old.rowid, old.title, old.content);
   INSERT INTO memos_fts(rowid, title, content) VALUES (new.rowid, new.title, new.content);
 END;
 `;
+
+// Bump when the FTS triggers or index shape change so existing databases
+// know a one-time rebuild is required (audit M-8).
+const FTS_SCHEMA_VERSION = 2;
 
 export function runMigrations(sqlite: Database.Database): void {
   sqlite.exec(SCHEMA_SQL);
@@ -222,11 +228,24 @@ export function runMigrations(sqlite: Database.Database): void {
     { name: 'collaborators', def: "ALTER TABLE memos ADD COLUMN collaborators TEXT NOT NULL DEFAULT '[]'" },
     { name: 'checklist_data', def: "ALTER TABLE memos ADD COLUMN checklist_data TEXT NOT NULL DEFAULT '[]'" },
     { name: 'link_previews', def: "ALTER TABLE memos ADD COLUMN link_previews TEXT NOT NULL DEFAULT '[]'" },
+    // Audit H-2: who set the effective reminder — reminders notify this user only.
+    { name: 'reminder_set_by', def: 'ALTER TABLE memos ADD COLUMN reminder_set_by TEXT' },
   ];
 
   for (const col of additiveColumns) {
     if (!existingNames.has(col.name)) {
       sqlite.exec(col.def);
+    }
+  }
+
+  // Audit H-2: existing notes with a reminder are attributed to their creator.
+  if (existingNames.has('reminder_set_by')) {
+    try {
+      sqlite.exec(
+        'UPDATE memos SET reminder_set_by = created_by WHERE reminder_set_by IS NULL AND COALESCE(reminder_time, due_date) IS NOT NULL'
+      );
+    } catch {
+      // Backfill is best-effort; new writes always set the column.
     }
   }
 
@@ -246,8 +265,36 @@ export function runMigrations(sqlite: Database.Database): void {
   try {
     sqlite.exec("CREATE INDEX IF NOT EXISTS idx_memos_is_archived ON memos(workspace_id, is_archived);");
     sqlite.exec("CREATE INDEX IF NOT EXISTS idx_memos_sort_order ON memos(workspace_id, sort_order);");
-    sqlite.exec("INSERT INTO memos_fts(memos_fts) VALUES('rebuild');");
+    // Missing indexes (audit L-15): version history, attachments and tag joins.
+    sqlite.exec('CREATE INDEX IF NOT EXISTS idx_memo_versions_memo_id ON memo_versions(memo_id);');
+    sqlite.exec('CREATE INDEX IF NOT EXISTS idx_attachments_memo_id ON attachments(memo_id);');
+    sqlite.exec('CREATE INDEX IF NOT EXISTS idx_memo_tags_tag_id ON memo_tags(tag_id);');
+    // Reminder scan (audit M-9): the scan filters on COALESCE(reminder_time,
+    // due_date); an expression index avoids a full table scan every tick.
+    sqlite.exec('CREATE INDEX IF NOT EXISTS idx_memos_reminder_due ON memos(COALESCE(reminder_time, due_date));');
   } catch {
-    // Rebuild may be unnecessary or no-op on fresh databases
+    // Index creation is best-effort for very old databases
+  }
+
+  // FTS maintenance (audit M-8): the expensive full index rebuild now runs
+  // only when the FTS schema version changes, not on every startup — the
+  // previous unconditional rebuild cost O(all notes) per boot.
+  const ftsVersion = Number(sqlite.pragma('user_version', { simple: true }) || 0);
+  if (ftsVersion < FTS_SCHEMA_VERSION) {
+    try {
+      // Recreate the update trigger with its WHEN clause: CREATE TRIGGER IF
+      // NOT EXISTS cannot upgrade the unconditional trigger on old databases.
+      sqlite.exec('DROP TRIGGER IF EXISTS memos_au;');
+      sqlite.exec(`CREATE TRIGGER memos_au AFTER UPDATE ON memos
+WHEN new.title != old.title OR new.content != old.content
+BEGIN
+  INSERT INTO memos_fts(memos_fts, rowid, title, content) VALUES('delete', old.rowid, old.title, old.content);
+  INSERT INTO memos_fts(rowid, title, content) VALUES (new.rowid, new.title, new.content);
+END;`);
+      sqlite.exec("INSERT INTO memos_fts(memos_fts) VALUES('rebuild');");
+      sqlite.pragma(`user_version = ${FTS_SCHEMA_VERSION}`);
+    } catch {
+      // Rebuild may be unnecessary or a no-op on fresh databases
+    }
   }
 }

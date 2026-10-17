@@ -5,6 +5,7 @@ import {
   updateFolder,
   deleteFolder,
   FolderNotFoundError,
+  FolderValidationError,
 } from '../services/folder.service.js';
 import {
   verifyWorkspaceMembership,
@@ -98,6 +99,13 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
       const folders = listFolders(fastify.dbCtx, workspaceId);
       return reply.status(200).send({ folders });
     } catch (err: unknown) {
+      if (err instanceof FolderValidationError) {
+        // Audit M-4/M-6: invalid hierarchy or blank names return 400, not 500.
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: err.message,
+        });
+      }
       if (err instanceof WorkspaceAccessError) {
         return reply.status(err.statusCode).send({
           error: err.statusCode === 403 ? 'Forbidden' : 'Bad Request',
@@ -136,6 +144,13 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
 
       return reply.status(201).send({ folder });
     } catch (err: unknown) {
+      if (err instanceof FolderValidationError) {
+        // Audit M-4/M-6: invalid hierarchy or blank names return 400, not 500.
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: err.message,
+        });
+      }
       if (err instanceof WorkspaceAccessError) {
         return reply.status(err.statusCode).send({
           error: err.statusCode === 403 ? 'Forbidden' : 'Bad Request',
@@ -171,6 +186,13 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
           message: err.message,
         });
       }
+      if (err instanceof FolderValidationError) {
+        // Audit M-4/M-6: invalid hierarchy or blank names return 400, not 500.
+        return reply.status(400).send({
+          error: 'Bad Request',
+          message: err.message,
+        });
+      }
       if (err instanceof WorkspaceAccessError) {
         return reply.status(err.statusCode).send({
           error: err.statusCode === 403 ? 'Forbidden' : 'Bad Request',
@@ -200,6 +222,13 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
       if (err instanceof FolderNotFoundError) {
         return reply.status(404).send({
           error: 'Not Found',
+          message: err.message,
+        });
+      }
+      if (err instanceof FolderValidationError) {
+        // Audit M-4/M-6: invalid hierarchy or blank names return 400, not 500.
+        return reply.status(400).send({
+          error: 'Bad Request',
           message: err.message,
         });
       }
