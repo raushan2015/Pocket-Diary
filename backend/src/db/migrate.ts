@@ -25,7 +25,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
-CREATE INDEX IF NOT EXISTS idx_sessions_public_id ON sessions(public_id);
+-- NOTE: idx_sessions_public_id is intentionally NOT created here. On fresh
+-- databases the sessions table already has the column, but on legacy
+-- databases it does not yet — this index would crash the SCHEMA_SQL execution
+-- ("no such column: public_id") before the versioned step below can add the
+-- column. The L-8 step in runMigrations creates the index (and backfills
+-- existing rows) in the correct order for both fresh and legacy databases.
 
 CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY,
@@ -282,7 +287,12 @@ export function runMigrations(sqlite: Database.Database): void {
     }
 
     // Audit H-2: existing notes with a reminder are attributed to their creator.
-    if (existingNames.has('reminder_set_by')) {
+    // Re-read the column list here: on legacy databases the column was only
+    // just added by the additive ALTERs above, so the pre-migration snapshot
+    // (existingNames) would miss it and silently skip the backfill — caught
+    // by test/migrate-legacy.test.ts against the real pre-remediation schema.
+    const memoColumnsAfter = sqlite.prepare('PRAGMA table_info(memos)').all() as Array<{ name: string }>;
+    if (memoColumnsAfter.some((col) => col.name === 'reminder_set_by')) {
       try {
         sqlite.exec(
           'UPDATE memos SET reminder_set_by = created_by WHERE reminder_set_by IS NULL AND COALESCE(reminder_time, due_date) IS NOT NULL'
