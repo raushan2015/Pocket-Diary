@@ -18,8 +18,8 @@ jobs:
     name: Backend (typecheck + tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Install dependencies
@@ -36,8 +36,8 @@ jobs:
     name: Frontend unit (markdown + import)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Install dependencies
@@ -52,8 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Install backend dependencies
@@ -66,46 +66,57 @@ jobs:
         working-directory: tests
 
       # Throwaway instance: dev-mode backend (fresh temp SQLite) + static
-      # frontend proxy. Rate limits are raised because all CI traffic shares
-      # one client IP; per-account lockout still applies.
-      - name: Boot ephemeral instance
+      # frontend proxy. It MUST be started in the same step that runs the
+      # journeys: GitHub's runner tears down every process a step spawned
+      # once that step exits, so a separate "boot" step gets its background
+      # services killed before the test step begins — every journey then
+      # fails with ERR_CONNECTION_REFUSED (found the hard way on the first
+      # CI run). A trap stops the instance when this step ends, pass or fail.
+      - name: Run browser journeys (boots the ephemeral instance)
+        env:
+          BASE_URL: http://127.0.0.1:8080
         run: |
+          set -euo pipefail
+
           mkdir -p /tmp/notes-e2e
           cd backend
+
+          # Rate limits are raised and the reminder scan is sped up (10 s)
+          # because all CI traffic shares one client IP and the reminder
+          # journeys poll for ~30 s; per-account lockout still applies.
           NODE_ENV=development \
           DATABASE_PATH=/tmp/notes-e2e/memo_manager.db \
           ATTACHMENTS_DIR=/tmp/notes-e2e/attachments \
           BACKEND_PORT=3000 \
           RATE_LIMIT_MAX=5000 \
           AUTH_RATE_LIMIT_MAX=5000 \
-          REMINDER_SCAN_INTERVAL_MS=60000 \
+          REMINDER_SCAN_INTERVAL_MS=10000 \
           npx tsx src/index.ts > /tmp/notes-e2e/backend.log 2>&1 &
-          echo $! > /tmp/notes-e2e/backend.pid
+          BACKEND_PID=$!
 
           cd ../frontend
           FRONTEND_PORT=8080 \
           BACKEND_URL=http://127.0.0.1:3000 \
           node server.js > /tmp/notes-e2e/frontend.log 2>&1 &
-          echo $! > /tmp/notes-e2e/frontend.pid
+          FRONTEND_PID=$!
+
+          trap 'kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true' EXIT
 
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:8080/health > /dev/null 2>&1; then
-              echo "Instance is up"; exit 0
+              echo "Ephemeral instance is up"
+              break
             fi
             sleep 1
           done
-          echo "Instance failed to become ready"; cat /tmp/notes-e2e/backend.log /tmp/notes-e2e/frontend.log; exit 1
+          if ! curl -fsS http://127.0.0.1:8080/health > /dev/null 2>&1; then
+            echo "Instance failed to become ready; logs follow"
+            cat /tmp/notes-e2e/backend.log /tmp/notes-e2e/frontend.log
+            exit 1
+          fi
 
-      - name: Run browser journeys
-        env:
-          BASE_URL: http://127.0.0.1:8080
-        run: npm test
-        working-directory: tests
-
-      - name: Always stop the ephemeral instance
-        if: always()
-        run: |
-          kill $(cat /tmp/notes-e2e/backend.pid 2>/dev/null) $(cat /tmp/notes-e2e/frontend.pid 2>/dev/null) 2>/dev/null || true
+          cd ../tests
+          npm test
 
       - name: Dump instance logs on failure
         if: failure()

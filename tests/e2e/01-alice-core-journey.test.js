@@ -69,18 +69,24 @@ test('User Journey 1: Landing Page, Responsive Viewport & Dark/Light Mode', asyn
   // 2. Dark Mode Toggle
   const themeBtn = await alicePage.waitForSelector('#theme-toggle-btn');
   await themeBtn.click();
-  await alicePage.waitForTimeout(300);
-
-  const darkTheme = await alicePage.evaluate(() => document.documentElement.getAttribute('data-theme'));
-  assert.equal(darkTheme, 'dark', 'Theme switched to dark');
+  // Wait for the theme to actually apply instead of sleeping a fixed 300 ms:
+  // on slow CI runners the click can land before app.js wires the toggle
+  // listener, and a fixed delay is exactly the kind of race CI exposes.
+  await alicePage.waitForFunction(
+    () => document.documentElement.getAttribute('data-theme') === 'dark',
+    null,
+    { timeout: 5000 },
+  );
   await alicePage.screenshot({ path: path.join(SCREENSHOT_DIR, 'qa-01-dark-mode-landing.png'), fullPage: false });
   console.log('[Test 1] Captured qa-01-dark-mode-landing.png');
 
   // Switch back to light mode
   await themeBtn.click();
-  await alicePage.waitForTimeout(300);
-  const lightTheme = await alicePage.evaluate(() => document.documentElement.getAttribute('data-theme'));
-  assert.equal(lightTheme, 'light', 'Theme switched to light');
+  await alicePage.waitForFunction(
+    () => document.documentElement.getAttribute('data-theme') === 'light',
+    null,
+    { timeout: 5000 },
+  );
   await alicePage.screenshot({ path: path.join(SCREENSHOT_DIR, 'qa-02-light-mode-landing.png'), fullPage: false });
   console.log('[Test 1] Captured qa-02-light-mode-landing.png');
 
