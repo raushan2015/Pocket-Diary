@@ -14,11 +14,11 @@ import crypto from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { users, passwordResets, sessions } from '../db/schema.js';
 import type { DatabaseContext } from '../db/index.js';
-import { hashPassword } from './auth.service.js';
+import { hashPassword, validatePasswordStrength } from './auth.service.js';
 import { sendEmail, renderPasswordResetEmail, isEmailEnabled } from './mailer.service.js';
 
 export const PASSWORD_RESET_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
-export const PASSWORD_RESET_MIN_LENGTH = 6;
+export const PASSWORD_RESET_MIN_LENGTH = 8;
 export const PASSWORD_RESET_MAX_LENGTH = 200;
 
 export class PasswordResetError extends Error {
@@ -55,6 +55,14 @@ export async function requestPasswordReset(
 
   const user = dbCtx.db.select().from(users).where(eq(users.email, normalized)).get();
   if (!user) {
+    // Audit M-14: rendering the same template for unknown addresses keeps
+    // CPU cost uniform; the decisive timing fix below is that the SMTP send
+    // is no longer awaited before responding at all.
+    renderPasswordResetEmail({
+      userName: 'there',
+      resetUrl: `${appUrl.replace(/\/$/, '')}/#reset=${hashToken('nonexistent')}`,
+      expiresInMinutes: Math.round(PASSWORD_RESET_EXPIRY_MS / 60000),
+    });
     // Do not reveal account existence through response differences.
     return { emailConfigured, emailSent: false };
   }
@@ -91,9 +99,16 @@ export async function requestPasswordReset(
     resetUrl,
     expiresInMinutes: Math.round(PASSWORD_RESET_EXPIRY_MS / 60000),
   });
-  const emailSent = await sendEmail({ to: user.email, ...message });
 
-  return { emailConfigured, emailSent };
+  // Audit M-14: the SMTP send is deliberately NOT awaited — for real accounts
+  // the handler used to block on the SMTP round-trip while unknown addresses
+  // returned instantly, making response time an account-enumeration oracle.
+  // Delivery failures only log (they are invisible to the requester by design).
+  if (isEmailEnabled()) {
+    void sendEmail({ to: user.email, ...message }).catch(() => undefined);
+  }
+
+  return { emailConfigured, emailSent: false };
 }
 
 export async function consumePasswordReset(
@@ -105,8 +120,16 @@ export async function consumePasswordReset(
   if (!normalizedToken || normalizedToken.length < 16 || normalizedToken.length > 128) {
     throw new PasswordResetError('Invalid or expired password reset link', 400);
   }
-  if (!newPassword || newPassword.length < PASSWORD_RESET_MIN_LENGTH || newPassword.length > PASSWORD_RESET_MAX_LENGTH) {
-    throw new PasswordResetError(`New password must be between ${PASSWORD_RESET_MIN_LENGTH} and ${PASSWORD_RESET_MAX_LENGTH} characters`, 400);
+  // Audit L-9: the same server-enforced policy as registration/profile.
+  try {
+    validatePasswordStrength(newPassword);
+  } catch (err) {
+    throw new PasswordResetError(
+      err instanceof Error && /letter and one number/.test(err.message)
+        ? 'New password must contain at least one letter and one number'
+        : `New password must be between ${PASSWORD_RESET_MIN_LENGTH} and ${PASSWORD_RESET_MAX_LENGTH} characters, and contain a letter and a number`,
+      400,
+    );
   }
 
   const record = dbCtx.db

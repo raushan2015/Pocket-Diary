@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { config } from '../config.js';
 import { getWorkspaceMembership, WorkspaceAccessError } from '../services/workspace.service.js';
 import type { DatabaseContext } from '../db/index.js';
 import { MemoNotFoundError } from '../services/memo.service.js';
@@ -18,6 +19,38 @@ const ALLOWED_TYPES = new Map([
   ['text/markdown', '.md'],
 ]);
 const STORAGE_ROOT = process.env.ATTACHMENTS_DIR || path.resolve(process.cwd(), '../data/attachments');
+
+/**
+ * Magic-byte signatures per allowed MIME type (audit L-6). The client's
+ * Content-Type claim is no longer trusted on its own: a file renamed to
+ * `.png` but actually carrying script/HTML bytes is rejected at upload.
+ * Text types have no signature — they are always served with a restrictive
+ * `Content-Disposition: attachment` + `nosniff`, which the images are not.
+ */
+const MAGIC_SIGNATURES: Record<string, Array<(bytes: Buffer) => boolean>> = {
+  'image/jpeg': [(b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff],
+  'image/png': [(b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))],
+  'image/gif': [(b) => b.subarray(0, 4).toString('latin1') === 'GIF8'],
+  'image/webp': [(b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP'],
+  'application/pdf': [(b) => b.subarray(0, 5).toString('latin1') === '%PDF-'],
+};
+
+function matchesClaimedMime(mimeType: string, filePath: string): boolean {
+  const checks = MAGIC_SIGNATURES[mimeType];
+  if (!checks) return true; // text/*: no signature to verify — handled via response headers
+  let head: Buffer;
+  try {
+    head = Buffer.alloc(16);
+    const fd = fs.openSync(filePath, 'r');
+    try { fs.readSync(fd, head, 0, 16, 0); } finally { fs.closeSync(fd); }
+  } catch {
+    return false;
+  }
+  return checks.some((check) => check(head));
+}
+
+/** Download-safe types: never rendered inline by the browser (audit L-6). */
+const INLINE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 interface MemoRow { id: string; workspace_id: string; deleted_at: number | null; }
 
@@ -89,13 +122,19 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
       await pipeline(part.file, fs.createWriteStream(storedPath, { flags: 'wx', mode: 0o640 }));
       if (part.file.truncated) throw new Error('Uploaded image exceeds the 5 MB limit');
 
+      // Audit L-6: verify the file's magic bytes against the claimed type —
+      // a mislabeled payload (e.g. HTML/JS bytes named "photo.png") is rejected.
+      if (!matchesClaimedMime(part.mimetype, storedPath)) {
+        throw new Error('File contents do not match its declared type');
+      }
+
       const fileSize = fs.statSync(storedPath).size;
 
-      // Workspace storage quota enforcement (10 GB default per workspace)
+      // Workspace storage quota enforcement (configurable via STORAGE_QUOTA_GB, audit L-10)
       const currentStorage = fastify.dbCtx.sqlite.prepare(
         'SELECT COALESCE(SUM(file_size), 0) AS total FROM attachments WHERE workspace_id = ?'
       ).get(workspaceId) as { total: number } | undefined;
-      const MAX_WORKSPACE_STORAGE = 10 * 1024 * 1024 * 1024;
+      const MAX_WORKSPACE_STORAGE = config.storageQuotaBytes;
       if ((currentStorage?.total || 0) + fileSize > MAX_WORKSPACE_STORAGE) {
         throw new Error('Workspace attachment storage quota exceeded');
       }
@@ -113,6 +152,9 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
       if (error instanceof WorkspaceAccessError) return reply.status(error.statusCode).send({ error: 'Forbidden', message: error.message });
       if (/storage quota exceeded/i.test(error?.message || '')) {
         return reply.status(413).send({ error: 'Payload Too Large', message: 'Workspace storage quota exceeded. Upgrade storage or delete unused attachments.' });
+      }
+      if (/do not match its declared type/i.test(error?.message || '')) {
+        return reply.status(415).send({ error: 'Unsupported Media Type', message: 'File contents do not match its declared type. Upload a real image or document.' });
       }
       if (error?.code === 'FST_REQ_FILE_TOO_LARGE' || /exceeds the 5 MB limit/i.test(error?.message || '')) {
         return reply.status(413).send({ error: 'Payload Too Large', message: 'Images must be 5 MB or smaller' });
@@ -137,7 +179,11 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
       if (!fs.existsSync(row.storage_path)) return reply.status(404).send({ error: 'Not Found', message: 'Attachment file missing' });
       reply.header('Content-Type', row.mime_type);
       reply.header('Content-Length', String(row.file_size));
-      reply.header('Content-Disposition', `inline; filename="${String(row.file_name).replace(/["\\\\\r\n]/g, '_')}"`);
+      // Audit L-6: only images render inline; PDFs and text always download.
+      // Together with nosniff this stops a mislabeled file from executing as
+      // HTML in the app's origin.
+      const disposition = INLINE_TYPES.has(row.mime_type) ? 'inline' : 'attachment';
+      reply.header('Content-Disposition', `${disposition}; filename="${String(row.file_name).replace(/["\\\\\r\n]/g, '_')}"`);
       reply.header('X-Content-Type-Options', 'nosniff');
       reply.header('Cache-Control', 'private, max-age=3600');
       return reply.send(fs.createReadStream(row.storage_path));

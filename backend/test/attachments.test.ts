@@ -39,7 +39,8 @@ describe('Memo attachment API', () => {
   it('uploads, lists, serves and deletes an authorized PNG image', async () => {
     const { workspace, cookieHeader } = await createTestUser(app);
     const memo = await createMemoFor(cookieHeader, workspace.id);
-    const png = Buffer.from('fake png body for API lifecycle test');
+    // Real PNG magic bytes: uploads are magic-byte validated (audit L-6)
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('fake png body for API lifecycle test')]);
     const boundary = 'memo-test-boundary';
     const body = Buffer.concat([
       Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="sketch.png"\r\nContent-Type: image/png\r\n\r\n`),
@@ -80,7 +81,7 @@ describe('Memo attachment API', () => {
     const owner = await createTestUser(app, 'owner@example.com', 'Owner');
     const other = await createTestUser(app, 'other@example.com', 'Other');
     const memo = await createMemoFor(owner.cookieHeader, owner.workspace.id);
-    const png = Buffer.from('tenant-isolated');
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('tenant-isolated')]);
     const boundary = 'memo-test-boundary-2';
     const body = Buffer.concat([
       Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="private.png"\r\nContent-Type: image/png\r\n\r\n`),
@@ -114,5 +115,48 @@ describe('Memo attachment API', () => {
       payload: body,
     });
     expect(response.statusCode).toBe(415);
+  });
+
+  it('rejects mislabeled files whose magic bytes contradict the claimed type (audit L-6)', async () => {
+    const { workspace, cookieHeader } = await createTestUser(app);
+    const memo = await createMemoFor(cookieHeader, workspace.id);
+    const boundary = 'memo-test-boundary-4';
+    // HTML/script bytes wearing an image/png disguise
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="evil.png"\r\nContent-Type: image/png\r\n\r\n`),
+      Buffer.from('<script>alert(1)</script>'),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    const response = await app.inject({
+      method: 'POST', url: `/api/v1/attachments/memo/${memo.id}`,
+      headers: { cookie: cookieHeader, 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: body,
+    });
+    expect(response.statusCode).toBe(415);
+    expect(response.json().message).toMatch(/do not match its declared type/i);
+    // Nothing was persisted for the rejected file
+    const rows = dbCtx.sqlite.prepare('SELECT COUNT(*) AS n FROM attachments WHERE memo_id = ?').get(memo.id) as { n: number };
+    expect(rows.n).toBe(0);
+  });
+
+  it('serves PDFs and text with Content-Disposition: attachment (audit L-6)', async () => {
+    const { workspace, cookieHeader } = await createTestUser(app);
+    const memo = await createMemoFor(cookieHeader, workspace.id);
+    const boundary = 'memo-test-boundary-5';
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="doc.pdf"\r\nContent-Type: application/pdf\r\n\r\n`),
+      Buffer.from('%PDF-1.4 fake'),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    const upload = await app.inject({
+      method: 'POST', url: `/api/v1/attachments/memo/${memo.id}`,
+      headers: { cookie: cookieHeader, 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: body,
+    });
+    expect(upload.statusCode).toBe(201);
+    const id = upload.json().attachment.id;
+    const download = await app.inject({ method: 'GET', url: `/api/v1/attachments/${id}/file`, headers: { cookie: cookieHeader } });
+    expect(download.statusCode).toBe(200);
+    expect(download.headers['content-disposition']).toMatch(/^attachment;/);
   });
 });

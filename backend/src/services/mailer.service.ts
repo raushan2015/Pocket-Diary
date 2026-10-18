@@ -70,13 +70,31 @@ export function renderReminderEmail(params: {
   memoBody: string;
   reminderTime: number | null;
   appUrl: string;
+  /** IANA timezone stored on the user (audit M-16) — falls back to UTC. */
+  timezone?: string;
 }): { subject: string; text: string; html: string } {
-  const when = params.reminderTime
-    ? new Date(params.reminderTime).toLocaleString('en-US', {
-        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-        hour: 'numeric', minute: '2-digit',
-      })
-    : 'now';
+  // Audit M-16: format the reminder time in the USER's timezone. The server
+  // (often a UTC container) previously decided, so users in Tokyo saw
+  // reminders scheduled for 09:00 local arrive labelled 00:00.
+  let tz = params.timezone && params.timezone.trim() ? params.timezone.trim() : 'UTC';
+  let when: string;
+  try {
+    when = params.reminderTime
+      ? new Date(params.reminderTime).toLocaleString('en-US', {
+          weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+          hour: 'numeric', minute: '2-digit',
+          timeZone: tz,
+        })
+      : 'now';
+  } catch {
+    tz = 'UTC';
+    when = params.reminderTime
+      ? new Date(params.reminderTime).toLocaleString('en-US', {
+          weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+          hour: 'numeric', minute: '2-digit',
+        })
+      : 'now';
+  }
   const subject = `Reminder: ${params.memoTitle}`;
 
   const textLines: string[] = [

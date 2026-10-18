@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { eq, and } from 'drizzle-orm';
-import { workspaces, workspaceMembers } from '../db/schema.js';
+import { workspaces, workspaceMembers, notifications } from '../db/schema.js';
 import type { Workspace, WorkspaceMember } from '../db/schema.js';
 import type { DatabaseContext } from '../db/index.js';
 
@@ -149,9 +149,16 @@ export function removeWorkspaceMember(
     throw new WorkspaceAccessError('You do not have permission to remove this member', 403);
   }
 
-  db.delete(workspaceMembers)
-    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetUserId)))
-    .run();
+  db.transaction((tx) => {
+    tx.delete(workspaceMembers)
+      .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetUserId)))
+      .run();
+    // Audit L-13: the removed member's notifications for this workspace
+    // (note titles + body snippets) disappear with their membership.
+    tx.delete(notifications)
+      .where(and(eq(notifications.workspaceId, workspaceId), eq(notifications.userId, targetUserId)))
+      .run();
+  });
 }
 
 /**
@@ -199,4 +206,75 @@ export function changeMemberRole(
     .run();
 
   return { userId: targetUserId, role: newRole };
+}
+
+/**
+ * Leave a workspace (audit L-8). Owners must transfer ownership (or delete the
+ * workspace) first. Leaving also clears the member's notifications for that
+ * workspace (audit L-13) so they no longer see other members' reminder noise.
+ */
+export function leaveWorkspace(
+  db: DatabaseContext['db'],
+  userId: string,
+  workspaceId: string
+): void {
+  const member = getWorkspaceMembership(db, userId, workspaceId);
+  if (!member) throw new WorkspaceAccessError('You are not a member of this workspace', 404);
+  if (member.role === 'owner') {
+    throw new WorkspaceAccessError(
+      'The workspace owner cannot leave. Transfer ownership to another member or delete the workspace first.',
+      403,
+    );
+  }
+
+  db.transaction((tx) => {
+    tx.delete(workspaceMembers)
+      .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId)))
+      .run();
+    // Audit L-13: their per-workspace notifications disappear with the membership.
+    tx.delete(notifications)
+      .where(and(eq(notifications.workspaceId, workspaceId), eq(notifications.userId, userId)))
+      .run();
+  });
+}
+
+/**
+ * Transfer workspace ownership (audit L-8). The current owner becomes an
+ * admin; the target member becomes the owner. Owner-only by definition.
+ */
+export function transferWorkspaceOwnership(
+  db: DatabaseContext['db'],
+  actorUserId: string,
+  workspaceId: string,
+  targetUserId: string
+): { workspaceId: string; newOwnerId: string } {
+  const actor = getWorkspaceMembership(db, actorUserId, workspaceId);
+  if (!actor) throw new WorkspaceAccessError('Access denied: You are not a member of this workspace', 403);
+  if (actor.role !== 'owner') {
+    throw new WorkspaceAccessError('Only the workspace owner can transfer ownership', 403);
+  }
+
+  const target = getWorkspaceMembership(db, targetUserId, workspaceId);
+  if (!target) throw new WorkspaceAccessError('The target user is not a member of this workspace', 404);
+  if (targetUserId === actorUserId) {
+    throw new WorkspaceAccessError('You already own this workspace', 400);
+  }
+
+  const now = Date.now();
+  db.transaction((tx) => {
+    tx.update(workspaces)
+      .set({ ownerId: targetUserId, updatedAt: now })
+      .where(eq(workspaces.id, workspaceId))
+      .run();
+    tx.update(workspaceMembers)
+      .set({ role: 'owner' })
+      .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetUserId)))
+      .run();
+    tx.update(workspaceMembers)
+      .set({ role: 'admin' })
+      .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, actorUserId)))
+      .run();
+  });
+
+  return { workspaceId, newOwnerId: targetUserId };
 }

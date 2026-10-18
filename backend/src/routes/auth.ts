@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
+import fs from 'node:fs';
 import { config, resolveAppUrl } from '../config.js';
 import {
   registerUser,
@@ -8,6 +9,9 @@ import {
   hashPassword,
   verifyPassword,
   hashSessionToken,
+  validatePasswordStrength,
+  normalizeTimezone,
+  deleteAccount,
   AuthError,
 } from '../services/auth.service.js';
 import { acceptInvite, InviteError } from '../services/invite.service.js';
@@ -25,12 +29,16 @@ interface RegisterBody {
   password?: string;
   name?: string;
   inviteToken?: string;
+  /** IANA timezone from the browser (audit M-16), e.g. Asia/Tokyo. */
+  timezone?: string;
 }
 
 interface LoginBody {
   email?: string;
   password?: string;
   rememberMe?: boolean;
+  /** IANA timezone from the browser (audit M-16). */
+  timezone?: string;
 }
 
 const registerSchema = {
@@ -39,9 +47,11 @@ const registerSchema = {
     required: ['email', 'password', 'name'],
     properties: {
       email: { type: 'string', minLength: 3, maxLength: 254 },
-      password: { type: 'string', minLength: 6, maxLength: 200 },
+      // Audit L-9: server-enforced policy (>= 8 chars; letter+digit checked in the service).
+      password: { type: 'string', minLength: 8, maxLength: 200 },
       name: { type: 'string', minLength: 1, maxLength: 120 },
       inviteToken: { type: 'string', minLength: 16, maxLength: 128 },
+      timezone: { type: 'string', maxLength: 64 },
     },
     additionalProperties: false,
   },
@@ -53,8 +63,11 @@ const loginSchema = {
     required: ['email', 'password'],
     properties: {
       email: { type: 'string', minLength: 3, maxLength: 254 },
+      // Login intentionally accepts legacy short passwords: existing users
+      // must be able to sign in to upgrade their password.
       password: { type: 'string', minLength: 1, maxLength: 200 },
       rememberMe: { type: 'boolean' },
+      timezone: { type: 'string', maxLength: 64 },
     },
     additionalProperties: false,
   },
@@ -87,7 +100,8 @@ const profileSchema = {
     properties: {
       name: { type: 'string', minLength: 1, maxLength: 120 },
       currentPassword: { type: 'string', maxLength: 200 },
-      newPassword: { type: 'string', minLength: 6, maxLength: 200 },
+      newPassword: { type: 'string', minLength: 8, maxLength: 200 },
+      timezone: { type: 'string', maxLength: 64 },
     },
     additionalProperties: false,
   },
@@ -111,7 +125,9 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/auth/register
   fastify.post<{ Body: RegisterBody }>('/register', {
     schema: registerSchema,
-    config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+    // Audit §6: configurable so CI/ephemeral instances (where every request
+    // shares one client IP) are not throttled; production keeps the tight default.
+    config: { rateLimit: { max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 15), timeWindow: '1 minute' } },
   }, async (request, reply) => {
     try {
       const { email, password, name, inviteToken } = request.body || {};
@@ -132,6 +148,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         name,
         ipAddress: clientIp,
         userAgent,
+        timezone: request.body?.timezone,
       });
 
       setSessionCookie(reply, result.sessionToken, request, true);
@@ -177,7 +194,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/auth/login
   fastify.post<{ Body: LoginBody }>('/login', {
     schema: loginSchema,
-    config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+    config: { rateLimit: { max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 15), timeWindow: '1 minute' } },
   }, async (request, reply) => {
     try {
       const { email, password, rememberMe } = request.body || {};
@@ -197,6 +214,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         password,
         ipAddress: clientIp,
         userAgent,
+        timezone: request.body?.timezone,
       });
 
       setSessionCookie(reply, result.sessionToken, request, rememberMe !== false);
@@ -293,13 +311,13 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // PATCH /api/v1/auth/profile
-  fastify.patch<{ Body: { name?: string; currentPassword?: string; newPassword?: string } }>('/profile', {
+  fastify.patch<{ Body: { name?: string; currentPassword?: string; newPassword?: string; timezone?: string } }>('/profile', {
     preHandler: fastify.authenticate,
     schema: profileSchema,
   }, async (request, reply) => {
     try {
       const user = request.user!;
-      const { name, currentPassword, newPassword } = request.body || {};
+      const { name, currentPassword, newPassword, timezone } = request.body || {};
       const now = Date.now();
 
       if (newPassword) {
@@ -309,11 +327,11 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
             message: 'Current password is required to change password',
           });
         }
-        if (newPassword.length < 6) {
-          return reply.status(400).send({
-            error: 'Bad Request',
-            message: 'New password must be at least 6 characters long',
-          });
+        // Audit L-9: server-enforced password policy on change, same as register.
+        try {
+          validatePasswordStrength(newPassword);
+        } catch (err) {
+          return reply.status(400).send({ error: 'Bad Request', message: err instanceof Error ? err.message : 'Invalid new password' });
         }
 
         const userRow = fastify.dbCtx.sqlite.prepare(
@@ -348,15 +366,25 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         ).run(name.trim(), now, user.id);
       }
 
+      // Audit M-16: the browser's IANA timezone, used when formatting the
+      // times in reminder emails (previously everything rendered in UTC).
+      if (timezone !== undefined) {
+        const tz = normalizeTimezone(timezone);
+        fastify.dbCtx.sqlite.prepare(
+          'UPDATE users SET timezone = ?, updated_at = ? WHERE id = ?'
+        ).run(tz, now, user.id);
+      }
+
       const updated = fastify.dbCtx.sqlite.prepare(
-        'SELECT id, email, name, created_at FROM users WHERE id = ?'
-      ).get(user.id) as { id: string; email: string; name: string; created_at: number };
+        'SELECT id, email, name, timezone, created_at FROM users WHERE id = ?'
+      ).get(user.id) as { id: string; email: string; name: string; timezone: string; created_at: number };
 
       return reply.status(200).send({
         user: {
           id: updated.id,
           email: updated.email,
           name: updated.name,
+          timezone: updated.timezone,
           createdAt: Number(updated.created_at),
         },
       });
@@ -414,14 +442,14 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     const currentSessionId = hashSessionToken(request.sessionToken ?? '');
     const rows = fastify.dbCtx.sqlite
       .prepare(
-        'SELECT id, ip_address, user_agent, created_at, expires_at FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC'
+        'SELECT id, public_id, ip_address, user_agent, created_at, expires_at FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC'
       )
-      .all(user.id, Date.now()) as Array<{ id: string; ip_address: string | null; user_agent: string | null; created_at: number; expires_at: number }>;
+      .all(user.id, Date.now()) as Array<{ id: string; public_id: string; ip_address: string | null; user_agent: string | null; created_at: number; expires_at: number }>;
 
     return reply.status(200).send({
       sessions: rows.map((row) => ({
-        // Expose only a short fingerprint — the session token itself must never leave the server.
-        id: `${row.id.slice(0, 8)}…${row.id.slice(-4)}`,
+        // Opaque per-device identifier (audit L-8) — the token hash itself must never leave the server.
+        id: row.public_id || `${row.id.slice(0, 8)}…${row.id.slice(-4)}`,
         current: row.id === currentSessionId,
         ipAddress: row.ip_address,
         userAgent: row.user_agent,
@@ -429,6 +457,26 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         expiresAt: row.expires_at,
       })),
     });
+  });
+
+  // DELETE /api/v1/auth/sessions/:id — revoke ONE other session (audit L-8).
+  // `id` is the opaque public_id from GET /sessions, never the token hash.
+  fastify.delete<{ Params: { id: string } }>('/sessions/:id', {
+    preHandler: fastify.authenticate,
+  }, async (request, reply) => {
+    const user = request.user!;
+    const currentSessionId = hashSessionToken(request.sessionToken ?? '');
+    const target = fastify.dbCtx.sqlite
+      .prepare('SELECT id FROM sessions WHERE user_id = ? AND public_id = ?')
+      .get(user.id, request.params.id) as { id: string } | undefined;
+    if (!target) {
+      return reply.status(404).send({ error: 'Not Found', message: 'Session not found' });
+    }
+    if (target.id === currentSessionId) {
+      return reply.status(400).send({ error: 'Bad Request', message: 'Use sign out to end the current session' });
+    }
+    fastify.dbCtx.sqlite.prepare('DELETE FROM sessions WHERE id = ?').run(target.id);
+    return reply.status(200).send({ success: true });
   });
 
   // POST /api/v1/auth/sessions/revoke — sign out every other session (kept: the current one)
@@ -442,5 +490,66 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       .run(user.id, currentSessionId);
 
     return reply.status(200).send({ success: true, revoked: result.changes });
+  });
+
+  // DELETE /api/v1/auth/account — permanently delete the account (audit L-8).
+  // Requires the current password; shared workspaces owned by the user must
+  // be transferred (or deleted) first — solo workspaces are deleted with it.
+  fastify.delete<{ Body: { currentPassword?: string } }>('/account', {
+    preHandler: fastify.authenticate,
+    schema: {
+      body: {
+        type: 'object',
+        required: ['currentPassword'],
+        properties: { currentPassword: { type: 'string', minLength: 1, maxLength: 200 } },
+        additionalProperties: false,
+      },
+    },
+  }, async (request, reply) => {
+    try {
+      const user = request.user!;
+      const { currentPassword } = request.body || {};
+      if (!currentPassword) {
+        return reply.status(400).send({ error: 'Bad Request', message: 'Current password is required to delete your account' });
+      }
+
+      const userRow = fastify.dbCtx.sqlite.prepare('SELECT password_hash FROM users WHERE id = ?').get(user.id) as { password_hash: string } | undefined;
+      if (!userRow || !(await verifyPassword(userRow.password_hash, currentPassword))) {
+        return reply.status(401).send({ error: 'Unauthorized', message: 'Current password is incorrect' });
+      }
+
+      const result = deleteAccount(fastify.dbCtx, user.id);
+
+      // Best-effort cleanup of attachment files belonging to the deleted solo workspaces.
+      for (const workspaceId of result.deletedWorkspaces) {
+        try {
+          const files = fastify.dbCtx.sqlite.prepare(
+            'SELECT storage_path FROM attachments WHERE workspace_id = ?'
+          ).all(workspaceId) as Array<{ storage_path: string }>;
+          for (const file of files) {
+            try { fs.unlinkSync(file.storage_path); } catch { /* already gone */ }
+          }
+        } catch { /* rows already cascaded */ }
+      }
+
+      reply.clearCookie(config.cookieName, {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: request.protocol === 'https',
+      });
+
+      return reply.status(200).send({
+        success: true,
+        deletedWorkspaces: result.deletedWorkspaces.length,
+        reassignedMemos: result.reassignedMemos,
+      });
+    } catch (err: unknown) {
+      if (err instanceof AuthError) {
+        return reply.status(err.statusCode).send({ error: err.statusCode === 409 ? 'Conflict' : 'Bad Request', message: err.message });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to delete account' });
+    }
   });
 };

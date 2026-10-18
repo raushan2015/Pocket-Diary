@@ -4,8 +4,8 @@
   "description": "End-to-End QA Verification and System Certification Test Suites for Memo Manager SaaS (split into e2e/*.test.js journey files)",
   "type": "module",
   "scripts": {
-    "test": "node --test --test-timeout=180000 --test-concurrency=4 e2e/",
-    "test:e2e": "node --test --test-timeout=180000 --test-concurrency=4 e2e/",
+    "test": "node --test --test-timeout=180000 --test-concurrency=4 e2e/*.test.js",
+    "test:e2e": "node --test --test-timeout=180000 --test-concurrency=4 e2e/*.test.js",
     "test:unit": "node --test md-import.test.js markdown-xss.test.js"
   },
   "author": "TECHSHAN AI Office - QA Agent",

@@ -18,7 +18,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { createDatabase } from '../src/db/index.js';
 import { createTestUser } from './helpers.js';
-import { hashSessionToken } from '../src/services/auth.service.js';
+import { hashSessionToken, pruneExpiredAuthArtifacts } from '../src/services/auth.service.js';
 // normalizeTagNames lives in memo.service (audit M-3)
 import { normalizeTagNames as normalizeTags } from '../src/services/memo.service.js';
 import { scanDueReminders } from '../src/services/notification.service.js';
@@ -523,5 +523,334 @@ describe('Audit remediation regression tests', () => {
     const secondMe = await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie: second.cookieHeader } });
     expect(firstMe.json().user.isInstanceAdmin).toBe(true);
     expect(secondMe.json().user.isInstanceAdmin).toBe(false);
+  });
+
+  // ============================== Second remediation batch ==============================
+
+  // ------------------------------------------------------------------ L-9
+  it('L-9: the server enforces the password policy (8+ chars, letter + number)', async () => {
+    const short = await app.inject({
+      method: 'POST', url: '/api/v1/auth/register',
+      payload: { email: 'short-pw@example.com', password: 'Ab1cde', name: 'Short' }, // 6 chars, passes OLD policy
+    });
+    expect(short.statusCode).toBe(400);
+
+    const noDigit = await app.inject({
+      method: 'POST', url: '/api/v1/auth/register',
+      payload: { email: 'nodigit@example.com', password: 'OnlyLettersHere', name: 'No Digit' },
+    });
+    expect(noDigit.statusCode).toBe(400);
+
+    const ok = await app.inject({
+      method: 'POST', url: '/api/v1/auth/register',
+      payload: { email: 'goodpw@example.com', password: 'GoodPass123', name: 'Good' },
+    });
+    expect(ok.statusCode).toBe(201);
+
+    // Profile password change enforces the same policy
+    const { cookieHeader } = await createTestUser(app, 'policy@example.com', 'Policy');
+    const weakChange = await app.inject({
+      method: 'PATCH', url: '/api/v1/auth/profile',
+      headers: { cookie: cookieHeader },
+      payload: { currentPassword: 'Password123!', newPassword: 'weakpass' },
+    });
+    expect(weakChange.statusCode).toBe(400);
+  });
+
+  // ------------------------------------------------------------------ M-16
+  it('M-16: login stores the browser timezone; reminder emails can use it', async () => {
+    const login = await app.inject({
+      method: 'POST', url: '/api/v1/auth/login',
+      payload: { email: 'tz-user@example.com', password: 'Password123!', timezone: 'Asia/Tokyo' },
+    });
+    expect(login.statusCode).toBe(401); // unknown account — just exercise the path
+
+    const registered = await app.inject({
+      method: 'POST', url: '/api/v1/auth/register',
+      payload: { email: 'tz-user@example.com', password: 'Password123!', name: 'TZ', timezone: 'Asia/Tokyo' },
+    });
+    expect(registered.statusCode).toBe(201);
+    const tz = dbCtx.sqlite.prepare('SELECT timezone FROM users WHERE email = ?').get('tz-user@example.com') as { timezone: string };
+    expect(tz.timezone).toBe('Asia/Tokyo');
+
+    // Invalid timezones normalize to UTC instead of being stored raw
+    const cookie = `memo_session=${registered.cookies.find((c: any) => c.name === 'memo_session')?.value}`;
+    const patch = await app.inject({
+      method: 'PATCH', url: '/api/v1/auth/profile',
+      headers: { cookie },
+      payload: { timezone: 'Not/A_Real__Timezone' },
+    });
+    expect(patch.statusCode).toBe(200);
+    const tzAfter = dbCtx.sqlite.prepare('SELECT timezone FROM users WHERE email = ?').get('tz-user@example.com') as { timezone: string };
+    expect(tzAfter.timezone).toBe('UTC');
+  });
+
+  // ------------------------------------------------------------------ L-8 (sessions)
+  it('L-8: users can revoke a single other session by its opaque id', async () => {
+    const user = await createTestUser(app, 'revoker@example.com', 'Revoker');
+    const secondLogin = await app.inject({
+      method: 'POST', url: '/api/v1/auth/login',
+      payload: { email: 'revoker@example.com', password: 'Password123!' },
+    });
+    const secondCookie = `memo_session=${secondLogin.cookies.find((c: any) => c.name === 'memo_session')?.value}`;
+
+    const list = await app.inject({ method: 'GET', url: '/api/v1/auth/sessions', headers: { cookie: user.cookieHeader } });
+    expect(list.statusCode).toBe(200);
+    const sessions = list.json().sessions as Array<{ id: string; current: boolean }>;
+    expect(sessions).toHaveLength(2);
+    const other = sessions.find((s) => !s.current)!;
+    // Opaque ids are UUIDs — never the token or its hash
+    expect(other.id).toMatch(/^[0-9a-f-]{36}$/i);
+
+    const revoke = await app.inject({
+      method: 'DELETE', url: `/api/v1/auth/sessions/${encodeURIComponent(other.id)}`,
+      headers: { cookie: user.cookieHeader },
+    });
+    expect(revoke.statusCode).toBe(200);
+
+    const stillValid = await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie: secondCookie } });
+    expect(stillValid.statusCode).toBe(401);
+    const currentStillValid = await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie: user.cookieHeader } });
+    expect(currentStillValid.statusCode).toBe(200);
+
+    // The current session cannot be revoked via this endpoint (use sign out)
+    const list2 = await app.inject({ method: 'GET', url: '/api/v1/auth/sessions', headers: { cookie: user.cookieHeader } });
+    const currentId = (list2.json().sessions as Array<{ id: string; current: boolean }>).find((s) => s.current)!.id;
+    const selfRevoke = await app.inject({
+      method: 'DELETE', url: `/api/v1/auth/sessions/${encodeURIComponent(currentId)}`,
+      headers: { cookie: user.cookieHeader },
+    });
+    expect(selfRevoke.statusCode).toBe(400);
+  });
+
+  // ------------------------------------------------------------------ L-8 (leave + transfer)
+  it('L-8: members can leave a workspace; owners can transfer ownership', async () => {
+    const owner = await createTestUser(app, 'leave-owner@example.com', 'Owner');
+    const member = await createTestUser(app, 'leave-member@example.com', 'Member');
+    dbCtx.sqlite
+      .prepare('INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(crypto.randomUUID(), owner.workspace.id, member.user.id, 'editor', Date.now());
+
+    // Owner cannot leave their own workspace
+    const ownerLeave = await app.inject({
+      method: 'POST', url: `/api/v1/workspaces/${owner.workspace.id}/leave`,
+      headers: { cookie: owner.cookieHeader },
+    });
+    expect(ownerLeave.statusCode).toBe(403);
+
+    // Member leaves; their notifications for the workspace are cleared too (L-13)
+    const leaveMemo = await app.inject({
+      method: 'POST', url: '/api/v1/memos',
+      headers: { cookie: owner.cookieHeader },
+      payload: { workspaceId: owner.workspace.id, title: 'Note for notif', content: '' },
+    });
+    expect(leaveMemo.statusCode).toBe(201);
+    dbCtx.sqlite
+      .prepare("INSERT INTO notifications (id, user_id, workspace_id, memo_id, type, title, read_at, created_at) VALUES (?, ?, ?, ?, 'reminder', 'stale', NULL, ?)")
+      .run(crypto.randomUUID(), member.user.id, owner.workspace.id, leaveMemo.json().memo.id, Date.now());
+    const memberLeave = await app.inject({
+      method: 'POST', url: `/api/v1/workspaces/${owner.workspace.id}/leave`,
+      headers: { cookie: member.cookieHeader },
+    });
+    expect(memberLeave.statusCode).toBe(200);
+    const membership = dbCtx.sqlite
+      .prepare('SELECT COUNT(*) AS n FROM workspace_members WHERE user_id = ? AND workspace_id = ?')
+      .get(member.user.id, owner.workspace.id) as { n: number };
+    expect(membership.n).toBe(0);
+    const leftoverNotifs = dbCtx.sqlite
+      .prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND workspace_id = ?')
+      .get(member.user.id, owner.workspace.id) as { n: number };
+    expect(leftoverNotifs.n).toBe(0);
+
+    // Ownership transfer: re-add the member, then transfer
+    dbCtx.sqlite
+      .prepare('INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(crypto.randomUUID(), owner.workspace.id, member.user.id, 'editor', Date.now());
+    const nonOwnerTransfer = await app.inject({
+      method: 'POST', url: `/api/v1/workspaces/${owner.workspace.id}/transfer`,
+      headers: { cookie: member.cookieHeader },
+      payload: { userId: member.user.id },
+    });
+    expect(nonOwnerTransfer.statusCode).toBe(403);
+
+    const transfer = await app.inject({
+      method: 'POST', url: `/api/v1/workspaces/${owner.workspace.id}/transfer`,
+      headers: { cookie: owner.cookieHeader },
+      payload: { userId: member.user.id },
+    });
+    expect(transfer.statusCode).toBe(200);
+    const roles = dbCtx.sqlite
+      .prepare('SELECT user_id, role FROM workspace_members WHERE workspace_id = ?')
+      .all(owner.workspace.id) as Array<{ user_id: string; role: string }>;
+    const memberRole = roles.find((r) => r.user_id === member.user.id)!.role;
+    const ownerRole = roles.find((r) => r.user_id === owner.user.id)!.role;
+    expect(memberRole).toBe('owner');
+    expect(ownerRole).toBe('admin');
+    const wsRow = dbCtx.sqlite.prepare('SELECT owner_id FROM workspaces WHERE id = ?').get(owner.workspace.id) as { owner_id: string };
+    expect(wsRow.owner_id).toBe(member.user.id);
+  });
+
+  // ------------------------------------------------------------------ L-8 (account deletion)
+  it('L-8: account deletion removes solo workspaces and reassigns shared notes', async () => {
+    const owner = await createTestUser(app, 'bye-owner@example.com', 'Bye Owner');
+    const colleague = await createTestUser(app, 'bye-colleague@example.com', 'Colleague');
+
+    // A memo by the doomed user inside ANOTHER user's workspace must survive.
+    const foreignMemo = await app.inject({
+      method: 'POST', url: '/api/v1/memos',
+      headers: { cookie: owner.cookieHeader },
+      payload: { workspaceId: owner.workspace.id, title: 'Shared note', content: 'keep me' },
+    });
+    expect(foreignMemo.statusCode).toBe(201);
+
+    const solo = await createTestUser(app, 'bye-solo@example.com', 'Solo');
+    // The solo user's personal workspace gets deleted with them
+    const del = await app.inject({
+      method: 'DELETE', url: '/api/v1/auth/account',
+      headers: { cookie: solo.cookieHeader },
+      payload: { currentPassword: 'Password123!' },
+    });
+    expect(del.statusCode).toBe(200);
+    expect(del.json().deletedWorkspaces).toBe(1);
+    const userGone = dbCtx.sqlite.prepare('SELECT COUNT(*) AS n FROM users WHERE id = ?').get(solo.user.id) as { n: number };
+    expect(userGone.n).toBe(0);
+    const sessionDead = await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie: solo.cookieHeader } });
+    expect(sessionDead.statusCode).toBe(401);
+
+    // Wrong password is rejected
+    const wrongPw = await app.inject({
+      method: 'DELETE', url: '/api/v1/auth/account',
+      headers: { cookie: owner.cookieHeader },
+      payload: { currentPassword: 'WrongPassword1!' },
+    });
+    expect(wrongPw.statusCode).toBe(401);
+
+    // An owner of a SHARED workspace must transfer first
+    dbCtx.sqlite
+      .prepare('INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(crypto.randomUUID(), owner.workspace.id, colleague.user.id, 'editor', Date.now());
+    const sharedOwnerDel = await app.inject({
+      method: 'DELETE', url: '/api/v1/auth/account',
+      headers: { cookie: owner.cookieHeader },
+      payload: { currentPassword: 'Password123!' },
+    });
+    expect(sharedOwnerDel.statusCode).toBe(409);
+  });
+
+  // ------------------------------------------------------------------ L-7
+  it('L-7: sliding renewal extends a session nearing expiry; pruner clears dead artifacts', async () => {
+    const user = await createTestUser(app, 'renewal@example.com', 'Renewal');
+    const before = dbCtx.sqlite
+      .prepare('SELECT expires_at FROM sessions WHERE user_id = ?')
+      .get(user.user.id) as { expires_at: number };
+
+    // Age the session past half its lifetime with little time left
+    const day = 24 * 60 * 60 * 1000;
+    dbCtx.sqlite
+      .prepare('UPDATE sessions SET created_at = ?, expires_at = ? WHERE user_id = ?')
+      .run(Date.now() - 6 * day, Date.now() + 0.5 * day, user.user.id);
+
+    const me = await app.inject({ method: 'GET', url: '/api/v1/auth/me', headers: { cookie: user.cookieHeader } });
+    expect(me.statusCode).toBe(200);
+    const after = dbCtx.sqlite
+      .prepare('SELECT expires_at FROM sessions WHERE user_id = ?')
+      .get(user.user.id) as { expires_at: number };
+    expect(after.expires_at).toBeGreaterThan(before.expires_at); // renewed
+
+    // Pruner removes expired sessions / spent resets / dead invites
+    dbCtx.sqlite
+      .prepare("INSERT INTO sessions (id, public_id, user_id, expires_at, created_at) VALUES ('dead-hash', ?, ?, 1, 1)")
+      .run(crypto.randomUUID(), user.user.id);
+    dbCtx.sqlite
+      .prepare("INSERT INTO password_resets (id, user_id, token_hash, expires_at, used_at, created_at) VALUES (?, ?, 'dead-token', 1, ?, 1)")
+      .run(crypto.randomUUID(), user.user.id, Date.now() - 90 * day);
+    const pruned = pruneExpiredAuthArtifacts(dbCtx.db);
+    expect(pruned.sessions).toBeGreaterThan(0);
+    expect(pruned.passwordResets).toBe(1);
+    const dead = dbCtx.sqlite.prepare("SELECT COUNT(*) AS n FROM sessions WHERE id = 'dead-hash'").get() as { n: number };
+    expect(dead.n).toBe(0);
+  });
+
+  // ------------------------------------------------------------------ L-10
+  it('L-10: the storage meter counts BYTES, not characters', async () => {
+    const { workspace, cookieHeader } = await createTestUser(app, 'bytes@example.com', 'Byter');
+    // 'あ' is one character but three UTF-8 bytes; 10 chars = 30 bytes.
+    const cjk = 'あ'.repeat(10);
+    const create = await app.inject({
+      method: 'POST', url: '/api/v1/memos',
+      headers: { cookie: cookieHeader },
+      payload: { workspaceId: workspace.id, title: cjk, content: cjk },
+    });
+    expect(create.statusCode).toBe(201);
+
+    const storage = await app.inject({
+      method: 'GET', url: `/api/v1/workspaces/${workspace.id}/storage`,
+      headers: { cookie: cookieHeader },
+    });
+    expect(storage.statusCode).toBe(200);
+    const body = storage.json();
+    expect(body.totalBytes).toBeGreaterThanOrEqual(60); // 20 chars * 3 bytes
+    expect(body.maxBytes).toBe(10 * 1024 * 1024 * 1024); // default, now configurable
+    expect(body.maxFormatted).toBe('10 GB');
+  });
+
+  // ------------------------------------------------------------------ H-2/L-13 (membership)
+  it('L-13: a reminder owner who left the workspace no longer gets notified', async () => {
+    const owner = await createTestUser(app, 'gone-owner@example.com', 'Owner');
+    const quitter = await createTestUser(app, 'gone-quitter@example.com', 'Quitter');
+    dbCtx.sqlite
+      .prepare('INSERT INTO workspace_members (id, workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(crypto.randomUUID(), owner.workspace.id, quitter.user.id, 'editor', Date.now());
+
+    const now = Date.now();
+    const create = await app.inject({
+      method: 'POST', url: '/api/v1/memos',
+      headers: { cookie: quitter.cookieHeader },
+      payload: { workspaceId: owner.workspace.id, title: 'Doomed reminder', content: '', reminderTime: now - 1 },
+    });
+    expect(create.statusCode).toBe(201);
+
+    // The quitter leaves BEFORE the reminder is delivered
+    const leave = await app.inject({
+      method: 'POST', url: `/api/v1/workspaces/${owner.workspace.id}/leave`,
+      headers: { cookie: quitter.cookieHeader },
+    });
+    expect(leave.statusCode).toBe(200);
+
+    const result = await scanDueReminders(dbCtx, { now: now + 2000 });
+    expect(result.created).toBe(0); // no longer a member → no notification
+    const notifs = dbCtx.sqlite
+      .prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ?')
+      .get(quitter.user.id) as { n: number };
+    expect(notifs.n).toBe(0);
+  });
+
+  // ------------------------------------------------------------------ M-17 (backend passthrough)
+  it('M-17: import carries Keep pinned/archived state through to storage', async () => {
+    const { workspace, cookieHeader } = await createTestUser(app, 'keep-meta@example.com', 'Keeper');
+    const res = await app.inject({
+      method: 'POST', url: '/api/v1/migration/import-local',
+      headers: { cookie: cookieHeader },
+      payload: {
+        workspaceId: workspace.id,
+        memos: [
+          { title: 'Pinned!', content: 'x', color: 'BLUE', isPinned: true },
+          { title: 'Archived', content: 'y', isArchived: true },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().importedMemos).toBe(2);
+
+    const list = await app.inject({
+      method: 'GET', url: `/api/v1/memos?workspaceId=${workspace.id}`,
+      headers: { cookie: cookieHeader },
+    });
+    const memos = list.json().memos as Array<any>;
+    const pinned = memos.find((m) => m.title === 'Pinned!');
+    const archived = memos.find((m) => m.title === 'Archived');
+    expect(pinned.isPinned).toBe(true);
+    expect(pinned.color).toBe('blue');
+    expect(archived.isArchived).toBe(true);
   });
 });

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import * as argon2 from 'argon2';
-import { eq, and, gt } from 'drizzle-orm';
-import { users, workspaces, workspaceMembers, sessions } from '../db/schema.js';
+import { eq, and, gt, lt, or, ne, isNull, isNotNull } from 'drizzle-orm';
+import { users, workspaces, workspaceMembers, sessions, passwordResets, workspaceInvites, memos, memoVersions } from '../db/schema.js';
 import type { User, Workspace } from '../db/schema.js';
 import type { DatabaseContext } from '../db/index.js';
 import { config } from '../config.js';
@@ -19,6 +19,42 @@ export async function hashPassword(password: string): Promise<string> {
   return argon2.hash(password, {
     type: argon2.argon2id,
   });
+}
+
+/**
+ * Server-enforced password policy (audit L-9): the client-side strength
+ * meter was decorative — the server accepted any 6-character string.
+ * Now: minimum 8 characters and must contain both a letter and a digit.
+ * (A breached-password check needs an external API and stays a documented
+ * follow-up for the self-hosted default.)
+ */
+export const PASSWORD_MIN_LENGTH = 8;
+
+export function validatePasswordStrength(password: string): void {
+  if (!password || password.length < PASSWORD_MIN_LENGTH) {
+    throw new AuthError(`Password must be at least ${PASSWORD_MIN_LENGTH} characters long`, 400);
+  }
+  if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
+    throw new AuthError('Password must contain at least one letter and one number', 400);
+  }
+}
+
+/**
+ * Normalizes + validates an IANA timezone for storage on the user record
+ * (audit M-16). Empty/invalid values fall back to UTC.
+ */
+export function normalizeTimezone(timezone: string | undefined): string {
+  const tz = String(timezone ?? '').trim();
+  if (!tz) return 'UTC';
+  try {
+    const supported: string[] = Intl.DateTimeFormat().resolvedOptions().timeZone
+      ? (Intl as any).supportedValuesOf?.('timeZone') ?? []
+      : [];
+    if (supported.length > 0 && !supported.includes(tz)) return 'UTC';
+    return tz.slice(0, 64);
+  } catch {
+    return 'UTC';
+  }
 }
 
 export async function verifyPassword(hash: string, password: string): Promise<boolean> {
@@ -93,7 +129,7 @@ const DUMMY_ARGON2_HASH = '$argon2id$v=19$m=65536,t=3,p=4$c2FsdGVkc2FsdGVkc2FsdG
 
 export async function registerUser(
   db: DatabaseContext['db'],
-  data: { email: string; password: string; name: string; ipAddress?: string; userAgent?: string }
+  data: { email: string; password: string; name: string; ipAddress?: string; userAgent?: string; timezone?: string }
 ): Promise<{ user: { id: string; email: string; name: string; createdAt: number }; workspace: { id: string; name: string; slug: string }; sessionToken: string }> {
   const normalizedEmail = data.email.trim().toLowerCase();
 
@@ -102,13 +138,14 @@ export async function registerUser(
     throw new AuthError('Invalid email address format', 400);
   }
 
-  if (!data.password || data.password.length < 6) {
-    throw new AuthError('Password must be at least 6 characters long', 400);
-  }
+  // Audit L-9: the server now enforces the password policy itself.
+  validatePasswordStrength(data.password);
 
   if (!data.name || data.name.trim().length === 0) {
     throw new AuthError('Name is required', 400);
   }
+
+  const timezone = normalizeTimezone(data.timezone);
 
   // Check if user already exists
   const existingUser = db.select().from(users).where(eq(users.email, normalizedEmail)).get();
@@ -142,7 +179,7 @@ export async function registerUser(
       email: normalizedEmail,
       passwordHash,
       name: data.name.trim(),
-      timezone: 'UTC',
+      timezone, // audit M-16: used when formatting reminder email times
       status: 'active',
       isInstanceAdmin: isFirstUser ? 1 : 0,
       createdAt: now,
@@ -168,9 +205,11 @@ export async function registerUser(
       createdAt: now,
     }).run();
 
-    // 4. Create session (audit H-7: store only the SHA-256 hash of the token)
+    // 4. Create session (audit H-7: store only the SHA-256 hash of the token;
+    // audit L-8: publicId lets the user revoke this device individually)
     tx.insert(sessions).values({
       id: hashSessionToken(sessionToken),
+      publicId: crypto.randomUUID(),
       userId,
       ipAddress: data.ipAddress,
       userAgent: data.userAgent,
@@ -197,7 +236,7 @@ export async function registerUser(
 
 export async function loginUser(
   db: DatabaseContext['db'],
-  data: { email: string; password: string; ipAddress?: string; userAgent?: string }
+  data: { email: string; password: string; ipAddress?: string; userAgent?: string; timezone?: string }
 ): Promise<{ user: { id: string; email: string; name: string; createdAt: number }; activeWorkspace: { id: string; name: string }; sessionToken: string }> {
   const normalizedEmail = data.email.trim().toLowerCase();
 
@@ -229,12 +268,20 @@ export async function loginUser(
 
   clearLoginFailures(normalizedEmail);
 
+  // Audit M-16: remember the browser's timezone so reminder emails render
+  // times the user actually recognizes.
+  const timezone = normalizeTimezone(data.timezone);
+  if (timezone && timezone !== user.timezone) {
+    db.update(users).set({ timezone, updatedAt: Date.now() }).where(eq(users.id, user.id)).run();
+  }
+
   const sessionToken = generateSessionToken();
   const now = Date.now();
   const expiresAt = now + config.sessionDurationMs;
 
   db.insert(sessions).values({
     id: hashSessionToken(sessionToken),
+    publicId: crypto.randomUUID(),
     userId: user.id,
     ipAddress: data.ipAddress,
     userAgent: data.userAgent,
@@ -291,7 +338,58 @@ export async function validateSession(
   const user = db.select().from(users).where(eq(users.id, session.userId)).get();
   if (!user || user.status !== 'active') return null;
 
+  // Audit L-7: sliding renewal — an active session is extended as it nears
+  // expiry, so regular users never fall off a cliff after 7 idle days while
+  // abandoned sessions still expire on schedule.
+  const halfLifetime = Math.floor(config.sessionDurationMs / 2);
+  if (now - Number(session.createdAt) > halfLifetime && Number(session.expiresAt) - now < halfLifetime) {
+    db.update(sessions)
+      .set({ expiresAt: now + config.sessionDurationMs })
+      .where(eq(sessions.id, session.id))
+      .run();
+  }
+
   return { user, session };
+}
+
+/**
+ * Housekeeping (audit L-7): expired sessions, consumed/expired password-reset
+ * rows and long-dead invitations used to accumulate forever. Runs alongside
+ * the reminder scheduler's nightly cleanup.
+ */
+export function pruneExpiredAuthArtifacts(db: DatabaseContext['db']): {
+  sessions: number;
+  passwordResets: number;
+  invites: number;
+} {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+
+  const expiredSessions = db.delete(sessions).where(lt(sessions.expiresAt, now)).run().changes;
+
+  // Password resets: consumed, or expired more than a day ago.
+  const oldResets = db
+    .delete(passwordResets)
+    .where(
+      or(
+        and(isNull(passwordResets.usedAt), lt(passwordResets.expiresAt, now - day)),
+        and(isNotNull(passwordResets.usedAt), lt(passwordResets.usedAt, now - 30 * day)),
+      ),
+    )
+    .run().changes;
+
+  // Invitations: anything not pending, or pending-but-expired over 30 days ago.
+  const oldInvites = db
+    .delete(workspaceInvites)
+    .where(
+      or(
+        and(ne(workspaceInvites.status, 'pending'), lt(workspaceInvites.createdAt, now - 30 * day)),
+        and(eq(workspaceInvites.status, 'pending'), lt(workspaceInvites.expiresAt, now - 30 * day)),
+      ),
+    )
+    .run().changes;
+
+  return { sessions: expiredSessions, passwordResets: oldResets, invites: oldInvites };
 }
 
 export async function getUserWorkspaces(
@@ -310,4 +408,86 @@ export async function getUserWorkspaces(
     .all();
 
   return memberships;
+}
+
+/**
+ * Permanently delete a user account (audit L-8).
+ *
+ * Requires the current password (verified by the route). Rules:
+ *  - Workspaces the user OWNS with other members block deletion — they must
+ *    transfer ownership first (data belongs to the team, not just to them).
+ *  - Solo workspaces the user owns are deleted outright (their memos cascade);
+ *    attachment files on disk are unlinked best-effort by the route.
+ *  - Notes the user created inside OTHER people's workspaces are reassigned
+ *    to those workspaces' owners, so shared content survives.
+ */
+export function deleteAccount(
+  dbCtx: DatabaseContext,
+  userId: string
+): { deletedWorkspaces: string[]; reassignedMemos: number } {
+  const { db, sqlite } = dbCtx;
+
+  // 1. Owned workspaces: solo ones go away; shared ones block deletion.
+  const ownedWorkspaces = db.select().from(workspaces).where(eq(workspaces.ownerId, userId)).all();
+  const sharedOwned = ownedWorkspaces.filter((ws) => {
+    const others = db
+      .select({ id: workspaceMembers.id })
+      .from(workspaceMembers)
+      .where(and(eq(workspaceMembers.workspaceId, ws.id), ne(workspaceMembers.userId, userId)))
+      .all();
+    return others.length > 0;
+  });
+  if (sharedOwned.length > 0) {
+    throw new AuthError(
+      `Transfer ownership of (or delete) these workspaces before deleting your account: ${sharedOwned.map((w) => w.name).join(', ')}`,
+      409,
+    );
+  }
+
+  const deletedWorkspaces: string[] = [];
+  let reassignedMemos = 0;
+
+  db.transaction((tx) => {
+    // 2. Notes the user authored in workspaces they do NOT own are reassigned
+    //    to those workspaces' owners so shared content stays intact.
+    const foreignMemos = tx
+      .select({ memoId: memos.id, workspaceId: memos.workspaceId })
+      .from(memos)
+      .innerJoin(workspaces, eq(workspaces.id, memos.workspaceId))
+      .where(and(eq(memos.createdBy, userId), ne(workspaces.ownerId, userId)))
+      .all() as Array<{ memoId: string; workspaceId: string }>;
+    for (const memo of foreignMemos) {
+      const ws = tx.select({ ownerId: workspaces.ownerId }).from(workspaces).where(eq(workspaces.id, memo.workspaceId)).get();
+      if (!ws) continue;
+      tx.update(memos).set({ createdBy: ws.ownerId }).where(eq(memos.id, memo.memoId)).run();
+      tx.update(memoVersions).set({ changedBy: ws.ownerId }).where(eq(memoVersions.memoId, memo.memoId)).run();
+      reassignedMemos++;
+    }
+
+    // 3. Invitations sent by the user are re-attributed to the workspace
+    //    owner so pending invites keep working.
+    const sentInvites = tx
+      .select({ inviteId: workspaceInvites.id, workspaceId: workspaceInvites.workspaceId })
+      .from(workspaceInvites)
+      .where(eq(workspaceInvites.invitedBy, userId))
+      .all();
+    for (const invite of sentInvites) {
+      const ws = tx.select({ ownerId: workspaces.ownerId }).from(workspaces).where(eq(workspaces.id, invite.workspaceId)).get();
+      if (ws) {
+        tx.update(workspaceInvites).set({ invitedBy: ws.ownerId }).where(eq(workspaceInvites.id, invite.inviteId)).run();
+      }
+    }
+
+    // 4. Delete the user's solo workspaces (memos cascade via workspace_id).
+    for (const ws of ownedWorkspaces) {
+      tx.delete(workspaces).where(eq(workspaces.id, ws.id)).run();
+      deletedWorkspaces.push(ws.id);
+    }
+
+    // 5. Finally the user; sessions, memberships, notifications and push
+    //    subscriptions cascade away.
+    tx.delete(users).where(eq(users.id, userId)).run();
+  });
+
+  return { deletedWorkspaces, reassignedMemos };
 }

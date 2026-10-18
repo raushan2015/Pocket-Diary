@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
+  public_id TEXT NOT NULL DEFAULT '',
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   ip_address TEXT,
   user_agent TEXT,
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_public_id ON sessions(public_id);
 
 CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY,
@@ -211,90 +213,133 @@ END;
 // know a one-time rebuild is required (audit M-8).
 const FTS_SCHEMA_VERSION = 2;
 
+/**
+ * Database schema version (audit L-15). Structural changes ship as gated
+ * steps inside runMigrations and bump this number; `PRAGMA user_version`
+ * records the version a database has already reached, replacing the previous
+ * ad-hoc approach. Steps stay idempotent (PRAGMA guards are kept as
+ * belt-and-braces for databases that predate versioning).
+ */
+const SCHEMA_VERSION = 3;
+
 export function runMigrations(sqlite: Database.Database): void {
+  // Base schema (idempotent CREATE IF NOT EXISTS statements)
   sqlite.exec(SCHEMA_SQL);
-  // Safe additive migrations for existing databases
-  const memoColumns = sqlite.prepare('PRAGMA table_info(memos)').all() as Array<{ name: string }>;
-  const existingNames = new Set(memoColumns.map((col) => col.name));
 
-  const additiveColumns: Array<{ name: string; def: string }> = [
-    { name: 'color', def: "ALTER TABLE memos ADD COLUMN color TEXT NOT NULL DEFAULT 'default'" },
-    { name: 'theme', def: "ALTER TABLE memos ADD COLUMN theme TEXT NOT NULL DEFAULT 'default'" },
-    { name: 'is_archived', def: "ALTER TABLE memos ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0" },
-    { name: 'note_type', def: "ALTER TABLE memos ADD COLUMN note_type TEXT NOT NULL DEFAULT 'text'" },
-    { name: 'sort_order', def: "ALTER TABLE memos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0" },
-    { name: 'reminder_time', def: "ALTER TABLE memos ADD COLUMN reminder_time INTEGER" },
-    { name: 'reminder_location', def: "ALTER TABLE memos ADD COLUMN reminder_location TEXT" },
-    { name: 'collaborators', def: "ALTER TABLE memos ADD COLUMN collaborators TEXT NOT NULL DEFAULT '[]'" },
-    { name: 'checklist_data', def: "ALTER TABLE memos ADD COLUMN checklist_data TEXT NOT NULL DEFAULT '[]'" },
-    { name: 'link_previews', def: "ALTER TABLE memos ADD COLUMN link_previews TEXT NOT NULL DEFAULT '[]'" },
-    // Audit H-2: who set the effective reminder — reminders notify this user only.
-    { name: 'reminder_set_by', def: 'ALTER TABLE memos ADD COLUMN reminder_set_by TEXT' },
-  ];
+  const dbVersion = Number(sqlite.pragma('user_version', { simple: true }) || 0);
 
-  for (const col of additiveColumns) {
-    if (!existingNames.has(col.name)) {
-      sqlite.exec(col.def);
+  // -----------------------------------------------------------------------
+  // Versioned migration steps (audit L-15). Each step runs when the database
+  // has not yet reached its version, then the reached version is recorded
+  // via PRAGMA user_version. Add new steps with an incremented
+  // SCHEMA_VERSION; never edit an already-shipped step. Steps stay
+  // idempotent (PRAGMA guards are kept as belt-and-braces for databases
+  // that predate versioning), so replaying one is harmless.
+  // -----------------------------------------------------------------------
+  if (dbVersion < SCHEMA_VERSION) {
+    // --- Step v3 -----------------------------------------------------------
+    // (memo color/theme/archive/checklist columns, reminder ownership,
+    //  public session ids, missing indexes, FTS update-trigger upgrade)
+
+    const memoColumns = sqlite.prepare('PRAGMA table_info(memos)').all() as Array<{ name: string }>;
+    const existingNames = new Set(memoColumns.map((col) => col.name));
+
+    const additiveColumns: Array<{ name: string; def: string }> = [
+      { name: 'color', def: "ALTER TABLE memos ADD COLUMN color TEXT NOT NULL DEFAULT 'default'" },
+      { name: 'theme', def: "ALTER TABLE memos ADD COLUMN theme TEXT NOT NULL DEFAULT 'default'" },
+      { name: 'is_archived', def: "ALTER TABLE memos ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0" },
+      { name: 'note_type', def: "ALTER TABLE memos ADD COLUMN note_type TEXT NOT NULL DEFAULT 'text'" },
+      { name: 'sort_order', def: "ALTER TABLE memos ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0" },
+      { name: 'reminder_time', def: "ALTER TABLE memos ADD COLUMN reminder_time INTEGER" },
+      { name: 'reminder_location', def: "ALTER TABLE memos ADD COLUMN reminder_location TEXT" },
+      { name: 'collaborators', def: "ALTER TABLE memos ADD COLUMN collaborators TEXT NOT NULL DEFAULT '[]'" },
+      { name: 'checklist_data', def: "ALTER TABLE memos ADD COLUMN checklist_data TEXT NOT NULL DEFAULT '[]'" },
+      { name: 'link_previews', def: "ALTER TABLE memos ADD COLUMN link_previews TEXT NOT NULL DEFAULT '[]'" },
+      // Audit H-2: who set the effective reminder — reminders notify this user only.
+      { name: 'reminder_set_by', def: "ALTER TABLE memos ADD COLUMN reminder_set_by TEXT" },
+    ];
+
+    for (const col of additiveColumns) {
+      if (!existingNames.has(col.name)) {
+        sqlite.exec(col.def);
+      }
     }
-  }
 
-  // Audit H-2: existing notes with a reminder are attributed to their creator.
-  if (existingNames.has('reminder_set_by')) {
+    // Audit L-8: opaque per-device session identifiers so users can revoke
+    // individual devices without ever exposing the token hash. Existing rows
+    // are backfilled with fresh UUIDs.
+    const sessionColumns = sqlite.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+    if (!sessionColumns.some((col) => col.name === 'public_id')) {
+      sqlite.exec("ALTER TABLE sessions ADD COLUMN public_id TEXT NOT NULL DEFAULT ''");
+    }
     try {
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_sessions_public_id ON sessions(public_id);');
+    } catch { /* non-fatal for very old databases */ }
+    const backfillSessionId = sqlite.prepare('UPDATE sessions SET public_id = ? WHERE id = ?');
+    const sessionsWithoutId = sqlite.prepare("SELECT id FROM sessions WHERE public_id = ''").all() as Array<{ id: string }>;
+    for (const row of sessionsWithoutId) {
+      backfillSessionId.run(crypto.randomUUID(), row.id);
+    }
+
+    // Audit H-2: existing notes with a reminder are attributed to their creator.
+    if (existingNames.has('reminder_set_by')) {
+      try {
+        sqlite.exec(
+          'UPDATE memos SET reminder_set_by = created_by WHERE reminder_set_by IS NULL AND COALESCE(reminder_time, due_date) IS NOT NULL'
+        );
+      } catch {
+        // Backfill is best-effort; new writes always set the column.
+      }
+    }
+
+    // Users table additive migration: instance administrator flag (SEC-03).
+    const userColumns = sqlite.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+    if (!userColumns.some((col) => col.name === 'is_instance_admin')) {
+      sqlite.exec('ALTER TABLE users ADD COLUMN is_instance_admin INTEGER NOT NULL DEFAULT 0');
+    }
+    // Guarantee exactly one instance admin exists: the earliest registered user.
+    const adminCount = sqlite.prepare('SELECT COUNT(*) AS n FROM users WHERE is_instance_admin = 1').get() as { n: number };
+    if (Number(adminCount?.n ?? 0) === 0) {
       sqlite.exec(
-        'UPDATE memos SET reminder_set_by = created_by WHERE reminder_set_by IS NULL AND COALESCE(reminder_time, due_date) IS NOT NULL'
+        'UPDATE users SET is_instance_admin = 1 WHERE id = (SELECT id FROM users ORDER BY created_at ASC, rowid ASC LIMIT 1)'
       );
-    } catch {
-      // Backfill is best-effort; new writes always set the column.
     }
-  }
 
-  // Users table additive migration: instance administrator flag (SEC-03).
-  const userColumns = sqlite.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
-  if (!userColumns.some((col) => col.name === 'is_instance_admin')) {
-    sqlite.exec('ALTER TABLE users ADD COLUMN is_instance_admin INTEGER NOT NULL DEFAULT 0');
-  }
-  // Guarantee exactly one instance admin exists: the earliest registered user.
-  const adminCount = sqlite.prepare('SELECT COUNT(*) AS n FROM users WHERE is_instance_admin = 1').get() as { n: number };
-  if (Number(adminCount?.n ?? 0) === 0) {
-    sqlite.exec(
-      'UPDATE users SET is_instance_admin = 1 WHERE id = (SELECT id FROM users ORDER BY created_at ASC, rowid ASC LIMIT 1)'
-    );
-  }
-
-  try {
-    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_memos_is_archived ON memos(workspace_id, is_archived);");
-    sqlite.exec("CREATE INDEX IF NOT EXISTS idx_memos_sort_order ON memos(workspace_id, sort_order);");
-    // Missing indexes (audit L-15): version history, attachments and tag joins.
-    sqlite.exec('CREATE INDEX IF NOT EXISTS idx_memo_versions_memo_id ON memo_versions(memo_id);');
-    sqlite.exec('CREATE INDEX IF NOT EXISTS idx_attachments_memo_id ON attachments(memo_id);');
-    sqlite.exec('CREATE INDEX IF NOT EXISTS idx_memo_tags_tag_id ON memo_tags(tag_id);');
-    // Reminder scan (audit M-9): the scan filters on COALESCE(reminder_time,
-    // due_date); an expression index avoids a full table scan every tick.
-    sqlite.exec('CREATE INDEX IF NOT EXISTS idx_memos_reminder_due ON memos(COALESCE(reminder_time, due_date));');
-  } catch {
-    // Index creation is best-effort for very old databases
-  }
-
-  // FTS maintenance (audit M-8): the expensive full index rebuild now runs
-  // only when the FTS schema version changes, not on every startup — the
-  // previous unconditional rebuild cost O(all notes) per boot.
-  const ftsVersion = Number(sqlite.pragma('user_version', { simple: true }) || 0);
-  if (ftsVersion < FTS_SCHEMA_VERSION) {
     try {
-      // Recreate the update trigger with its WHEN clause: CREATE TRIGGER IF
-      // NOT EXISTS cannot upgrade the unconditional trigger on old databases.
-      sqlite.exec('DROP TRIGGER IF EXISTS memos_au;');
-      sqlite.exec(`CREATE TRIGGER memos_au AFTER UPDATE ON memos
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_memos_is_archived ON memos(workspace_id, is_archived);");
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_memos_sort_order ON memos(workspace_id, sort_order);");
+      // Missing indexes (audit L-15): version history, attachments and tag joins.
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_memo_versions_memo_id ON memo_versions(memo_id);');
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_attachments_memo_id ON attachments(memo_id);');
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_memo_tags_tag_id ON memo_tags(tag_id);');
+      // Reminder scan (audit M-9): the scan filters on COALESCE(reminder_time,
+      // due_date); an expression index avoids a full table scan every tick.
+      sqlite.exec('CREATE INDEX IF NOT EXISTS idx_memos_reminder_due ON memos(COALESCE(reminder_time, due_date));');
+    } catch {
+      // Index creation is best-effort for very old databases
+    }
+
+    // FTS maintenance (audit M-8): the expensive full index rebuild runs only
+    // when the FTS trigger shape changes — the previous unconditional rebuild
+    // cost O(all notes) per boot.
+    if (dbVersion < FTS_SCHEMA_VERSION) {
+      try {
+        // Recreate the update trigger with its WHEN clause: CREATE TRIGGER IF
+        // NOT EXISTS cannot upgrade the unconditional trigger on old databases.
+        sqlite.exec('DROP TRIGGER IF EXISTS memos_au;');
+        sqlite.exec(`CREATE TRIGGER memos_au AFTER UPDATE ON memos
 WHEN new.title != old.title OR new.content != old.content
 BEGIN
   INSERT INTO memos_fts(memos_fts, rowid, title, content) VALUES('delete', old.rowid, old.title, old.content);
   INSERT INTO memos_fts(rowid, title, content) VALUES (new.rowid, new.title, new.content);
 END;`);
-      sqlite.exec("INSERT INTO memos_fts(memos_fts) VALUES('rebuild');");
-      sqlite.pragma(`user_version = ${FTS_SCHEMA_VERSION}`);
-    } catch {
-      // Rebuild may be unnecessary or a no-op on fresh databases
+        sqlite.exec("INSERT INTO memos_fts(memos_fts) VALUES('rebuild');");
+      } catch {
+        // Rebuild may be unnecessary or a no-op on fresh databases
+      }
     }
+
+    // Record the reached schema version.
+    sqlite.pragma(`user_version = ${SCHEMA_VERSION}`);
   }
 }

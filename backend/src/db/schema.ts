@@ -17,7 +17,13 @@ export const users = sqliteTable('users', {
 
 // 2. Sessions
 export const sessions = sqliteTable('sessions', {
-  id: text('id').primaryKey(), // 256-bit crypto token
+  id: text('id').primaryKey(), // SHA-256 hash of the 256-bit cookie token (audit H-7)
+  /**
+   * Opaque identifier exposed through the API so users can revoke individual
+   * devices (audit L-8) without ever revealing the token hash or making it
+   * guessable.
+   */
+  publicId: text('public_id').notNull().default(''),
   userId: text('user_id')
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
@@ -28,6 +34,7 @@ export const sessions = sqliteTable('sessions', {
 }, (table) => [
   index('idx_sessions_user_id').on(table.userId),
   index('idx_sessions_expires_at').on(table.expiresAt),
+  index('idx_sessions_public_id').on(table.publicId),
 ]);
 
 // 3. Workspaces

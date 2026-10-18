@@ -46,6 +46,8 @@ export interface LocalMemoInput {
   noteType?: 'text' | 'checklist';
   checklistData?: Array<{ id?: string; text?: string; checked?: boolean; completed?: boolean }>;
   color?: string;
+  /** Audit M-17: Keep Takeout metadata now flows through the import. */
+  isArchived?: boolean;
 }
 
 export interface ImportLocalPayload {
@@ -250,6 +252,7 @@ export function importLocalData(
         status,
         isFavorite: m.isFavorite ? 1 : 0,
         isPinned: m.isPinned ? 1 : 0,
+        isArchived: m.isArchived ? 1 : 0, // audit M-17: Keep archive state survives import
         dueDate: m.dueDate ?? null,
         reminderSetBy: hasReminder ? userId : null, // audit H-2: reminder owner
         version: 1,

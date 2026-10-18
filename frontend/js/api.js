@@ -27,6 +27,10 @@ function broadcastMemoMutation(endpoint, method) {
 class ApiClient {
   constructor(baseUrl = API_BASE) {
     this.baseUrl = baseUrl;
+    // Audit L-11: a global 401 must send the user back to sign-in once, not
+    // fail one action at a time. Auth endpoints are excluded (a wrong
+    // password there is a 401 too and must NOT log anyone out).
+    this.sessionExpiredNotified = false;
   }
 
   async request(endpoint, options = {}) {
@@ -53,34 +57,58 @@ class ApiClient {
       config.body = JSON.stringify(options.body);
     }
 
+    // Audit L-11: endpoints whose 401s are expected auth feedback, not session expiry.
+    const isAuthEndpoint = /\/api\/v1\/auth\/(login|register|logout|forgot-password|reset-password)/.test(endpoint)
+      || endpoint.includes('/api/v1/invites/');
+
+    let response;
     try {
-      const response = await fetch(url, config);
-      const isJson = response.headers.get('content-type')?.includes('application/json');
-      const data = isJson ? await response.json() : await response.text();
-
-      if (!response.ok) {
-        const error = new Error(
-          (data && (data.message || data.error)) || `Request failed with status ${response.status}`
-        );
-        error.status = response.status;
-        error.data = data;
-        throw error;
-      }
-
-      // Keep open sibling tabs in sync after any memo change (ARCH-01).
-      broadcastMemoMutation(endpoint, options.method);
-
-      return data;
+      response = await fetch(url, config);
     } catch (err) {
-      if (err.name === 'TypeError' && err.message.includes('fetch')) {
-        // Network connection refused or server offline
-        const networkError = new Error('Unable to connect to backend server. Please verify the API is running.');
+      if (err instanceof TypeError) {
+        // Network-level failure: the connection never completed (offline,
+        // DNS, refused). fetch() rejects with TypeError on every browser —
+        // only the MESSAGE varies ("Failed to fetch", Safari's
+        // "Load failed", …), so it must never be matched by string.
+        const networkError = new Error('Unable to connect to the server. Check your connection and that the app is running.');
         networkError.status = 0;
         networkError.isNetworkError = true;
         throw networkError;
       }
       throw err;
     }
+
+    const isJson = response.headers.get('content-type')?.includes('application/json');
+    const data = isJson ? await response.json() : await response.text();
+
+    if (!response.ok) {
+      // Audit L-11: an expired session on a data endpoint means the whole
+      // app is signed out — broadcast it once instead of letting every list
+      // and button fail individually.
+      if (response.status === 401 && !isAuthEndpoint) {
+        this.notifySessionExpired();
+      }
+      const error = new Error(
+        (data && (data.message || data.error)) || `Request failed with status ${response.status}`
+      );
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+
+    // Keep open sibling tabs in sync after any memo change (ARCH-01).
+    broadcastMemoMutation(endpoint, options.method);
+
+    return data;
+  }
+
+  notifySessionExpired() {
+    if (this.sessionExpiredNotified) return;
+    this.sessionExpiredNotified = true;
+    // Decoupled via an event so api.js never imports the state/navigation
+    // modules (avoids circular imports); app-events.js listens and reacts.
+    window.dispatchEvent(new CustomEvent('notes:session-expired'));
+    setTimeout(() => { this.sessionExpiredNotified = false; }, 30_000);
   }
 
   // ==========================================
@@ -92,10 +120,17 @@ class ApiClient {
    * link, `inviteToken` auto-joins the invited workspace at account creation.
    * POST /api/v1/auth/register
    */
+  /** The browser's IANA timezone (audit M-16) — sent with auth so reminder emails match the user. */
+  get browserTimezone() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
+  }
+
   async register({ email, password, name, inviteToken }) {
+    const body = { email, password, name, timezone: this.browserTimezone };
+    if (inviteToken) body.inviteToken = inviteToken;
     return this.request('/api/v1/auth/register', {
       method: 'POST',
-      body: inviteToken ? { email, password, name, inviteToken } : { email, password, name },
+      body,
     });
   }
 
@@ -106,7 +141,7 @@ class ApiClient {
   async login({ email, password, rememberMe }) {
     return this.request('/api/v1/auth/login', {
       method: 'POST',
-      body: { email, password, rememberMe },
+      body: { email, password, rememberMe, timezone: this.browserTimezone },
     });
   }
 
@@ -291,6 +326,36 @@ class ApiClient {
     return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`, {
       method: 'PATCH',
       body: { role },
+    });
+  }
+
+  /** Leave a workspace (audit L-8). Owners must transfer or delete first. */
+  async leaveWorkspace(workspaceId) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/leave`, {
+      method: 'POST',
+    });
+  }
+
+  /** Transfer workspace ownership to another member (audit L-8). */
+  async transferWorkspaceOwnership(workspaceId, userId) {
+    return this.request(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/transfer`, {
+      method: 'POST',
+      body: { userId },
+    });
+  }
+
+  /** Revoke a single other session by its opaque id (audit L-8). */
+  async revokeSession(sessionId) {
+    return this.request(`/api/v1/auth/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /** Permanently delete the account (audit L-8). Requires the current password. */
+  async deleteAccount(currentPassword) {
+    return this.request('/api/v1/auth/account', {
+      method: 'DELETE',
+      body: { currentPassword },
     });
   }
 

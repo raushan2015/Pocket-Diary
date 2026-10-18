@@ -74,7 +74,7 @@ const STRENGTH_LEVELS = [
 export function passwordStrength(password) {
   let score = 0;
   if (!password) return 0;
-  if (password.length >= 6) score++;
+  if (password.length >= 8) score++;
   if (password.length >= 10) score++;
   if (/[a-zA-Z]/.test(password) && /\d/.test(password)) score++;
   if (/[^a-zA-Z0-9]/.test(password) || password.length >= 14) score++;
@@ -108,7 +108,7 @@ export function renderStrengthMeter(meterEl, labelEl, password) {
 export function renderPasswordRequirements(container, password) {
   if (!container) return;
   const checks = {
-    length: (password || '').length >= 6,
+    length: (password || '').length >= 8,
     letter: /[a-zA-Z]/.test(password || ''),
     number: /\d/.test(password || ''),
   };
@@ -340,7 +340,12 @@ export async function handleAuthSubmit(e) {
     hasError = true;
   }
 
-  if (mode !== 'forgot' && (!password || password.length < 6)) {
+  // Audit L-9: mirror the server policy exactly (min 8 + letter + number).
+  const passwordPolicyError = (pwd) => !pwd
+    || pwd.length < 8
+    || !/[a-zA-Z]/.test(pwd)
+    || !/\d/.test(pwd);
+  if (mode !== 'forgot' && passwordPolicyError(password)) {
     document.getElementById('auth-password-error')?.classList.add('active');
     hasError = true;
   }

@@ -36,11 +36,21 @@ Repository: [github.com/raushan2015/notes](https://github.com/raushan2015/notes)
 ### Accounts and workspaces
 
 - User registration and sign-in with password strength meter and confirmation.
+  Passwords must be at least 8 characters and contain a letter and a number
+  (enforced server-side, not just by the client meter).
 - Password hashing and cookie-based sessions, with active-session management
-  (sign out of all other devices) and password change in Account Settings.
+  (list devices, sign out one device, or sign out of all other devices) and
+  password change in Account Settings. Session cookies are stored server-side
+  only as SHA-256 hashes; changing your password revokes every other device.
+- Per-user account deletion (requires the current password): solo workspaces are
+  removed, while notes you created in other people's workspaces are reassigned
+  to those workspace owners instead of disappearing.
 - Workspace membership and role-aware authorization (owner, admin, editor, viewer).
+  Members can leave a workspace themselves; owners can transfer ownership.
+  Only the owner may grant or change admin roles.
 - Email invitations with shareable invite links: invite by email, copy or revoke
-  pending invitations, change member roles, and remove members.
+  pending invitations, change member roles, and remove members. Members are
+  always added through invitations — never silently pulled into a workspace.
 - Tenant-aware data access to help prevent cross-workspace data exposure.
 - Import legacy browser-stored notes through the migration workflow, and import
   notes from Google Keep (Google Takeout ZIP) or Markdown (.md) files directly in
@@ -288,8 +298,13 @@ This documentation is not a security certification. Review the implementation an
   administrator for help (the first registered account is the instance admin).
 - Email reminders and browser push require SMTP / VAPID configuration; without
   them, reminders surface as in-app notifications while the app is open.
+- Reminder emails format times in the user's browser timezone (sent on sign-in
+  and stored per user); previously they always rendered in the server's (UTC).
+- Reminders only notify the user who set them — never the whole workspace.
 - Google Keep imports convert titles, text, checklists, labels, and inline
-  images; note colors and pinned state are not included in Google's export format.
+  images, and honor the per-note `Note.json` metadata from Takeout: note color,
+  pinned and archived state are restored, and notes from the Keep trash are
+  skipped (imported notes count is reported accordingly).
 - The notes grid paginates 100 notes at a time via a "Load more" control; very
   large workspaces load incrementally rather than all at once.
 - Attachment storage is local to the application data volume. Object storage and per-workspace quota management are not configured by default.

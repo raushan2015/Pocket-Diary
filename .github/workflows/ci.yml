@@ -1,0 +1,112 @@
+# Continuous Integration for Memo Manager SaaS
+#
+# Audit §6 asked for the Playwright e2e suite to run against an ephemeral
+# instance in CI. This workflow runs:
+#   1. backend  — typecheck + vitest suite
+#   2. unit     — frontend Markdown/import unit + XSS regression tests
+#   3. e2e      — the full browser journey suite against a throwaway
+#                 backend + frontend booted inside the job
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (typecheck + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: backend
+      - name: Test
+        run: npm test
+        working-directory: backend
+
+  frontend-unit:
+    name: Frontend unit (markdown + import)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+        working-directory: tests
+      - name: Unit + XSS regression tests
+        run: npm run test:unit
+        working-directory: tests
+
+  e2e:
+    name: E2E (browser journeys, ephemeral instance)
+    runs-on: ubuntu-latest
+    needs: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Install test dependencies + Chromium
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+        working-directory: tests
+
+      # Throwaway instance: dev-mode backend (fresh temp SQLite) + static
+      # frontend proxy. Rate limits are raised because all CI traffic shares
+      # one client IP; per-account lockout still applies.
+      - name: Boot ephemeral instance
+        run: |
+          mkdir -p /tmp/notes-e2e
+          cd backend
+          NODE_ENV=development \
+          DATABASE_PATH=/tmp/notes-e2e/memo_manager.db \
+          ATTACHMENTS_DIR=/tmp/notes-e2e/attachments \
+          BACKEND_PORT=3000 \
+          RATE_LIMIT_MAX=5000 \
+          AUTH_RATE_LIMIT_MAX=5000 \
+          REMINDER_SCAN_INTERVAL_MS=60000 \
+          npx tsx src/index.ts > /tmp/notes-e2e/backend.log 2>&1 &
+          echo $! > /tmp/notes-e2e/backend.pid
+
+          cd ../frontend
+          FRONTEND_PORT=8080 \
+          BACKEND_URL=http://127.0.0.1:3000 \
+          node server.js > /tmp/notes-e2e/frontend.log 2>&1 &
+          echo $! > /tmp/notes-e2e/frontend.pid
+
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health > /dev/null 2>&1; then
+              echo "Instance is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "Instance failed to become ready"; cat /tmp/notes-e2e/backend.log /tmp/notes-e2e/frontend.log; exit 1
+
+      - name: Run browser journeys
+        env:
+          BASE_URL: http://127.0.0.1:8080
+        run: npm test
+        working-directory: tests
+
+      - name: Always stop the ephemeral instance
+        if: always()
+        run: |
+          kill $(cat /tmp/notes-e2e/backend.pid 2>/dev/null) $(cat /tmp/notes-e2e/frontend.pid 2>/dev/null) 2>/dev/null || true
+
+      - name: Dump instance logs on failure
+        if: failure()
+        run: cat /tmp/notes-e2e/backend.log /tmp/notes-e2e/frontend.log || true

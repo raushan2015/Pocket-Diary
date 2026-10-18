@@ -462,7 +462,7 @@ export function renderKeepModalAttachments(memo) {
   }
   container.innerHTML = attachments.map((att, idx) => `
     <div class="keep-attachment-item" data-att-idx="${idx}" title="Click to view full size">
-      <img src="${att.url || att.filePath}" alt="${escapeHtml(att.fileName || att.name || 'Image')}">
+      <img src="${escapeHtml(att.url || att.filePath)}" alt="${escapeHtml(att.fileName || att.name || 'Image')}">
       <button type="button" class="keep-attachment-remove" data-remove-attachment="${idx}" title="Remove image">&times;</button>
     </div>
   `).join('');

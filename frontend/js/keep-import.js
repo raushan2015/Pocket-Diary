@@ -101,6 +101,45 @@ export async function readZipEntries(arrayBuffer) {
 // Google Keep HTML parsing
 // ==========================================================================
 
+// ==========================================================================
+// Google Keep Takeout JSON metadata (audit M-17)
+// ==========================================================================
+
+/**
+ * Takeout exports each note twice: `Note.html` (rendered content) and
+ * `Note.json` (metadata). The JSON carries `color`, `isPinned`,
+ * `isArchived` and — crucially — `isTrashed`, none of which exist in the
+ * HTML. Previously the JSON files were ignored entirely: trashed notes came
+ * back as active notes and colors/pinned state was dropped.
+ */
+export function parseKeepJsonMetadata(jsonText) {
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const keepColor = typeof parsed.color === 'string' ? parsed.color.trim().toLowerCase() : '';
+    return {
+      color: keepColor && keepColor !== 'default' ? keepColor : undefined,
+      isPinned: parsed.isPinned === true,
+      isArchived: parsed.isArchived === true,
+      isTrashed: parsed.isTrashed === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Map of lowercased base name → parsed JSON metadata, from a Takeout archive. */
+function collectKeepJsonMetadata(entries, decoder) {
+  const metadata = new Map();
+  for (const name of entries.keys()) {
+    if (!/\.json$/i.test(name)) continue;
+    if (/(^|\/)labels\.json$/i.test(name)) continue; // label list, not a note
+    const meta = parseKeepJsonMetadata(decoder.decode(entries.get(name)));
+    if (meta) metadata.set(baseNameOf(name).toLowerCase(), meta);
+  }
+  return metadata;
+}
+
 function isCheckboxLine(text) {
   return text.startsWith(CHECKBOX_UNCHECKED) || text.startsWith(CHECKBOX_CHECKED);
 }
@@ -232,6 +271,10 @@ export async function buildPayloadFromTakeoutZip(file) {
   }
 
   const decoder = new TextDecoder();
+  // Audit M-17: note metadata from the sibling .json files (color, pinned,
+  // archived, trashed) — previously dropped on the floor.
+  const jsonMetadata = collectKeepJsonMetadata(entries, decoder);
+
   const labels = [];
   for (const name of entries.keys()) {
     if (/(^|\/)labels\.json$/i.test(name)) {
@@ -256,6 +299,16 @@ export async function buildPayloadFromTakeoutZip(file) {
     if (/_labels\.html$/i.test(name) || /(^|\/)index\.html$/i.test(name)) continue;
     const html = decoder.decode(entries.get(name));
     const note = parseKeepHtml(html, baseNameOf(name));
+    const meta = jsonMetadata.get(baseNameOf(name).toLowerCase());
+
+    // Audit M-17: notes that live in the Keep trash stay in the trash's home:
+    // importing them as active notes resurrected deleted content.
+    if (meta?.isTrashed) continue;
+    if (meta) {
+      if (meta.color) note.color = meta.color;
+      note.isPinned = meta.isPinned;
+      note.isArchived = meta.isArchived;
+    }
     if (!note.title && !note.content && !(note.checklistData || []).length) continue;
 
     // Embed referenced images from the archive as data URIs
@@ -279,10 +332,15 @@ export async function buildPayloadFromTakeoutZip(file) {
       content: note.content,
       noteType: note.noteType,
       ...(note.checklistData ? { checklistData: note.checklistData } : {}),
+      ...(note.color ? { color: note.color } : {}),
+      ...(note.isPinned !== undefined ? { isPinned: note.isPinned } : {}),
+      ...(note.isArchived !== undefined ? { isArchived: note.isArchived } : {}),
     });
   }
 
-  return { notes, labels, embeddedImages, skippedImages, source: 'keep' };
+  const trashedCount = [...jsonMetadata.values()].filter((m) => m.isTrashed).length;
+
+  return { notes, labels, embeddedImages, skippedImages, source: 'keep', trashedCount };
 }
 
 /**
@@ -310,15 +368,35 @@ export async function buildPayloadFromLooseFiles(fileList) {
     throw new Error('Select a Google Takeout .zip file, extracted Keep .html files, a Notes JSON backup, or Markdown (.md) files.');
   }
 
+  // Audit M-17: extracted Keep folders carry the same Note.json metadata files
+  // as the archive — merge color/pinned/archived/trashed into the HTML notes.
+  const jsonFiles = files.filter((f) => extensionOf(f.name) === 'json');
+  const looseJsonMetadata = new Map();
+  for (const jf of jsonFiles) {
+    const meta = parseKeepJsonMetadata(await jf.text());
+    if (meta) looseJsonMetadata.set(baseNameOf(jf.name).toLowerCase(), meta);
+  }
+
   const notes = [];
+  let trashedCount = 0;
   for (const file of htmlFiles) {
     const note = parseKeepHtml(await file.text(), baseNameOf(file.name));
+    const meta = looseJsonMetadata.get(baseNameOf(file.name).toLowerCase());
+    if (meta?.isTrashed) { trashedCount++; continue; }
+    if (meta) {
+      if (meta.color) note.color = meta.color;
+      note.isPinned = meta.isPinned;
+      note.isArchived = meta.isArchived;
+    }
     if (!note.title && !note.content && !(note.checklistData || []).length) continue;
     notes.push({
       title: note.title,
       content: note.content,
       noteType: note.noteType,
       ...(note.checklistData ? { checklistData: note.checklistData } : {}),
+      ...(note.color ? { color: note.color } : {}),
+      ...(note.isPinned !== undefined ? { isPinned: note.isPinned } : {}),
+      ...(note.isArchived !== undefined ? { isArchived: note.isArchived } : {}),
     });
   }
   for (const file of mdFiles) {
@@ -328,7 +406,7 @@ export async function buildPayloadFromLooseFiles(fileList) {
   }
 
   const source = htmlFiles.length && mdFiles.length ? 'mixed' : (mdFiles.length ? 'markdown' : 'keep');
-  return { notes, labels: [], embeddedImages: 0, skippedImages: 0, source };
+  return { notes, labels: [], embeddedImages: 0, skippedImages: 0, source, trashedCount };
 }
 
 /**

@@ -86,4 +86,16 @@ export const config = {
    * backend is exposed directly, or to the proxy's address/subnet.
    */
   trustProxy: process.env.TRUST_PROXY ?? '127.0.0.1',
+  /**
+   * Per-workspace storage quota (audit L-10). Previously hardcoded; now
+   * configurable for self-hosters with more or less disk.
+   */
+  storageQuotaBytes: Math.max(50 * 1024 * 1024, Number(process.env.STORAGE_QUOTA_GB ?? 10) * 1024 * 1024 * 1024),
+  /**
+   * Reminder freshness window (audit M-9): only reminders that became due
+   * within this window trigger a notification, so restarts never spam users
+   * with ancient overdue notes. Servers that were down longer silently drop
+   * older reminders — configurable here, and the scan logs what it skipped.
+   */
+  reminderFreshWindowMs: Math.max(60_000, Number(process.env.REMINDER_FRESH_WINDOW_MS ?? 2 * 60 * 60 * 1000) || 2 * 60 * 60 * 1000),
 };

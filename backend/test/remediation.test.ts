@@ -233,7 +233,8 @@ describe('Audit remediation: BUG-01 trashed memo attachments', () => {
     });
     const memo = memoRes.json().memo;
 
-    const png = Buffer.from('fake png for trash remediation test');
+    // Real PNG magic bytes: uploads are magic-byte validated (audit L-6)
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('fake png for trash remediation test')]);
     const boundary = 'remediation-boundary';
     const uploadBody = Buffer.concat([
       Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="photo.png"\r\nContent-Type: image/png\r\n\r\n`),

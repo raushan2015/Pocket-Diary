@@ -588,7 +588,7 @@
                     </svg>
                   </button>
                 </div>
-                <div class="form-error-msg" id="auth-password-error">Password must be at least 6 characters</div>
+                <div class="form-error-msg" id="auth-password-error">Password must be at least 8 characters and contain a letter and a number</div>
                 <!-- Password strength meter (register / password-change modes) -->
                 <div class="password-strength-meter" id="password-strength-meter" style="display: none;">
                   <div class="password-strength-bars" id="password-strength-bars" aria-hidden="true">
@@ -597,7 +597,7 @@
                   <span class="password-strength-label" id="password-strength-label"></span>
                 </div>
                 <div class="password-requirements" id="password-requirements" style="display: none;">
-                  <span data-req="length"><span class="req-icon">◦</span> 6+ characters</span>
+                  <span data-req="length"><span class="req-icon">◦</span> 8+ characters</span>
                   <span data-req="letter"><span class="req-icon">◦</span> Letter</span>
                   <span data-req="number"><span class="req-icon">◦</span> Number</span>
                 </div>
@@ -1727,7 +1727,7 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="profile-new-pwd-input">New Password</label>
-              <input type="password" class="form-input" id="profile-new-pwd-input" placeholder="Min 6 characters" autocomplete="new-password" maxlength="200">
+              <input type="password" class="form-input" id="profile-new-pwd-input" placeholder="Min 8 characters, letter + number" autocomplete="new-password" maxlength="200">
               <div class="password-strength-meter" id="profile-strength-meter" style="display: none;">
                 <div class="password-strength-bars" id="profile-strength-bars" aria-hidden="true">
                   <span></span><span></span><span></span><span></span>

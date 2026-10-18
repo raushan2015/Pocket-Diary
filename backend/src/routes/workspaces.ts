@@ -15,7 +15,11 @@ import {
   InviteError,
 } from '../services/invite.service.js';
 import { isEmailEnabled } from '../services/mailer.service.js';
-import { resolveAppUrl } from '../config.js';
+import { resolveAppUrl, config } from '../config.js';
+import {
+  leaveWorkspace,
+  transferWorkspaceOwnership,
+} from '../services/workspace.service.js';
 
 const createWorkspaceSchema = {
   body: {
@@ -113,25 +117,28 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       const workspaceId = request.params.id;
       verifyWorkspaceMembership(fastify.dbCtx.db, user.id, workspaceId);
 
+      // Audit L-10: count BYTES, not characters — SQLite's LENGTH(text) counts
+      // code points, so multi-byte (CJK, emoji) content was under-counted by
+      // up to 4×. Casting to BLOB makes LENGTH() return bytes.
       const attRow = fastify.dbCtx.sqlite.prepare(
         'SELECT COALESCE(SUM(file_size), 0) AS total FROM attachments WHERE workspace_id = ?'
       ).get(workspaceId) as { total: number } | undefined;
 
       const memoRow = fastify.dbCtx.sqlite.prepare(
-        'SELECT COALESCE(SUM(LENGTH(title) + LENGTH(content)), 0) AS total FROM memos WHERE workspace_id = ? AND deleted_at IS NULL'
+        'SELECT COALESCE(SUM(LENGTH(CAST(title AS BLOB)) + LENGTH(CAST(content AS BLOB))), 0) AS total FROM memos WHERE workspace_id = ? AND deleted_at IS NULL'
       ).get(workspaceId) as { total: number } | undefined;
 
       const totalBytes = Number(attRow?.total || 0) + Number(memoRow?.total || 0);
-      const maxBytes = 10 * 1024 * 1024 * 1024; // 10 GB limit
+      const maxBytes = config.storageQuotaBytes; // configurable via STORAGE_QUOTA_GB (audit L-10)
       const usedMB = (totalBytes / (1024 * 1024)).toFixed(2);
       const usedGB = (totalBytes / (1024 * 1024 * 1024)).toFixed(2);
-      const percentUsed = Math.min(100, Math.max(0.1, Number((totalBytes / maxBytes * 100).toFixed(1))));
+      const percentUsed = Math.min(100, Math.max(totalBytes > 0 ? 0.1 : 0, Number((totalBytes / maxBytes * 100).toFixed(1))));
 
       return reply.status(200).send({
         totalBytes,
         usedFormatted: totalBytes > 1024 * 1024 * 1024 ? `${usedGB} GB` : `${usedMB} MB`,
         maxBytes,
-        maxFormatted: '10 GB',
+        maxFormatted: `${(maxBytes / (1024 * 1024 * 1024)).toFixed(0)} GB`,
         percentUsed,
       });
     } catch (err: unknown) {
@@ -324,6 +331,55 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
       }
       fastify.log.error(err);
       return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to remove member' });
+    }
+  });
+
+  // POST /api/v1/workspaces/:id/leave — leave a workspace yourself (audit L-8)
+  fastify.post<{ Params: { id: string } }>('/:id/leave', async (request, reply) => {
+    try {
+      const user = request.user!;
+      leaveWorkspace(fastify.dbCtx.db, user.id, request.params.id);
+      return reply.status(200).send({ success: true });
+    } catch (err: unknown) {
+      if (err instanceof WorkspaceAccessError) {
+        return reply.status(err.statusCode).send({
+          error: err.statusCode === 404 ? 'Not Found' : 'Forbidden',
+          message: err.message,
+        });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to leave workspace' });
+    }
+  });
+
+  // POST /api/v1/workspaces/:id/transfer — transfer ownership to a member (audit L-8)
+  fastify.post<{ Params: { id: string }; Body: { userId?: string } }>('/:id/transfer', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['userId'],
+        properties: { userId: { type: 'string', minLength: 1, maxLength: 64 } },
+        additionalProperties: false,
+      },
+    },
+  }, async (request, reply) => {
+    try {
+      const user = request.user!;
+      const targetUserId = String(request.body?.userId || '').trim();
+      if (!targetUserId) {
+        return reply.status(400).send({ error: 'Bad Request', message: 'userId is required' });
+      }
+      const result = transferWorkspaceOwnership(fastify.dbCtx.db, user.id, request.params.id, targetUserId);
+      return reply.status(200).send({ success: true, workspace: result });
+    } catch (err: unknown) {
+      if (err instanceof WorkspaceAccessError) {
+        return reply.status(err.statusCode).send({
+          error: err.statusCode === 404 ? 'Not Found' : 'Forbidden',
+          message: err.message,
+        });
+      }
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Internal Server Error', message: 'Failed to transfer ownership' });
     }
   });
 

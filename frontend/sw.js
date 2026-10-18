@@ -1,14 +1,22 @@
 /**
  * Service Worker for Notes (Google Keep Alternative)
  * Provides offline shell caching and network fallback
+ *
+ * CACHE_NAME (audit L-12): bump the version whenever PRECACHE_ASSETS changes
+ * — old caches are purged on activate, so a stale offline shell can never
+ * outlive the assets it references.
  */
 
-const CACHE_NAME = 'notes-v1';
+const CACHE_NAME = 'notes-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icons/icon.svg',
+  '/icons/logo-192.png',
+  '/icons/logo-512.png',
+  '/icons/logo-96.png',
+  '/icons/logo-32.png',
   '/css/tokens.css',
   '/css/layout.css',
   '/css/components.css',
@@ -21,6 +29,11 @@ const PRECACHE_ASSETS = [
   '/js/state.js',
   '/js/utils.js',
   '/js/markdown.js',
+  // Audit L-12: voice-notes.js and md-import.js are statically imported by
+  // keep-modal/app-events and keep-import/migration respectively — the cold
+  // offline shell previously failed to load because they were never cached.
+  '/js/voice-notes.js',
+  '/js/md-import.js',
   '/js/keep-quick-capture.js',
   '/js/keep-modal.js',
   '/js/keep-selection.js',

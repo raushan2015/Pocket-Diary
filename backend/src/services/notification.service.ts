@@ -6,6 +6,8 @@ import crypto from 'node:crypto';
 import { and, desc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { memos, notifications, users, workspaceMembers } from '../db/schema.js';
 import type { DatabaseContext } from '../db/index.js';
+import { config } from '../config.js';
+import { pruneExpiredAuthArtifacts } from './auth.service.js';
 import { sendEmail, renderReminderEmail, isEmailEnabled } from './mailer.service.js';
 import { sendPushToUser, isPushEnabled } from './push.service.js';
 
@@ -100,19 +102,41 @@ export async function scanDueReminders(
   options: { now?: number; freshWindowMs?: number; appUrl?: string } = {},
 ): Promise<ReminderScanResult> {
   const now = options.now ?? Date.now();
-  const freshWindowMs = options.freshWindowMs ?? 2 * 60 * 60 * 1000; // 2 hours
+  // Audit M-9: the freshness window is configurable (REMINDER_FRESH_WINDOW_MS)
+  // and the scan reports how many overdue reminders fell outside it, so an
+  // operator notices when downtime swallowed reminders instead of wondering.
+  const freshWindowMs = options.freshWindowMs ?? config.reminderFreshWindowMs;
   const appUrl = options.appUrl ?? '';
+
+  // Overdue-but-stale reminders (due before the freshness window): counted
+  // for the warning log, never delivered (anti-spam on restart).
+  const staleRow = dbCtx.sqlite
+    .prepare(
+      `SELECT COUNT(*) AS n FROM memos
+       WHERE deleted_at IS NULL AND is_archived = 0
+         AND COALESCE(reminder_time, due_date) IS NOT NULL
+         AND COALESCE(reminder_time, due_date) <= ?
+         AND COALESCE(reminder_time, due_date) <= ?`,
+    )
+    .get(now, now - freshWindowMs) as { n: number };
+  const skippedStale = Number(staleRow?.n ?? 0);
+  if (skippedStale > 0) {
+    // Intentionally not delivered (restart anti-spam) — but never silent.
+    console.warn(
+      `[reminders] ${skippedStale} overdue reminder(s) are older than the ${Math.round(freshWindowMs / 60000)}-minute delivery window and will not be sent. Increase REMINDER_FRESH_WINDOW_MS if your server is often offline for longer.`,
+    );
+  }
 
   const dueMemos = dbCtx.sqlite
     .prepare(
-      `SELECT id, workspace_id, title, content, reminder_time, due_date, created_by,
-              COALESCE(reminder_set_by, created_by) AS reminder_owner_id
-       FROM memos
-       WHERE deleted_at IS NULL
-         AND is_archived = 0
-         AND COALESCE(reminder_time, due_date) IS NOT NULL
-         AND COALESCE(reminder_time, due_date) <= ?
-  AND COALESCE(reminder_time, due_date) > ?`,
+      `SELECT m.id, m.workspace_id, m.title, m.content, m.reminder_time, m.due_date, m.created_by,
+              COALESCE(m.reminder_set_by, m.created_by) AS reminder_owner_id
+       FROM memos m
+       WHERE m.deleted_at IS NULL
+         AND m.is_archived = 0
+         AND COALESCE(m.reminder_time, m.due_date) IS NOT NULL
+         AND COALESCE(m.reminder_time, m.due_date) <= ?
+         AND COALESCE(m.reminder_time, m.due_date) > ?`,
     )
     .all(now, now - freshWindowMs) as Array<{
     id: string;
@@ -137,13 +161,17 @@ export async function scanDueReminders(
     // behavior fanned every due reminder out to every non-viewer member of
     // the workspace — leaking personal note titles and bodies to colleagues.
     // reminder_set_by is backfilled to created_by for legacy rows.
+    // Audit L-13: if the owner is no longer a member of the workspace (they
+    // left or were removed), the reminder is dropped instead of following them.
     const member = dbCtx.sqlite
       .prepare(
-        `SELECT u.id AS user_id, u.email, u.name, u.status
-         FROM users u WHERE u.id = ?`,
+        `SELECT u.id AS user_id, u.email, u.name, u.status, u.timezone
+         FROM users u
+         JOIN workspace_members wm ON wm.user_id = u.id AND wm.workspace_id = ?
+         WHERE u.id = ?`,
       )
-      .get(memo.reminder_owner_id) as
-      | { user_id: string; email: string; name: string; status: string }
+      .get(memo.workspace_id, memo.reminder_owner_id) as
+      | { user_id: string; email: string; name: string; status: string; timezone: string }
       | undefined;
 
     if (!member || member.status !== 'active') continue;
@@ -163,7 +191,8 @@ export async function scanDueReminders(
       if (insert.changes === 0) continue; // already notified for this trigger
       created++;
 
-      // Best-effort email delivery
+      // Best-effort email delivery (audit M-16: times render in the user's
+      // stored IANA timezone, not the server's UTC)
       if (isEmailEnabled()) {
         const email = renderReminderEmail({
           userName: member.name,
@@ -171,6 +200,7 @@ export async function scanDueReminders(
           memoBody: body || '',
           reminderTime,
           appUrl,
+          timezone: member.timezone || 'UTC',
         });
         const sent = await sendEmail({ to: member.email, ...email });
         if (sent) {
@@ -253,6 +283,9 @@ export function startReminderScheduler(
   // Nightly cleanup alongside scans
   const pruneTimer = setInterval(() => {
     try { pruneNotifications(dbCtx); } catch { /* non-fatal */ }
+    // Audit L-7: expired sessions, spent/expired password resets and dead
+    // invitations no longer accumulate forever.
+    try { pruneExpiredAuthArtifacts(dbCtx.db); } catch { /* non-fatal */ }
   }, 24 * 60 * 60 * 1000);
   pruneTimer.unref();
 

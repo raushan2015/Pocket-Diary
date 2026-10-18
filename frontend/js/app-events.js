@@ -74,6 +74,17 @@ export function setupEventListeners() {
     remoteRefreshTimer = setTimeout(() => void refreshWorkspaceMemos(false), 150);
   };
 
+  // Audit L-11: an expired session used to fail one action at a time. The
+  // API client broadcasts this once on the first data-endpoint 401; here we
+  // return the user to the sign-in screen instead.
+  window.addEventListener('notes:session-expired', () => {
+    if (!state.get('isAuthenticated')) return;
+    state.clearUser();
+    closeKeepPopovers?.();
+    showToast('Your session has expired. Please sign in again.', 'warning', 5000);
+    navigateTo('auth', { mode: 'login' });
+  });
+
   // Theme Toggle Buttons
   document.getElementById('theme-toggle-btn')?.addEventListener('click', toggleTheme);
   document.getElementById('dropdown-theme-btn')?.addEventListener('click', () => {
@@ -692,7 +703,11 @@ export function setupEventListeners() {
     try {
       const result = await importIntoWorkspace(pendingImportPrepared);
       const labelPart = result.labels ? ` and ${result.labels} label(s)` : '';
-      showToast(`Imported ${result.memos} note(s)${labelPart}`, 'success', 4000);
+      // Audit M-17: trashed Keep notes are intentionally skipped — say so.
+      const trashedPart = pendingImportPrepared.trashedCount
+        ? ` (${pendingImportPrepared.trashedCount} trashed note(s) skipped)`
+        : '';
+      showToast(`Imported ${result.memos} note(s)${labelPart}${trashedPart}`, 'success', 4500);
       pendingImportPrepared = null;
       const selectionEl = document.getElementById('settings-import-selection');
       const previewEl = document.getElementById('settings-import-preview');
@@ -718,6 +733,12 @@ export function setupEventListeners() {
 
     if (newPassword && newPassword !== confirmPassword) {
       confirmError?.classList.add('active');
+      return;
+    }
+
+    // Audit L-9: same policy as registration (the server enforces it too).
+    if (newPassword && (newPassword.length < 8 || !/[a-zA-Z]/.test(newPassword) || !/\d/.test(newPassword))) {
+      showToast('New password must be at least 8 characters and contain a letter and a number.', 'error', 4000);
       return;
     }
 
@@ -1332,10 +1353,11 @@ async function loadSessionsIntoSettings() {
       listEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">No active sessions found.</span>';
       return;
     }
-    listEl.innerHTML = sessions.map((s) => `
-      <div class="profile-session-item">
+    listEl.innerHTML = sessions.map((s, idx) => `
+      <div class="profile-session-item" data-session-idx="${idx}">
         <span class="session-meta"></span>
         ${s.current ? '<span class="badge badge-sm badge-personal">This device</span>' : '<span class="badge badge-sm" style="background: var(--bg-hover); color: var(--text-secondary);">Other device</span>'}
+        ${s.current ? '' : '<button type="button" class="btn btn-ghost btn-xs" data-revoke-session="${escapeHtml(s.id)}" title="Sign out this device" style="color: var(--color-red);">Sign out</button>'}
       </div>
     `).join('');
     listEl.querySelectorAll('.profile-session-item').forEach((row, idx) => {
@@ -1343,6 +1365,20 @@ async function loadSessionsIntoSettings() {
       const when = new Date(s.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       const agent = (s.userAgent || 'unknown device').slice(0, 42);
       row.querySelector('.session-meta').textContent = `${s.current ? 'Current session' : 'Session'} · ${s.ipAddress || 'unknown IP'} · ${agent} · ${when}`;
+    });
+    // Audit L-8: revoke one other device without nuking every session.
+    listEl.querySelectorAll('[data-revoke-session]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+          await api.revokeSession(btn.getAttribute('data-revoke-session'));
+          showToast('Device signed out', 'success');
+          await loadSessionsIntoSettings();
+        } catch (err) {
+          btn.disabled = false;
+          showToast(err.message || 'Could not sign out that device', 'error');
+        }
+      });
     });
   } catch (err) {
     listEl.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">Session info unavailable.</span>';
