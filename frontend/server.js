@@ -39,10 +39,12 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': [
     "default-src 'self'",
     "script-src 'self'",
-    "style-src 'self' 'unsafe-inline'",
+    // fonts.googleapis.com serves the Inter stylesheet; fonts.gstatic.com the
+    // font files — both are referenced by index.html and must be allowed.
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https:",
     "connect-src 'self'",
-    "font-src 'self' data:",
+    "font-src 'self' data: https://fonts.gstatic.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -68,8 +70,12 @@ const server = http.createServer((req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = decodeURIComponent(parsedUrl.pathname);
 
-  // Reverse proxy /api/* and /health requests to backend
-  if (pathname.startsWith('/api/') || pathname === '/health') {
+  // Reverse proxy /api/*, /health, and the Swagger docs (/docs, /docs/*) to
+  // the backend. The docs paths must be forwarded so the API reference stays
+  // reachable in production through this single origin (the UI resolves its
+  // spec and assets with relative URLs, so no rewriting is needed).
+  if (pathname.startsWith('/api/') || pathname === '/health'
+    || pathname === '/docs' || pathname.startsWith('/docs/')) {
     const targetUrl = new URL(req.url, BACKEND_URL);
     // Security (audit H-1): this proxy OVERWRITES the forwarded headers with
     // values it observed itself. The previous code forwarded client-supplied
@@ -97,6 +103,12 @@ const server = http.createServer((req, res) => {
 
     const proxyReq = http.request(options, (proxyRes) => {
       const outHeaders = { ...SECURITY_HEADERS, ...proxyRes.headers };
+      // The backend may send its own stricter CSP (e.g. the hash-locked
+      // policy on the /docs pages). Use it instead of the proxy default so
+      // clients receive exactly one, most-specific policy per response.
+      if (proxyRes.headers['content-security-policy']) {
+        delete outHeaders['Content-Security-Policy'];
+      }
       res.writeHead(proxyRes.statusCode, outHeaders);
       proxyRes.pipe(res);
     });

@@ -26,6 +26,15 @@ import {
   UrlGuardError,
 } from '../services/url-guard.js';
 import { guardedFetch, type GuardedResponse } from '../services/safe-fetch.js';
+import {
+  SESSION_SECURITY,
+  jsonResponse,
+  errorResponses,
+  ref,
+  refArray,
+  idParam,
+  openapiParams,
+} from '../openapi.js';
 
 interface MemoQuery {
   workspaceId?: string;
@@ -183,6 +192,221 @@ const linkPreviewSchema = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// OpenAPI metadata (spec-only; see src/openapi.ts)
+// ---------------------------------------------------------------------------
+
+const idParams = openapiParams({ id: idParam('id', 'Memo id (UUID).') }, ['id']);
+
+const memoBodyResponse = jsonResponse({ type: 'object', required: ['memo'], properties: { memo: ref('Memo') } }, 'The memo.');
+const memoErrorResponse = errorResponses([400, 401, 404, 500]);
+const memoWriteErrorResponse = errorResponses(
+  [400, 401, 403, 404, 409, 500],
+  {
+    409: {
+      description: 'Version conflict: another editor saved a newer version. Re-fetch the memo, merge, and retry.',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['error', 'message', 'currentVersion'],
+            properties: {
+              error: { type: 'string' },
+              message: { type: 'string' },
+              currentVersion: { type: 'integer', description: 'The version now stored server-side.' },
+            },
+          },
+        },
+      },
+    },
+  },
+);
+
+const listMeta = {
+  tags: ['Memos'],
+  summary: 'List and search notes',
+  description: 'Paginated workspace listing with filters (status, priority, category, tag, folder, flags), full-text search and sorting. Strictly tenant-scoped: a `workspaceId` you are not a member of yields 403. Defaults: `page` 1, `limit` 50.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['memos', 'total', 'page', 'limit'],
+          properties: {
+            memos: refArray('Memo'),
+            total: { type: 'integer', description: 'Total matching notes (across all pages).' },
+            page: { type: 'integer' },
+            limit: { type: 'integer' },
+          },
+        },
+        'One page of memos.',
+      ),
+      ...errorResponses([400, 401, 403, 500]),
+    },
+  },
+};
+
+const createMeta = {
+  tags: ['Memos'],
+  summary: 'Create a note',
+  description: 'Creates a note in the workspace. Viewers are rejected (403). `version` must not be sent on create. Tags are deduplicated case-insensitively (audit M-3); unknown colors are normalized into the palette (audit M-2).',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      201: memoBodyResponse,
+      ...errorResponses([400, 401, 403, 500]),
+    },
+  },
+};
+
+const getMeta = {
+  tags: ['Memos'],
+  summary: 'Get one note',
+  description: 'Fetches a fully hydrated memo. Notes in workspaces you are not a member of return 404 (existence is never leaked).',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...idParams,
+    responses: {
+      200: memoBodyResponse,
+      ...memoErrorResponse,
+    },
+  },
+};
+
+const updateMeta = {
+  tags: ['Memos'],
+  summary: 'Update a note (optimistic concurrency)',
+  description: 'Partial update. Send only the changed fields. Include the memo\'s `version` to guard against clobbering: if the stored version moved on, the server answers 409 with the current version (audit H-5). Viewers are rejected.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...idParams,
+    responses: {
+      200: memoBodyResponse,
+      ...memoWriteErrorResponse,
+    },
+  },
+};
+
+const deleteMeta = {
+  tags: ['Memos'],
+  summary: 'Trash a note (or delete permanently)',
+  description: 'Soft-deletes the note into the trash. With `permanent=true` it is hard-deleted immediately, together with its attachment files. Viewers are rejected.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...idParams,
+    querystring: {
+      type: 'object',
+      properties: {
+        permanent: {
+          type: 'string',
+          enum: ['true', 'false'],
+          description: 'Set to `true` to bypass the trash and delete permanently.',
+        },
+      },
+      additionalProperties: false,
+    },
+    responses: {
+      200: jsonResponse(ref('SimpleSuccess'), 'Deleted.'),
+      ...errorResponses([401, 403, 404, 500]),
+    },
+  },
+};
+
+const restoreMeta = {
+  tags: ['Memos'],
+  summary: 'Restore a note from the trash',
+  description: 'Undoes a soft delete. Viewers are rejected.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...idParams,
+    responses: {
+      200: memoBodyResponse,
+      ...errorResponses([401, 403, 404, 500]),
+    },
+  },
+};
+
+const versionsMeta = {
+  tags: ['Memos'],
+  summary: 'List revision history',
+  description: 'Coalesced revisions of the note (5-minute edit window, audit M-7), oldest first.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...idParams,
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['versions'],
+          properties: { versions: refArray('MemoVersion') },
+        },
+        'Revisions of the memo.',
+      ),
+      ...memoErrorResponse,
+    },
+  },
+};
+
+const reorderMeta = {
+  tags: ['Memos'],
+  summary: 'Reorder notes (drag & drop)',
+  description: 'Sets the manual card order for the workspace. Shared state: restricted to owner/admin/editor (audit H-4). `memoIds` is the full desired order (max 500).',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['success', 'count'],
+          properties: {
+            success: { type: 'boolean' },
+            count: { type: 'integer', description: 'Number of ids reordered.' },
+          },
+        },
+        'Order applied.',
+      ),
+      ...errorResponses([400, 401, 403, 500]),
+    },
+  },
+};
+
+const trashMeta = {
+  tags: ['Memos'],
+  summary: 'Empty the trash',
+  description: 'Permanently deletes every soft-deleted note in the workspace and removes its attachment files. Restricted to owner/admin/editor.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['success', 'deletedCount'],
+          properties: {
+            success: { type: 'boolean' },
+            deletedCount: { type: 'integer', description: 'Number of notes purged.' },
+          },
+        },
+        'Trash emptied.',
+      ),
+      ...errorResponses([400, 401, 403, 500]),
+    },
+  },
+};
+
+const linkPreviewMeta = {
+  tags: ['Memos'],
+  summary: 'Fetch a link preview (OpenGraph)',
+  description: 'Scrapes OpenGraph/title metadata for a URL to attach to a note. SSRF-hardened (audit M-11): the target and every redirect hop must resolve to a public address; unreachable or unparseable pages degrade to a hostname-only preview instead of failing.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(ref('LinkPreview'), 'Preview data (possibly a degraded hostname-only fallback).'),
+      ...errorResponses([400, 401, 429, 500]),
+    },
+  },
+};
+
 export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
 
@@ -212,7 +436,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /api/v1/memos (List & Full-Text Search)
   fastify.get<{ Querystring: MemoQuery }>('/', {
-    schema: listMemosSchema,
+    schema: { ...listMemosSchema, ...listMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -281,7 +505,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/memos (Create Memo)
   fastify.post<{ Body: CreateMemoInput }>('/', {
-    schema: createMemoSchema,
+    schema: { ...createMemoSchema, ...createMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -321,7 +545,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/v1/memos/:id (Get Single Memo)
-  fastify.get<{ Params: MemoParams }>('/:id', async (request, reply) => {
+  fastify.get<{ Params: MemoParams }>('/:id', { schema: getMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id } = request.params;
@@ -360,7 +584,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
 
   // PATCH /api/v1/memos/:id (Update with Optimistic Concurrency Control)
   fastify.patch<{ Params: MemoParams; Body: UpdateMemoInput }>('/:id', {
-    schema: updateMemoSchema,
+    schema: { ...updateMemoSchema, ...updateMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -406,7 +630,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // DELETE /api/v1/memos/:id (Soft Delete or Permanent Hard Delete)
-  fastify.delete<{ Params: MemoParams; Querystring: DeleteMemoQuery }>('/:id', async (request, reply) => {
+  fastify.delete<{ Params: MemoParams; Querystring: DeleteMemoQuery }>('/:id', { schema: deleteMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id } = request.params;
@@ -446,7 +670,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/memos/:id/restore (Restore Soft-Deleted Memo)
-  fastify.post<{ Params: MemoParams }>('/:id/restore', async (request, reply) => {
+  fastify.post<{ Params: MemoParams }>('/:id/restore', { schema: restoreMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id } = request.params;
@@ -477,7 +701,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/v1/memos/:id/versions (List Revision History)
-  fastify.get<{ Params: MemoParams }>('/:id/versions', async (request, reply) => {
+  fastify.get<{ Params: MemoParams }>('/:id/versions', { schema: versionsMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id } = request.params;
@@ -512,7 +736,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   // previously passed the unrestricted membership check and could reshuffle
   // everyone's board.
   fastify.post<{ Body: { workspaceId: string; memoIds: string[] } }>('/reorder', {
-    schema: reorderSchema,
+    schema: { ...reorderSchema, ...reorderMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -553,6 +777,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
         properties: { workspaceId: idSchema },
         additionalProperties: false,
       },
+      ...trashMeta,
     },
   }, async (request, reply) => {
     try {
@@ -604,7 +829,7 @@ export const memoRoutes: FastifyPluginAsync = async (fastify) => {
   const LINK_PREVIEW_MAX_REDIRECTS = 4;
 
   fastify.post<{ Body: { url: string } }>('/link-preview', {
-    schema: linkPreviewSchema,
+    schema: { ...linkPreviewSchema, ...linkPreviewMeta },
   }, async (request, reply) => {
     const fallbackPreview = (targetUrl: string) => {
       const parsed = new URL(targetUrl);

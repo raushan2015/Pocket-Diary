@@ -1,5 +1,15 @@
 import type { FastifyPluginAsync } from 'fastify';
 import crypto from 'node:crypto';
+import {
+  SESSION_SECURITY,
+  jsonResponse,
+  errorResponses,
+  ref,
+  refArray,
+  idParam,
+  openapiParams,
+  multipartBody,
+} from '../openapi.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -80,10 +90,98 @@ function attachmentDto(row: any) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// OpenAPI metadata (spec-only; see src/openapi.ts)
+// ---------------------------------------------------------------------------
+
+const uploadErrors = errorResponses([400, 401, 403, 404, 413, 415, 500]);
+
+const listMeta = {
+  tags: ['Attachments'],
+  summary: 'List a note\'s attachments',
+  description: 'Metadata for every attachment on the note (including trashed notes, so Trash view thumbnails render). Any workspace member may read them.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...openapiParams({ memoId: idParam('memoId', 'Memo id.') }, ['memoId']),
+    responses: {
+      200: jsonResponse(
+        { type: 'object', required: ['attachments'], properties: { attachments: refArray('Attachment') } },
+        'Attachments on the note.',
+      ),
+      ...errorResponses([401, 403, 404, 500]),
+    },
+  },
+};
+
+const uploadMeta = {
+  tags: ['Attachments'],
+  summary: 'Upload an attachment',
+  description: 'Multipart upload of a single image or document to the note (max 5 MB). The file\'s magic bytes must match the declared type (audit L-6); the workspace storage quota applies (413). Viewers are rejected; trashed notes reject uploads.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...openapiParams({ memoId: idParam('memoId', 'Memo id.') }, ['memoId']),
+    requestBody: multipartBody(
+      {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'One file. Allowed: JPEG, PNG, WebP, GIF images; PDF, TXT, Markdown documents.',
+        },
+      },
+      ['file'],
+      'The multipart/form-data upload (single `file` field).',
+    ),
+    responses: {
+      201: jsonResponse(
+        { type: 'object', required: ['attachment'], properties: { attachment: ref('Attachment') } },
+        'Attachment stored; its `url` serves the bytes.',
+      ),
+      ...uploadErrors,
+    },
+  },
+};
+
+const downloadMeta = {
+  tags: ['Attachments'],
+  summary: 'Download an attachment',
+  description: 'Streams the stored file. Images render `inline`; PDFs and text download with `Content-Disposition: attachment` (audit L-6). Membership-checked: other tenants get 404.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...openapiParams({ id: idParam('id', 'Attachment id.') }, ['id']),
+    responses: {
+      200: {
+        description: 'File bytes with the stored `Content-Type` and a `Content-Disposition` of `inline` (images) or `attachment` (documents).',
+        content: {
+          'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
+        },
+        headers: {
+          'Content-Type': { schema: { type: 'string' }, description: 'The stored MIME type.' },
+          'Content-Disposition': { schema: { type: 'string' }, description: '`inline` for images, `attachment` otherwise (audit L-6).' },
+        },
+      },
+      ...errorResponses([401, 404, 500]),
+    },
+  },
+};
+
+const deleteMeta = {
+  tags: ['Attachments'],
+  summary: 'Delete an attachment',
+  description: 'Removes the attachment row and its file on disk. Viewers are rejected.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...openapiParams({ id: idParam('id', 'Attachment id.') }, ['id']),
+    responses: {
+      200: jsonResponse(ref('SimpleSuccess'), 'Attachment deleted.'),
+      ...errorResponses([401, 403, 404, 500]),
+    },
+  },
+};
+
 export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
 
-  fastify.get<{ Params: { memoId: string } }>('/memo/:memoId', async (request, reply) => {
+  fastify.get<{ Params: { memoId: string } }>('/memo/:memoId', { schema: listMeta }, async (request, reply) => {
     try {
       const { memo } = resolveMemo(fastify, request.params.memoId, request.user!.id, false);
       const rows = fastify.dbCtx.sqlite.prepare(
@@ -98,7 +196,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  fastify.post<{ Params: { memoId: string } }>('/memo/:memoId', async (request, reply) => {
+  fastify.post<{ Params: { memoId: string } }>('/memo/:memoId', { schema: uploadMeta }, async (request, reply) => {
     let storedPath: string | undefined;
     try {
       const { memo, workspaceId } = resolveMemo(fastify, request.params.memoId, request.user!.id, true);
@@ -164,7 +262,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  fastify.get<{ Params: { id: string } }>('/:id/file', async (request, reply) => {
+  fastify.get<{ Params: { id: string } }>('/:id/file', { schema: downloadMeta }, async (request, reply) => {
     try {
       const row = fastify.dbCtx.sqlite.prepare(
         'SELECT a.*, m.deleted_at FROM attachments a JOIN memos m ON m.id = a.memo_id WHERE a.id = ?'
@@ -193,7 +291,7 @@ export const attachmentRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  fastify.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
+  fastify.delete<{ Params: { id: string } }>('/:id', { schema: deleteMeta }, async (request, reply) => {
     try {
       const row = fastify.dbCtx.sqlite.prepare(
         'SELECT id, memo_id, workspace_id, storage_path FROM attachments WHERE id = ?'

@@ -25,10 +25,9 @@
   <link rel="stylesheet" href="css/editor.css">
   <link rel="stylesheet" href="css/attachments.css">
 
-  <script>
-    // Ensure relative API requests route seamlessly through dev proxy or same-origin
-    window.__API_BASE__ = '';
-  </script>
+  <!-- No inline <script>: the strict CSP (script-src 'self') requires all
+       scripts to be same-origin files. js/api.js defaults the API base to ''
+       (same-origin), which the removed bootstrap used to hardcode anyway. -->
 </head>
 <body>
   <div id="app">

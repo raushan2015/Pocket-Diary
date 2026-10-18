@@ -2,6 +2,14 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fs from 'node:fs';
 import { config, resolveAppUrl } from '../config.js';
 import {
+  SESSION_SECURITY,
+  PUBLIC_SECURITY,
+  jsonResponse,
+  errorResponses,
+  ref,
+  refArray,
+} from '../openapi.js';
+import {
   registerUser,
   loginUser,
   logoutUser,
@@ -107,6 +115,237 @@ const profileSchema = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// OpenAPI metadata for this plugin (spec-only; see src/openapi.ts)
+// ---------------------------------------------------------------------------
+
+const registerMeta = {
+  tags: ['Auth'],
+  summary: 'Create an account (and first workspace)',
+  description: [
+    'Registers a user, hashes the password (argon2), creates their personal workspace,',
+    'and signs them in by setting the `memo_session` cookie.',
+    'Passwords must be at least 8 characters and contain a letter and a digit (audit L-9).',
+    'An optional `inviteToken` (from a workspace invitation) joins that workspace immediately;',
+    'if the invite cannot be used, the account is still created and `inviteWarning` explains why.',
+  ].join(' '),
+  security: PUBLIC_SECURITY,
+  openapi: {
+    responses: {
+      201: jsonResponse(
+        {
+          type: 'object',
+          required: ['user', 'workspace'],
+          properties: {
+            user: ref('User'),
+            workspace: ref('Workspace'),
+            joinedWorkspace: ref('Workspace'),
+            inviteWarning: { type: 'string', description: 'Present when the supplied invite token could not be used.' },
+          },
+        },
+        'Account created; the session cookie is set.',
+      ),
+      ...errorResponses([400, 409, 429, 500]),
+    },
+  },
+};
+
+const loginMeta = {
+  tags: ['Auth'],
+  summary: 'Sign in',
+  description: 'Verifies the password, sets the `memo_session` cookie, and returns the user with their active workspace. `rememberMe: false` creates a session cookie without a max-age (expires when the browser closes). A configurable per-account lockout applies after repeated failures (audit H-1).',
+  security: PUBLIC_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['user', 'activeWorkspace'],
+          properties: {
+            user: ref('User'),
+            activeWorkspace: { $ref: '#/components/schemas/Workspace' },
+          },
+        },
+        'Signed in; the session cookie is set.',
+      ),
+      ...errorResponses([400, 401, 429, 500]),
+    },
+  },
+};
+
+const forgotPasswordMeta = {
+  tags: ['Auth'],
+  summary: 'Request a password-reset link',
+  description: 'Generates a single-use, time-limited reset token and emails a recovery link (when SMTP is configured). The response is identical whether or not the address has an account — it never reveals account existence. Reset links are built from the configured APP_URL (audit C-3).',
+  security: PUBLIC_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['success', 'message', 'emailConfigured'],
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            emailConfigured: { type: 'boolean', description: 'Whether SMTP is set up; false means an instance admin must reset the password manually.' },
+          },
+        },
+        'Always returned, regardless of account existence.',
+      ),
+      ...errorResponses([400, 429]),
+    },
+  },
+};
+
+const resetPasswordMeta = {
+  tags: ['Auth'],
+  summary: 'Complete a password reset',
+  description: 'Verifies the one-time token, updates the password hash (8+ characters with a letter and a digit) and revokes every existing session for the account.',
+  security: PUBLIC_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['success', 'message'],
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+          },
+        },
+        'Password updated; all sessions were revoked.',
+      ),
+      ...errorResponses([400, 429, 500]),
+    },
+  },
+};
+
+const profileMeta = {
+  tags: ['Auth'],
+  summary: 'Update name, timezone, or password',
+  description: 'Partial update of the signed-in user. Changing the password requires `currentPassword` and revokes every OTHER session (audit H-6); the new password must satisfy the account policy (8+ chars, letter + digit). `timezone` is an IANA name used when formatting reminder emails (audit M-16); invalid values normalize to UTC.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['user'],
+          properties: { user: ref('User') },
+        },
+        'Updated profile. If the password changed, other devices are signed out.',
+      ),
+      ...errorResponses([400, 401, 500]),
+    },
+  },
+};
+
+const logoutMeta = {
+  tags: ['Auth'],
+  summary: 'Sign out',
+  description: 'Deletes the current session server-side and clears the cookie. Safe to call when not signed in.',
+  security: PUBLIC_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(ref('SimpleSuccess'), 'Signed out; the cookie is cleared.'),
+      ...errorResponses([429]),
+    },
+  },
+};
+
+const meMeta = {
+  tags: ['Auth'],
+  summary: 'Current user and workspaces',
+  description: 'Returns the signed-in user (including the instance-admin flag) and every workspace they belong to, with their role in each.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['user', 'workspaces'],
+          properties: {
+            user: ref('User'),
+            workspaces: refArray('Workspace'),
+          },
+        },
+        'The signed-in user and their workspaces.',
+      ),
+      ...errorResponses([401, 429]),
+    },
+  },
+};
+
+const sessionsMeta = {
+  tags: ['Auth'],
+  summary: 'List active sessions (devices)',
+  description: 'Every currently valid session for the account, newest first, including the current one. Session ids are opaque per-device identifiers — never the token or its hash (audit L-8).',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['sessions'],
+          properties: { sessions: refArray('Session') },
+        },
+        'Active sessions for the account.',
+      ),
+      ...errorResponses([401, 429]),
+    },
+  },
+};
+
+const revokeSessionMeta = {
+  tags: ['Auth'],
+  summary: 'Revoke one other session',
+  description: 'Signs out exactly one other device, identified by the opaque `id` from GET /auth/sessions (audit L-8). The current session cannot be revoked this way — use POST /auth/logout.',
+  security: SESSION_SECURITY,
+  openapi: {
+    params: { type: 'object', required: ['id'], properties: { id: { type: 'string', minLength: 1, maxLength: 64, description: 'Opaque session id from GET /auth/sessions.' } }, additionalProperties: false },
+    responses: {
+      200: jsonResponse(ref('SimpleSuccess'), 'The device was signed out.'),
+      ...errorResponses([400, 401, 404, 429]),
+    },
+  },
+};
+
+const revokeAllMeta = {
+  tags: ['Auth'],
+  summary: 'Sign out all other devices',
+  description: 'Revokes every session for the account except the one making the request.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['success', 'revoked'],
+          properties: {
+            success: { type: 'boolean' },
+            revoked: { type: 'integer', description: 'Number of other sessions revoked.' },
+          },
+        },
+        'Other sessions revoked.',
+      ),
+      ...errorResponses([401, 429]),
+    },
+  },
+};
+
+const deleteAccountMeta = {
+  tags: ['Auth'],
+  summary: 'Permanently delete the account',
+  description: 'Requires the current password. Solo workspaces (and their notes and attachments) are deleted; notes authored in other people\'s workspaces are reassigned to those workspaces\' owners; invitations are re-attributed. Workspaces you own that have other members must be transferred or deleted first (409). Clears the session cookie (audit L-8).',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(ref('AccountDeletion'), 'Account and solo-workspace data deleted.'),
+      ...errorResponses([400, 401, 409, 429, 500]),
+    },
+  },
+};
+
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // Helper to set session cookie
   const setSessionCookie = (reply: FastifyReply, token: string, request: FastifyRequest, rememberMe: boolean = true) => {
@@ -124,7 +363,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/auth/register
   fastify.post<{ Body: RegisterBody }>('/register', {
-    schema: registerSchema,
+    schema: { ...registerSchema, ...registerMeta },
     // Audit §6: configurable so CI/ephemeral instances (where every request
     // shares one client IP) are not throttled; production keeps the tight default.
     config: { rateLimit: { max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 15), timeWindow: '1 minute' } },
@@ -193,7 +432,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/auth/login
   fastify.post<{ Body: LoginBody }>('/login', {
-    schema: loginSchema,
+    schema: { ...loginSchema, ...loginMeta },
     config: { rateLimit: { max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 15), timeWindow: '1 minute' } },
   }, async (request, reply) => {
     try {
@@ -243,7 +482,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // link (when SMTP is configured). The response is identical whether or not
   // the address has an account, and never reveals account existence.
   fastify.post<{ Body: { email?: string } }>('/forgot-password', {
-    schema: forgotSchema,
+    schema: { ...forgotSchema, ...forgotPasswordMeta },
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
   }, async (request, reply) => {
     const { email } = request.body || {};
@@ -278,7 +517,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // Completes the recovery flow: verifies the one-time token, updates the
   // password hash and revokes every existing session for the account.
   fastify.post<{ Body: { token?: string; newPassword?: string } }>('/reset-password', {
-    schema: resetPasswordSchema,
+    schema: { ...resetPasswordSchema, ...resetPasswordMeta },
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
   }, async (request, reply) => {
     const { token, newPassword } = request.body || {};
@@ -313,7 +552,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // PATCH /api/v1/auth/profile
   fastify.patch<{ Body: { name?: string; currentPassword?: string; newPassword?: string; timezone?: string } }>('/profile', {
     preHandler: fastify.authenticate,
-    schema: profileSchema,
+    schema: { ...profileSchema, ...profileMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -398,7 +637,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/auth/logout
-  fastify.post('/logout', async (request, reply) => {
+  fastify.post('/logout', { schema: logoutMeta }, async (request, reply) => {
     const sessionToken = request.cookies[config.cookieName];
     if (sessionToken) {
       await logoutUser(fastify.dbCtx.db, sessionToken);
@@ -417,6 +656,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/auth/me
   fastify.get('/me', {
     preHandler: fastify.authenticate,
+    schema: meMeta,
   }, async (request, reply) => {
     const user = request.user!;
     const workspaces = await getUserWorkspaces(fastify.dbCtx.db, user.id);
@@ -436,6 +676,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/auth/sessions — active session devices for the current user
   fastify.get('/sessions', {
     preHandler: fastify.authenticate,
+    schema: sessionsMeta,
   }, async (request, reply) => {
     const user = request.user!;
     // Sessions are stored as SHA-256 hashes (H-7); identify the current one by hashing the cookie value.
@@ -463,6 +704,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // `id` is the opaque public_id from GET /sessions, never the token hash.
   fastify.delete<{ Params: { id: string } }>('/sessions/:id', {
     preHandler: fastify.authenticate,
+    schema: revokeSessionMeta,
   }, async (request, reply) => {
     const user = request.user!;
     const currentSessionId = hashSessionToken(request.sessionToken ?? '');
@@ -482,6 +724,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/auth/sessions/revoke — sign out every other session (kept: the current one)
   fastify.post('/sessions/revoke', {
     preHandler: fastify.authenticate,
+    schema: revokeAllMeta,
   }, async (request, reply) => {
     const user = request.user!;
     const currentSessionId = hashSessionToken(request.sessionToken ?? '');
@@ -504,6 +747,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         properties: { currentPassword: { type: 'string', minLength: 1, maxLength: 200 } },
         additionalProperties: false,
       },
+      ...deleteAccountMeta,
     },
   }, async (request, reply) => {
     try {
@@ -518,18 +762,28 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.status(401).send({ error: 'Unauthorized', message: 'Current password is incorrect' });
       }
 
+      // Collect the attachment files of the user's owned workspaces BEFORE
+      // the deletion transaction runs: the workspace delete cascades the
+      // `attachments` rows away, so querying afterwards always came up empty
+      // and orphaned the files on disk. Only the solo workspaces actually
+      // deleted by deleteAccount() are unlinked below.
+      const orphanCandidates = fastify.dbCtx.sqlite.prepare(
+        'SELECT workspace_id, storage_path FROM attachments WHERE workspace_id IN (SELECT id FROM workspaces WHERE owner_id = ?)'
+      ).all(user.id) as Array<{ workspace_id: string; storage_path: string }>;
+
       const result = deleteAccount(fastify.dbCtx, user.id);
 
       // Best-effort cleanup of attachment files belonging to the deleted solo workspaces.
+      const pathsByWorkspace = new Map<string, string[]>();
+      for (const row of orphanCandidates) {
+        const list = pathsByWorkspace.get(row.workspace_id) ?? [];
+        list.push(row.storage_path);
+        pathsByWorkspace.set(row.workspace_id, list);
+      }
       for (const workspaceId of result.deletedWorkspaces) {
-        try {
-          const files = fastify.dbCtx.sqlite.prepare(
-            'SELECT storage_path FROM attachments WHERE workspace_id = ?'
-          ).all(workspaceId) as Array<{ storage_path: string }>;
-          for (const file of files) {
-            try { fs.unlinkSync(file.storage_path); } catch { /* already gone */ }
-          }
-        } catch { /* rows already cascaded */ }
+        for (const filePath of pathsByWorkspace.get(workspaceId) ?? []) {
+          try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+        }
       }
 
       reply.clearCookie(config.cookieName, {

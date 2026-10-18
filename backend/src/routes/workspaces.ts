@@ -20,6 +20,15 @@ import {
   leaveWorkspace,
   transferWorkspaceOwnership,
 } from '../services/workspace.service.js';
+import {
+  SESSION_SECURITY,
+  jsonResponse,
+  errorResponses,
+  ref,
+  refArray,
+  idParam,
+  openapiParams,
+} from '../openapi.js';
 
 const createWorkspaceSchema = {
   body: {
@@ -68,11 +77,279 @@ const createInviteSchema = {
  * config.ts (audit C-3): links are never built from request headers.
  */
 
+// ---------------------------------------------------------------------------
+// OpenAPI metadata (spec-only; see src/openapi.ts)
+// ---------------------------------------------------------------------------
+
+const wsIdParams = openapiParams({ id: idParam('id', 'Workspace id.') }, ['id']);
+
+const wsAccessErrors = errorResponses([401, 403, 404, 500]);
+
+const listMeta = {
+  tags: ['Workspaces'],
+  summary: 'List your workspaces',
+  description: 'Every workspace the signed-in user belongs to, with their role in each.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        { type: 'object', required: ['workspaces'], properties: { workspaces: refArray('Workspace') } },
+        'Workspaces the user can access.',
+      ),
+      ...errorResponses([401, 429]),
+    },
+  },
+};
+
+const createMeta = {
+  tags: ['Workspaces'],
+  summary: 'Create a workspace',
+  description: 'Creates a workspace with the caller as owner. `slug` is optional (generated when omitted); duplicate names or slugs yield 409.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      201: jsonResponse(
+        { type: 'object', required: ['workspace'], properties: { workspace: ref('Workspace') } },
+        'Workspace created; the caller is its owner.',
+      ),
+      ...errorResponses([400, 401, 409, 500]),
+    },
+  },
+};
+
+const storageMeta = {
+  tags: ['Workspaces'],
+  summary: 'Workspace storage usage',
+  description: 'Byte-accurate storage meter for note text plus attachment files, against the configured quota (audit L-10). Any member may read it.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...wsIdParams,
+    responses: {
+      200: jsonResponse(ref('StorageUsage'), 'Current usage and quota.'),
+      ...wsAccessErrors,
+    },
+  },
+};
+
+const updateMeta = {
+  tags: ['Workspaces'],
+  summary: 'Rename a workspace',
+  description: 'Updates the workspace name. Restricted to owner and admin.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...wsIdParams,
+    responses: {
+      200: jsonResponse(
+        { type: 'object', required: ['workspace'], properties: { workspace: ref('Workspace') } },
+        'Updated workspace.',
+      ),
+      ...wsAccessErrors,
+    },
+  },
+};
+
+const membersMeta = {
+  tags: ['Workspaces'],
+  summary: 'List members',
+  description: 'All members of the workspace with name, email, role and join time.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...wsIdParams,
+    responses: {
+      200: jsonResponse(
+        { type: 'object', required: ['members'], properties: { members: refArray('Member') } },
+        'Workspace members.',
+      ),
+      ...wsAccessErrors,
+    },
+  },
+};
+
+const activitiesMeta = {
+  tags: ['Workspaces'],
+  summary: 'Workspace activity feed',
+  description: 'Recent note edits, note creations and member joins (latest 40 events). Any member may read it.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...wsIdParams,
+    responses: {
+      200: jsonResponse(
+        { type: 'object', required: ['activities'], properties: { activities: refArray('Activity') } },
+        'Activity events, newest first.',
+      ),
+      ...wsAccessErrors,
+    },
+  },
+};
+
+const removeMemberMeta = {
+  tags: ['Workspaces'],
+  summary: 'Remove a member',
+  description: 'Removes a member from the workspace and clears their workspace notifications (audit L-13). The owner cannot be removed; only the owner (or an admin for non-admin targets) may remove members.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...openapiParams(
+      {
+        id: idParam('id', 'Workspace id.'),
+        userId: idParam('userId', 'User id of the member to remove.'),
+      },
+      ['id', 'userId'],
+    ),
+    responses: {
+      200: jsonResponse(ref('SimpleSuccess'), 'Member removed.'),
+      ...wsAccessErrors,
+    },
+  },
+};
+
+const leaveMeta = {
+  tags: ['Workspaces'],
+  summary: 'Leave a workspace',
+  description: 'The signed-in member leaves the workspace; their workspace notifications are cleared (audit L-13). Owners must transfer ownership first (403).',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...wsIdParams,
+    responses: {
+      200: jsonResponse(ref('SimpleSuccess'), 'Left the workspace.'),
+      ...wsAccessErrors,
+    },
+  },
+};
+
+const transferMeta = {
+  tags: ['Workspaces'],
+  summary: 'Transfer ownership',
+  description: 'Owner-only: promotes the named member to owner and demotes the caller to admin (audit L-8).',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...wsIdParams,
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['success', 'workspace'],
+          properties: {
+            success: { type: 'boolean' },
+            workspace: {
+              type: 'object',
+              required: ['workspaceId', 'newOwnerId'],
+              properties: {
+                workspaceId: { type: 'string' },
+                newOwnerId: { type: 'string' },
+              },
+            },
+          },
+        },
+        'Ownership transferred.',
+      ),
+      ...errorResponses([400, 401, 403, 404, 500]),
+    },
+  },
+};
+
+const changeRoleMeta = {
+  tags: ['Workspaces'],
+  summary: 'Change a member role',
+  description: 'Changes a member\'s role (admin/editor/viewer). Only the owner may grant or change admin roles (audit H-8); the owner\'s own role cannot be changed.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...openapiParams(
+      {
+        id: idParam('id', 'Workspace id.'),
+        userId: idParam('userId', 'User id of the member.'),
+      },
+      ['id', 'userId'],
+    ),
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['member'],
+          properties: {
+            member: {
+              type: 'object',
+              required: ['userId', 'role'],
+              properties: {
+                userId: { type: 'string' },
+                role: { type: 'string', enum: ['admin', 'editor', 'viewer'] },
+              },
+            },
+          },
+        },
+        'Role updated.',
+      ),
+      ...errorResponses([400, 401, 403, 404, 500]),
+    },
+  },
+};
+
+const createInviteMeta = {
+  tags: ['Workspaces'],
+  summary: 'Invite someone to the workspace',
+  description: 'Creates (or refreshes — audit M-1) a single-use invitation and emails it when SMTP is configured. The response contains the raw token and ready-made `inviteUrl` exactly once; the server persists only a hash (audit H-7). Responds identically whether or not the address already has an account (audit H-3). Restricted to owner/admin.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...wsIdParams,
+    responses: {
+      201: jsonResponse(
+        {
+          type: 'object',
+          required: ['invite', 'inviteUrl', 'emailDelivery'],
+          properties: {
+            invite: ref('Invite'),
+            inviteUrl: { type: 'string', description: 'Shareable link built from the configured APP_URL.' },
+            emailDelivery: { type: 'string', enum: ['sent', 'failed', 'disabled'], description: 'Whether the invite email was delivered, or SMTP is not configured.' },
+          },
+        },
+        'Invitation created.',
+      ),
+      ...errorResponses([400, 401, 403, 500]),
+    },
+  },
+};
+
+const listInvitesMeta = {
+  tags: ['Workspaces'],
+  summary: 'List invitations',
+  description: 'Pending and past invitations for the workspace (no raw tokens). Any member may read it.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...wsIdParams,
+    responses: {
+      200: jsonResponse(
+        { type: 'object', required: ['invites'], properties: { invites: refArray('Invite') } },
+        'Invitations, newest first.',
+      ),
+      ...wsAccessErrors,
+    },
+  },
+};
+
+const revokeInviteMeta = {
+  tags: ['Workspaces'],
+  summary: 'Revoke an invitation',
+  description: 'Revokes a pending invitation so its link stops working. Restricted to owner/admin.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...openapiParams(
+      {
+        id: idParam('id', 'Workspace id.'),
+        inviteId: idParam('inviteId', 'Invitation id.'),
+      },
+      ['id', 'inviteId'],
+    ),
+    responses: {
+      200: jsonResponse(ref('SimpleSuccess'), 'Invitation revoked.'),
+      ...errorResponses([401, 403, 404, 500]),
+    },
+  },
+};
+
 export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
 
   // GET /api/v1/workspaces
-  fastify.get('/', async (request, reply) => {
+  fastify.get('/', { schema: listMeta }, async (request, reply) => {
     const user = request.user!;
     const workspaces = getUserWorkspaces(fastify.dbCtx.db, user.id);
     return reply.status(200).send({ workspaces });
@@ -80,7 +357,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/workspaces
   fastify.post<{ Body: { name?: string; slug?: string } }>('/', {
-    schema: createWorkspaceSchema,
+    schema: { ...createWorkspaceSchema, ...createMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -111,7 +388,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/v1/workspaces/:id/storage
-  fastify.get<{ Params: { id: string } }>('/:id/storage', async (request, reply) => {
+  fastify.get<{ Params: { id: string } }>('/:id/storage', { schema: storageMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const workspaceId = request.params.id;
@@ -158,7 +435,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // PATCH /api/v1/workspaces/:id
   fastify.patch<{ Params: { id: string }; Body: { name?: string } }>('/:id', {
-    schema: updateWorkspaceSchema,
+    schema: { ...updateWorkspaceSchema, ...updateMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -199,7 +476,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/v1/workspaces/:id/members
-  fastify.get<{ Params: { id: string } }>('/:id/members', async (request, reply) => {
+  fastify.get<{ Params: { id: string } }>('/:id/members', { schema: membersMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const workspaceId = request.params.id;
@@ -239,7 +516,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   // or not the address is registered.
 
   // GET /api/v1/workspaces/:id/activities
-  fastify.get<{ Params: { id: string } }>('/:id/activities', async (request, reply) => {
+  fastify.get<{ Params: { id: string } }>('/:id/activities', { schema: activitiesMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const workspaceId = request.params.id;
@@ -316,7 +593,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
 
   // DELETE /api/v1/workspaces/:id/members/:userId — remove a member
-  fastify.delete<{ Params: { id: string; userId: string } }>('/:id/members/:userId', async (request, reply) => {
+  fastify.delete<{ Params: { id: string; userId: string } }>('/:id/members/:userId', { schema: removeMemberMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id, userId } = request.params;
@@ -335,7 +612,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /api/v1/workspaces/:id/leave — leave a workspace yourself (audit L-8)
-  fastify.post<{ Params: { id: string } }>('/:id/leave', async (request, reply) => {
+  fastify.post<{ Params: { id: string } }>('/:id/leave', { schema: leaveMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       leaveWorkspace(fastify.dbCtx.db, user.id, request.params.id);
@@ -361,6 +638,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
         properties: { userId: { type: 'string', minLength: 1, maxLength: 64 } },
         additionalProperties: false,
       },
+      ...transferMeta,
     },
   }, async (request, reply) => {
     try {
@@ -385,7 +663,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // PATCH /api/v1/workspaces/:id/members/:userId — change a member's role
   fastify.patch<{ Params: { id: string; userId: string }; Body: { role?: string } }>('/:id/members/:userId', {
-    schema: changeRoleSchema,
+    schema: { ...changeRoleSchema, ...changeRoleMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -410,7 +688,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/workspaces/:id/invites — create (or refresh) an invitation
   fastify.post<{ Params: { id: string }; Body: { email?: string; role?: string } }>('/:id/invites', {
-    schema: createInviteSchema,
+    schema: { ...createInviteSchema, ...createInviteMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -449,7 +727,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/v1/workspaces/:id/invites — list invitations for the workspace
-  fastify.get<{ Params: { id: string } }>('/:id/invites', async (request, reply) => {
+  fastify.get<{ Params: { id: string } }>('/:id/invites', { schema: listInvitesMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const workspaceId = request.params.id;
@@ -469,7 +747,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // DELETE /api/v1/workspaces/:id/invites/:inviteId — revoke a pending invitation
-  fastify.delete<{ Params: { id: string; inviteId: string } }>('/:id/invites/:inviteId', async (request, reply) => {
+  fastify.delete<{ Params: { id: string; inviteId: string } }>('/:id/invites/:inviteId', { schema: revokeInviteMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id, inviteId } = request.params;

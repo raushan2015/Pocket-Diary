@@ -11,6 +11,15 @@ import {
   verifyWorkspaceMembership,
   WorkspaceAccessError,
 } from '../services/workspace.service.js';
+import {
+  SESSION_SECURITY,
+  jsonResponse,
+  errorResponses,
+  ref,
+  refArray,
+  idParam,
+  openapiParams,
+} from '../openapi.js';
 
 interface FolderQuery {
   workspaceId?: string;
@@ -66,6 +75,81 @@ const updateFolderSchema = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// OpenAPI metadata (spec-only; see src/openapi.ts)
+// ---------------------------------------------------------------------------
+
+const folderIdParams = openapiParams({ id: idParam('id', 'Folder id.') }, ['id']);
+const folderErrors = errorResponses([400, 401, 403, 404, 500]);
+
+const listMeta = {
+  tags: ['Folders'],
+  summary: 'List folders',
+  description: 'All folders in the workspace (flat list; the client assembles the tree). Any member may read them.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        { type: 'object', required: ['folders'], properties: { folders: refArray('Folder') } },
+        'Folders in the workspace.',
+      ),
+      ...errorResponses([400, 401, 403, 500]),
+    },
+  },
+};
+
+const createMeta = {
+  tags: ['Folders'],
+  summary: 'Create a folder',
+  description: 'Creates a folder, optionally nested under `parentId`. Hierarchy is validated: no self-parents, cycles or foreign-workspace parents (audit M-4); subfolders detach rather than cascade on parent delete (audit M-5).',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      201: jsonResponse(
+        { type: 'object', required: ['folder'], properties: { folder: ref('Folder') } },
+        'Folder created.',
+      ),
+      ...errorResponses([400, 401, 403, 404, 409, 500]),
+    },
+  },
+};
+
+const updateMeta = {
+  tags: ['Folders'],
+  summary: 'Update a folder',
+  description: 'Rename and/or move the folder. When `workspaceId` is omitted, the folder\'s own workspace is used. Move validation as on create. Restricted to owner/admin/editor.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...folderIdParams,
+    responses: {
+      200: jsonResponse(
+        { type: 'object', required: ['folder'], properties: { folder: ref('Folder') } },
+        'Updated folder.',
+      ),
+      ...folderErrors,
+    },
+  },
+};
+
+const deleteMeta = {
+  tags: ['Folders'],
+  summary: 'Delete a folder',
+  description: 'Deletes the folder. Notes stay put; subfolders are detached to the root. When `workspaceId` is omitted, the folder\'s own workspace is used. Restricted to owner/admin/editor.',
+  security: SESSION_SECURITY,
+  openapi: {
+    ...folderIdParams,
+    querystring: {
+      type: 'object',
+      properties: { workspaceId: { type: 'string', minLength: 1, maxLength: 64, description: 'Workspace id; defaults to the folder\'s own workspace.' } },
+      additionalProperties: false,
+    },
+    responses: {
+      200: jsonResponse(ref('SimpleSuccess'), 'Folder deleted.'),
+      ...folderErrors,
+    },
+  },
+};
+
 export const folderRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
 
@@ -81,7 +165,7 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /api/v1/folders
   fastify.get<{ Querystring: FolderQuery }>('/', {
-    schema: folderQuerySchema,
+    schema: { ...folderQuerySchema, ...listMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -122,7 +206,7 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/folders
   fastify.post<{ Body: CreateFolderBody }>('/', {
-    schema: createFolderSchema,
+    schema: { ...createFolderSchema, ...createMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -167,7 +251,7 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
 
   // PATCH /api/v1/folders/:id
   fastify.patch<{ Params: FolderParams; Body: UpdateFolderBody }>('/:id', {
-    schema: updateFolderSchema,
+    schema: { ...updateFolderSchema, ...updateMeta },
   }, async (request, reply) => {
     try {
       const user = request.user!;
@@ -208,7 +292,7 @@ export const folderRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // DELETE /api/v1/folders/:id
-  fastify.delete<{ Params: FolderParams; Querystring: FolderQuery }>('/:id', async (request, reply) => {
+  fastify.delete<{ Params: FolderParams; Querystring: FolderQuery }>('/:id', { schema: deleteMeta }, async (request, reply) => {
     try {
       const user = request.user!;
       const { id } = request.params;

@@ -4,12 +4,92 @@ import crypto from 'node:crypto';
 import { pushSubscriptions } from '../db/schema.js';
 import { getPushPublicKey } from '../services/push.service.js';
 import { assertPublicHttpUrl, UrlGuardError, UrlResolutionError } from '../services/url-guard.js';
+import {
+  SESSION_SECURITY,
+  jsonResponse,
+  errorResponses,
+  ref,
+} from '../openapi.js';
+
+// ---------------------------------------------------------------------------
+// OpenAPI metadata (spec-only; see src/openapi.ts)
+// ---------------------------------------------------------------------------
+
+const publicKeyMeta = {
+  tags: ['Push'],
+  summary: 'VAPID public key',
+  description: 'The VAPID public key for subscribing this browser to Web Push, or `enabled: false` when push is not configured on the instance.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['enabled', 'publicKey'],
+          properties: {
+            enabled: { type: 'boolean' },
+            publicKey: { type: 'string', nullable: true, description: 'Base64 VAPID public key, or null when push is disabled.' },
+          },
+        },
+        'Push configuration status.',
+      ),
+      ...errorResponses([401, 429]),
+    },
+  },
+};
+
+const subscribeMeta = {
+  tags: ['Push'],
+  summary: 'Subscribe this browser',
+  description: 'Registers (or re-registers) the browser\'s Web Push subscription for the signed-in user. The endpoint must be an https URL resolving to a public address (audit M-10); the stored keys are the standard PushSubscription keys.',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(
+        {
+          type: 'object',
+          required: ['success', 'updated'],
+          properties: {
+            success: { type: 'boolean' },
+            updated: { type: 'boolean', description: 'True when an existing subscription was re-bound to this account.' },
+          },
+        },
+        'Existing subscription updated.',
+      ),
+      201: jsonResponse(
+        {
+          type: 'object',
+          required: ['success', 'updated'],
+          properties: {
+            success: { type: 'boolean' },
+            updated: { type: 'boolean', description: 'False for a new subscription.' },
+          },
+        },
+        'Subscription created.',
+      ),
+      ...errorResponses([400, 401, 429, 500]),
+    },
+  },
+};
+
+const unsubscribeMeta = {
+  tags: ['Push'],
+  summary: 'Unsubscribe',
+  description: 'Removes the browser\'s subscription (used on `pushsubscriptionchange` and sign-out).',
+  security: SESSION_SECURITY,
+  openapi: {
+    responses: {
+      200: jsonResponse(ref('SimpleSuccess'), 'Subscription removed (or already absent).'),
+      ...errorResponses([400, 401, 429]),
+    },
+  },
+};
 
 export const pushRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
 
   // GET /api/v1/push/public-key — VAPID public key (or enabled:false when push is unconfigured)
-  fastify.get('/public-key', async (_request, reply) => {
+  fastify.get('/public-key', { schema: publicKeyMeta }, async (_request, reply) => {
     const publicKey = getPushPublicKey();
     return reply.status(200).send({ enabled: Boolean(publicKey), publicKey: publicKey ?? null });
   });
@@ -17,6 +97,7 @@ export const pushRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/push/subscribe — register this browser for push notifications
   fastify.post<{ Body: { endpoint?: string; keys?: { p256dh?: string; auth?: string } } }>('/subscribe', {
     schema: {
+      ...subscribeMeta,
       body: {
         type: 'object',
         required: ['endpoint', 'keys'],
@@ -103,6 +184,7 @@ export const pushRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /api/v1/push/unsubscribe — remove a subscription (called on pushsubscriptionchange or logout)
   fastify.post<{ Body: { endpoint?: string } }>('/unsubscribe', {
     schema: {
+      ...unsubscribeMeta,
       body: {
         type: 'object',
         required: ['endpoint'],

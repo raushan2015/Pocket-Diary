@@ -180,6 +180,29 @@ npm test
 
 The backend supports environment-based configuration. For local development, check the database configuration and server startup code under `backend/src/`.
 
+### API reference (Swagger/OpenAPI)
+
+The complete API reference is generated from the Fastify route schemas and
+served as Swagger UI at **`/docs`** — reachable both directly on the backend
+port and through the frontend's reverse proxy (`http://your-instance/docs`),
+so it works the same in development and production.
+
+- Every endpoint is documented with its parameters, request body, responses
+  and authentication requirement; cookie-based sessions are declared as the
+  `sessionCookie` security scheme, and public endpoints are marked as such.
+- The raw specification is available at `/docs/json` (and `/docs/yaml`) for
+  client code generation or import into other tools.
+- Documentation is OpenAPI metadata only — Fastify's runtime validation and
+  serialization are untouched, so the docs can never alter API behavior. A
+  regression test (`backend/test/docs.test.ts`) walks real responses against
+  the published schemas to keep the two in sync, and verifies that no
+  configured secret ever appears in the spec.
+- Operators can turn the docs off per instance with `DOCS_ENABLED=false`
+  (the API itself keeps working; see `.env.example`).
+
+The browser suite covers the UI end to end as well: `tests/e2e/21-openapi-docs.test.js`
+loads `/docs` through the reverse proxy and checks the full endpoint inventory renders.
+
 ### Frontend
 
 The frontend is served by the application container in the recommended setup. A lightweight development server is also available:

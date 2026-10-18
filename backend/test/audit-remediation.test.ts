@@ -25,12 +25,18 @@ import { scanDueReminders } from '../src/services/notification.service.js';
 import { createInvite, hashInviteToken, acceptInvite, InviteError, INVITE_EXPIRY_MS } from '../src/services/invite.service.js';
 import type { FastifyInstance } from 'fastify';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 describe('Audit remediation regression tests', () => {
   let app: FastifyInstance;
   let dbCtx: ReturnType<typeof createDatabase>;
+  let storageRoot: string;
 
   beforeEach(async () => {
+    storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'memo-audit-'));
+    process.env.ATTACHMENTS_DIR = storageRoot;
     dbCtx = createDatabase(':memory:');
     app = buildApp({ dbCtx, logger: false });
     await app.ready();
@@ -38,6 +44,8 @@ describe('Audit remediation regression tests', () => {
 
   afterEach(async () => {
     await app.close();
+    delete process.env.ATTACHMENTS_DIR;
+    fs.rmSync(storageRoot, { recursive: true, force: true });
     dbCtx.sqlite.close();
   });
 
@@ -823,6 +831,50 @@ describe('Audit remediation regression tests', () => {
       .prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ?')
       .get(quitter.user.id) as { n: number };
     expect(notifs.n).toBe(0);
+  });
+
+  // ------------------------------------------------------------------ bug found during docs work
+  it('account deletion unlinks the attachment FILES of deleted solo workspaces', async () => {
+    const user = await createTestUser(app, 'orphan@example.com', 'Orphan');
+    const memoRes = await app.inject({
+      method: 'POST', url: '/api/v1/memos',
+      headers: { cookie: user.cookieHeader },
+      payload: { workspaceId: user.workspace.id, title: 'With file', content: '' },
+    });
+    expect(memoRes.statusCode).toBe(201);
+    const memoId = memoRes.json().memo.id;
+
+    // Real PNG magic bytes (uploads are magic-byte validated, audit L-6)
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('orphan cleanup fixture')]);
+    const boundary = 'orphan-boundary';
+    const uploadBody = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n`),
+      png,
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    const upload = await app.inject({
+      method: 'POST', url: `/api/v1/attachments/memo/${memoId}`,
+      headers: { cookie: user.cookieHeader, 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: uploadBody,
+    });
+    expect(upload.statusCode).toBe(201);
+    const storedPath = dbCtx.sqlite
+      .prepare('SELECT storage_path FROM attachments WHERE memo_id = ?')
+      .get(memoId) as { storage_path: string };
+    expect(fs.existsSync(storedPath.storage_path)).toBe(true);
+
+    // Delete the account: the workspace (and its attachment rows) cascade away
+    // inside the transaction — the route must have collected the file path
+    // BEFORE deleting, or the file would be orphaned on disk forever.
+    const del = await app.inject({
+      method: 'DELETE', url: '/api/v1/auth/account',
+      headers: { cookie: user.cookieHeader },
+      payload: { currentPassword: 'Password123!' },
+    });
+    expect(del.statusCode).toBe(200);
+    expect(fs.existsSync(storedPath.storage_path)).toBe(false);
+    const leftovers = fs.readdirSync(storageRoot);
+    expect(leftovers, 'no attachment directories may remain').toEqual([]);
   });
 
   // ------------------------------------------------------------------ M-17 (backend passthrough)
