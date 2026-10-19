@@ -283,15 +283,61 @@
 }
 
 @media (max-width: 860px) {
+  .auth-view-container {
+    min-height: calc(100dvh - 70px);
+    padding: 1.25rem 1rem 2rem;
+    align-items: flex-start;
+  }
   .auth-split-card {
     flex-direction: column;
-    max-width: 500px;
-  }
-  .auth-brand-column {
-    display: none;
+    max-width: 480px;
+    min-height: 0;
   }
   .auth-form-column {
-    padding: 2.5rem 1.5rem;
+    padding: 1.75rem 1.35rem;
+  }
+  .auth-form-header {
+    margin-bottom: 1.35rem;
+  }
+  .auth-title {
+    font-size: 1.65rem;
+  }
+  .auth-submit-btn {
+    margin-bottom: 1.25rem;
+  }
+  .auth-brand-column {
+    padding: 1.35rem 1.25rem;
+  }
+  .auth-brand-logo-large {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 0.65rem;
+  }
+  .auth-brand-logo-large img {
+    width: 38px;
+    height: 38px;
+  }
+  .auth-brand-title {
+    font-size: 1.15rem;
+    margin-bottom: 0.3rem;
+  }
+  .auth-brand-tagline {
+    font-size: 0.82rem;
+    margin-bottom: 1rem;
+  }
+  .auth-brand-features-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem 0.75rem;
+    max-width: 100%;
+  }
+  .auth-brand-feature-item {
+    font-size: 0.78rem;
+    gap: 0.45rem;
+  }
+  .auth-feature-check-icon {
+    width: 18px;
+    height: 18px;
   }
 }
 

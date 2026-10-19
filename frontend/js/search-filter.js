@@ -137,6 +137,9 @@ export function setFilter(type, value = null) {
     document.getElementById(`side-nav-folder-${value}`)?.classList.add('active');
   }
 
+  // Toggle dashboard overview mode (shows KPI cards, hero header, 2-column grid with calendar & reminders)
+  document.getElementById('view-dashboard')?.classList.toggle('dashboard-overview-mode', type === 'dashboard');
+
   const searchInput = document.getElementById('global-search-input');
   if (searchInput && state.get('searchQuery')) {
     searchInput.value = '';
@@ -226,7 +229,10 @@ export async function filterAndRenderMemos() {
       const folder = (state.get('folders') || []).find((item) => item.id === filter.value);
       filterHeading = `Folder: ${folder?.name || 'Unknown'}`;
       bannerText = `Filtered by Folder: ${folder?.name || 'Unknown'}`;
-    } else if (filter.type === 'dashboard' || filter.type === 'all' || filter.type === 'notes') {
+    } else if (filter.type === 'dashboard') {
+      filterHeading = 'Recent Memos';
+      bannerText = '';
+    } else if (filter.type === 'all' || filter.type === 'notes') {
       filterHeading = 'Notes';
       bannerText = '';
     }
@@ -299,4 +305,16 @@ export async function filterAndRenderMemos() {
   });
 
   renderMemos(filtered, filterHeading, bannerText);
+
+  // Sync mobile quick filter tabs
+  const mobileTabs = document.querySelectorAll('.mobile-filter-tab');
+  if (mobileTabs.length) {
+    mobileTabs.forEach((tab) => {
+      const tabFilter = tab.getAttribute('data-mobile-filter');
+      const isActive = (tabFilter === 'favorite' && filter.type === 'favorites')
+        || (tabFilter === 'pending' && statusFilter.toLowerCase() === 'pending')
+        || (tabFilter === 'all' && filter.type !== 'favorites' && statusFilter.toLowerCase() !== 'pending');
+      tab.classList.toggle('active', isActive);
+    });
+  }
 }

@@ -102,14 +102,18 @@ export function renderMemos(memoList, customHeading = null, bannerMessage = null
 
   if (emptyStateEl) emptyStateEl.style.display = 'none';
 
-  if (viewMode === 'grid') {
+  const filterType = state.get('activeFilter')?.type || 'all';
+  const effectiveViewMode = filterType === 'dashboard' ? 'list' : viewMode;
+
+  if (effectiveViewMode === 'grid') {
     if (gridContainer) gridContainer.style.display = 'grid';
     if (listContainer) listContainer.style.display = 'none';
     renderCardGridView(memoList, gridContainer, isTrash);
   } else {
     if (gridContainer) gridContainer.style.display = 'none';
     if (listContainer) listContainer.style.display = 'flex';
-    renderListView(memoList, listContainer, isTrash);
+    const displayMemos = filterType === 'dashboard' ? memoList.slice(0, 5) : memoList;
+    renderListView(displayMemos, listContainer, isTrash, filterType === 'dashboard');
   }
   updateLoadMoreUi();
 }
@@ -290,6 +294,7 @@ export function renderListView(memos, container, isTrash, skipPinnedGrouping = f
   }
   container.innerHTML = memos.map((memo) => {
     const categoryName = memo.category?.name || memo.category || 'General';
+    const categoryColor = memo.category?.color || '#3b82f6';
     const isPinned = !!memo.isPinned;
     const isFavorite = !!memo.isFavorite;
     const isArchived = !!memo.isArchived;
@@ -297,7 +302,7 @@ export function renderListView(memos, container, isTrash, skipPinnedGrouping = f
     return `
       <div class="memo-row-item" data-memo-id="${memo.id}">
         <div class="memo-row-main">
-          <div class="memo-item-icon-box" style="background-color: var(--color-primary-50); color: var(--color-primary-600);">
+          <div class="memo-item-icon-box" style="background-color: ${categoryColor}18; color: ${categoryColor};">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>
@@ -315,6 +320,8 @@ export function renderListView(memos, container, isTrash, skipPinnedGrouping = f
 
         <div class="memo-row-meta">
           <span class="badge badge-${categoryName.toLowerCase()}">${escapeHtml(categoryName)}</span>
+          ${memo.priority && memo.priority !== 'none' && memo.priority !== 'medium' ? `<span class="badge badge-priority-${memo.priority}">${escapeHtml(memo.priority)}</span>` : ''}
+          <span class="memo-row-time">${formatRelativeTime(memo.updatedAt || memo.createdAt)}</span>
 
           ${!isTrash ? `
             <button class="memo-action-icon-btn ${isFavorite ? 'active' : ''}" data-action="fav" data-id="${memo.id}">
@@ -630,4 +637,22 @@ export function renderUpcomingReminders() {
     item.addEventListener('click', () => openKeepNoteModal(memo, { onChanged: () => { import('./search-filter.js').then(m => m.filterAndRenderMemos()); } }));
     container.append(item);
   }
+}
+
+export function formatRelativeTime(timestamp) {
+  if (!timestamp) return '';
+  const now = Date.now();
+  const diff = now - Number(timestamp);
+  if (diff < 0) return 'just now';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours === 1) return '1 hour ago';
+  if (hours < 24) return `${hours} hours ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return '1 day ago';
+  if (days < 30) return `${days} days ago`;
+  const date = new Date(Number(timestamp));
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }

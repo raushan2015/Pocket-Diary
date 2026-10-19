@@ -7,7 +7,7 @@
  * outlive the assets it references.
  */
 
-const CACHE_NAME = 'notes-v2';
+const CACHE_NAME = 'notes-v3';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',

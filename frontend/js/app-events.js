@@ -18,6 +18,7 @@ import {
 } from './auth.js';
 import { refreshWorkspaceMemos, updateDashboardDateBadge, loadMoreMemos } from './workspace-data.js';
 import { setFilter, filterAndRenderMemos } from './search-filter.js';
+import { renderUpcomingReminders } from './memo-renderer.js';
 import {
   renderSidebarCategories,
   renderSidebarTags,
@@ -105,100 +106,369 @@ export function setupEventListeners() {
   document.getElementById('nav-register-btn')?.addEventListener('click', () => navigateTo('auth', { mode: 'register' }));
   document.getElementById('hero-get-started-btn')?.addEventListener('click', () => navigateTo('auth', { mode: 'register' }));
   document.getElementById('hero-live-demo-btn')?.addEventListener('click', () => {
-    const demoUser = { id: 'demo-user-1', name: 'Alex Explorer', email: 'alex.demo@notesapp.internal' };
-    const demoWorkspace = { id: 'demo-ws-1', name: 'Product Engineering Squad', slug: 'product-engineering', role: 'owner' };
+    const demoUser = { id: 'demo-user-1', name: 'Alex', email: 'alex.morgan@memomanager.local' };
+    const demoWorkspaces = [
+      { id: 'demo-ws-personal', name: 'Personal', slug: 'personal', role: 'owner' },
+      { id: 'demo-ws-work', name: 'Work', slug: 'work', role: 'member' }
+    ];
     const now = Date.now();
     const demoMemos = [
       {
         id: 'demo-memo-1',
-        title: 'Welcome to Notes ✨',
-        content: '# Getting Started with Notes\n\nWelcome to your modern Google Keep workspace!\n\n- [x] Full-text search with SQLite FTS5\n- [x] 12 Keep Pastel Background Colors & Themes\n- [x] In-place elevated note editing modal\n- [x] Quick capture bar with 1-click list, draw, image, voice\n\nAll your notes save automatically as you type.',
+        title: 'Project Planning',
+        content: '# Q4 Project Planning\n\nThis is an important project for Q4. Need to focus on core features and prepare for launch.\n\n- [x] Complete inventory module\n- [x] Mobile app improvements\n- [x] Marketing website design\n- [ ] Prepare demo for client\n- [ ] Review security checklist\n\nWeekly cadence and design sprint sync scheduled with the engineering squad.',
         noteType: 'checklist',
         checklistData: [
-          { id: 'c1', text: 'Full-text search with SQLite FTS5', checked: true },
-          { id: 'c2', text: '12 Keep Pastel Background Colors & Themes', checked: true },
-          { id: 'c3', text: 'In-place elevated note editing modal', checked: true },
-          { id: 'c4', text: 'Quick capture bar with 1-click list, draw, image, voice', checked: false }
+          { id: 'c1', text: 'Complete inventory module', checked: true },
+          { id: 'c2', text: 'Mobile app improvements', checked: true },
+          { id: 'c3', text: 'Marketing website design', checked: true },
+          { id: 'c4', text: 'Prepare demo for client', checked: false },
+          { id: 'c5', text: 'Review security checklist', checked: false }
         ],
         color: 'yellow',
         theme: 'none',
-        status: 'in_progress',
+        status: 'pending',
         priority: 'high',
         isPinned: true,
         isFavorite: true,
-        dueDate: now + 2 * 86400000,
-        createdAt: now - 3600000,
-        updatedAt: now,
-        workspaceId: 'demo-ws-1',
-        tags: ['getting-started', 'welcome'],
+        dueDate: now + 5 * 86400000,
+        createdAt: now - 7200000,
+        updatedAt: now - 3600000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['project', 'planning', 'q4'],
         category: { id: 'cat-1', name: 'Work', color: '#3b82f6' },
       },
       {
         id: 'demo-memo-2',
-        title: 'Grocery Run 🛒',
-        content: 'Almond milk, organic sourdough, fresh berries, Greek yogurt.',
-        noteType: 'checklist',
-        checklistData: [
-          { id: 'g1', text: 'Almond milk', checked: true },
-          { id: 'g2', text: 'Organic sourdough bread', checked: true },
-          { id: 'g3', text: 'Fresh berries (strawberries & blueberries)', checked: false },
-          { id: 'g4', text: 'Greek yogurt (plain 0%)', checked: false }
-        ],
-        color: 'teal',
-        theme: 'grocery',
+        title: 'Study Notes - Japanese',
+        content: '# JLPT N3 Grammar & Vocabulary\n\nGrammar points to review this week:\n- ～に対して (in contrast to / towards)\n- ～わけにはいかない (cannot afford to)\n- ～をはじめ (starting with / such as)\n\nPractice reading NHK News Web Easy articles daily for 20 minutes.',
+        noteType: 'text',
+        color: 'orange',
+        theme: 'none',
         status: 'pending',
         priority: 'medium',
-        isPinned: false,
+        isPinned: true,
         isFavorite: true,
-        dueDate: now + 4 * 86400000,
-        createdAt: now - 7200000,
-        updatedAt: now - 1800000,
-        workspaceId: 'demo-ws-1',
-        tags: ['shopping', 'home'],
-        category: { id: 'cat-3', name: 'Personal', color: '#10b981' },
+        dueDate: now + 3 * 86400000,
+        createdAt: now - 18000000,
+        updatedAt: now - 7200000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['study', 'japanese', 'jlpt'],
+        category: { id: 'cat-4', name: 'Study', color: '#f97316' },
       },
       {
         id: 'demo-memo-3',
-        title: 'Sprint Retrospective Notes 📋',
-        content: 'Team retro points:\n1. Delivered Google Keep alternative note UX\n2. Streamlined categories and labels editing\n3. Responsive layouts on mobile and desktop',
+        title: 'Shopping List',
+        content: 'Weekly groceries and pantry essentials:\n- [x] Almond milk (unsweetened)\n- [x] Organic sourdough bread\n- [x] Fresh blueberries & strawberries\n- [x] Greek yogurt (plain 0%)\n- [ ] Chia seeds\n- [ ] Olive oil extra virgin',
+        noteType: 'checklist',
+        checklistData: [
+          { id: 'g1', text: 'Almond milk (unsweetened)', checked: true },
+          { id: 'g2', text: 'Organic sourdough bread', checked: true },
+          { id: 'g3', text: 'Fresh blueberries & strawberries', checked: true },
+          { id: 'g4', text: 'Greek yogurt (plain 0%)', checked: true },
+          { id: 'g5', text: 'Chia seeds', checked: false },
+          { id: 'g6', text: 'Olive oil extra virgin', checked: false }
+        ],
+        color: 'teal',
+        theme: 'grocery',
+        status: 'completed',
+        priority: 'medium',
+        isPinned: false,
+        isFavorite: false,
+        dueDate: now - 3600000,
+        createdAt: now - 86400000,
+        updatedAt: now - 1800000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['shopping', 'personal'],
+        category: { id: 'cat-3', name: 'Personal', color: '#10b981' },
+      },
+      {
+        id: 'demo-memo-4',
+        title: 'Server Setup Guide',
+        content: '# Ubuntu 24.04 Production Hardening\n\nKey configuration commands:\n```bash\nsudo ufw default deny incoming\nsudo ufw default allow outgoing\nsudo ufw allow ssh\nsudo ufw allow http\nsudo ufw allow https\nsudo ufw enable\n```\nConfigure unattended-upgrades and set up fail2ban.',
         noteType: 'text',
         color: 'blue',
+        theme: 'none',
+        status: 'completed',
+        priority: 'high',
+        isPinned: false,
+        isFavorite: false,
+        dueDate: now - 86400000,
+        createdAt: now - 2 * 86400000,
+        updatedAt: now - 86400000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['devops', 'server', 'linux'],
+        category: { id: 'cat-1', name: 'Work', color: '#3b82f6' },
+      },
+      {
+        id: 'demo-memo-5',
+        title: 'Design Inspiration',
+        content: 'UI/UX ideas for modern dashboards and card interactions:\n- Clean glassmorphism backdrop with subtle blur\n- Pastel badge tags with high contrast font colors\n- Fluid clamp scaling for hero visual mockups\n- Micro-interactions on button hover and tap states',
+        noteType: 'text',
+        color: 'purple',
+        theme: 'none',
+        status: 'pending',
+        priority: 'low',
+        isPinned: false,
+        isFavorite: true,
+        dueDate: null,
+        createdAt: now - 3 * 86400000,
+        updatedAt: now - 2 * 86400000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['design', 'ui-ux', 'inspiration'],
+        category: { id: 'cat-5', name: 'Design', color: '#ec4899' },
+      },
+      {
+        id: 'demo-memo-6',
+        title: 'Submit college assignment',
+        content: 'Final project submission for Distributed Systems course.\nEnsure test coverage is 95%+, all docker-compose scripts run out of the box, and the architectural report is exported to PDF.',
+        noteType: 'text',
+        color: 'red',
+        theme: 'none',
+        status: 'pending',
+        priority: 'high',
+        isPinned: false,
+        isFavorite: true,
+        dueDate: now + 3600000 * 2,
+        reminderTime: now + 3600000 * 2,
+        createdAt: now - 12000000,
+        updatedAt: now - 3600000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['study', 'assignment', 'deadline'],
+        category: { id: 'cat-4', name: 'Study', color: '#f97316' },
+      },
+      {
+        id: 'demo-memo-7',
+        title: 'Buy server SSD',
+        content: 'Order replacement high-endurance 2TB NVMe PCIe 4.0 SSD for internal staging server.\nCompare Kingston KC3000 vs Samsung 990 Pro prices.',
+        noteType: 'text',
+        color: 'gray',
+        theme: 'none',
+        status: 'pending',
+        priority: 'medium',
+        isPinned: false,
+        isFavorite: false,
+        dueDate: now + 86400000,
+        reminderTime: now + 86400000,
+        createdAt: now - 18000000,
+        updatedAt: now - 7200000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['hardware', 'procurement', 'server'],
+        category: { id: 'cat-1', name: 'Work', color: '#3b82f6' },
+      },
+      {
+        id: 'demo-memo-8',
+        title: 'Japanese class',
+        content: 'Live speaking session with Sensei Tanaka on Zoom.\nTopic: Describing software development workflows and agile sprint terminology in polite keigo.',
+        noteType: 'text',
+        color: 'pink',
+        theme: 'none',
+        status: 'pending',
+        priority: 'high',
+        isPinned: false,
+        isFavorite: true,
+        dueDate: now + 2 * 86400000,
+        reminderTime: now + 2 * 86400000,
+        createdAt: now - 24000000,
+        updatedAt: now - 12000000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['study', 'japanese'],
+        category: { id: 'cat-4', name: 'Study', color: '#f97316' },
+      },
+      {
+        id: 'demo-memo-9',
+        title: 'Q4 Budget & Forecast',
+        content: 'Review infrastructure cost estimates for Q4:\n- GCE / Cloud instances: $350/mo\n- S3 / Storage egress: $80/mo\n- Domain renewals & SSL certs: $45\n\nTotal allocated buffer: $2,500.',
+        noteType: 'text',
+        color: 'yellow',
+        theme: 'none',
+        status: 'completed',
+        priority: 'high',
+        isPinned: false,
+        isFavorite: false,
+        dueDate: now - 86400000 * 2,
+        createdAt: now - 4 * 86400000,
+        updatedAt: now - 86400000 * 2,
+        workspaceId: 'demo-ws-personal',
+        tags: ['finance', 'budget', 'q4'],
+        category: { id: 'cat-1', name: 'Work', color: '#3b82f6' },
+      },
+      {
+        id: 'demo-memo-10',
+        title: 'Book Reading List 2026',
+        content: '- [x] Designing Data-Intensive Applications by Martin Kleppmann\n- [x] Understanding Distributed Systems by Roberto Vitillo\n- [ ] Database Internals by Alex Petrov\n- [ ] Staff Engineer by Will Larson',
+        noteType: 'checklist',
+        checklistData: [
+          { id: 'b1', text: 'Designing Data-Intensive Applications by Martin Kleppmann', checked: true },
+          { id: 'b2', text: 'Understanding Distributed Systems by Roberto Vitillo', checked: true },
+          { id: 'b3', text: 'Database Internals by Alex Petrov', checked: false },
+          { id: 'b4', text: 'Staff Engineer by Will Larson', checked: false }
+        ],
+        color: 'teal',
+        theme: 'none',
+        status: 'completed',
+        priority: 'low',
+        isPinned: false,
+        isFavorite: false,
+        dueDate: null,
+        createdAt: now - 5 * 86400000,
+        updatedAt: now - 2 * 86400000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['books', 'learning', 'personal'],
+        category: { id: 'cat-3', name: 'Personal', color: '#10b981' },
+      },
+      {
+        id: 'demo-memo-11',
+        title: 'Home Renovation Ideas',
+        content: 'Smart workspace upgrade checklist:\n- [x] Height-adjustable dual-motor standing desk\n- [x] Monitor arm with cable conduit\n- [ ] Philips Hue smart ambient lightstrip\n- [ ] Acoustic foam panels for home office podcast corner',
+        noteType: 'checklist',
+        checklistData: [
+          { id: 'h1', text: 'Height-adjustable dual-motor standing desk', checked: true },
+          { id: 'h2', text: 'Monitor arm with cable conduit', checked: true },
+          { id: 'h3', text: 'Philips Hue smart ambient lightstrip', checked: false },
+          { id: 'h4', text: 'Acoustic foam panels for home office podcast corner', checked: false }
+        ],
+        color: 'brown',
+        theme: 'none',
+        status: 'pending',
+        priority: 'medium',
+        isPinned: false,
+        isFavorite: false,
+        dueDate: now + 7 * 86400000,
+        createdAt: now - 3 * 86400000,
+        updatedAt: now - 86400000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['home', 'workspace', 'renovation'],
+        category: { id: 'cat-3', name: 'Personal', color: '#10b981' },
+      },
+      {
+        id: 'demo-memo-12',
+        title: 'API Architecture Specs',
+        content: '# Memo Manager Backend API\n\n- OpenAPI 3.1 Swagger docs reachable at `/docs`\n- Rate limiting at 300 req/min with trusted proxy evaluation\n- Content Security Policy locked to `default-src \'self\'`\n- SQLite WAL journaling with FTS5 search index',
+        noteType: 'text',
+        color: 'darkblue',
+        theme: 'none',
+        status: 'completed',
+        priority: 'high',
+        isPinned: false,
+        isFavorite: false,
+        dueDate: null,
+        createdAt: now - 6 * 86400000,
+        updatedAt: now - 3 * 86400000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['api', 'architecture', 'backend'],
+        category: { id: 'cat-2', name: 'Engineering', color: '#8b5cf6' },
+      },
+      {
+        id: 'demo-memo-13',
+        title: 'Workout Routine & Fitness',
+        content: 'Weekly fitness milestones:\n- [x] Monday: 5km morning run + core stability\n- [x] Wednesday: Upper body push/pull compound lifts\n- [x] Friday: Leg day squats and lunges\n- [x] Sunday: 45 min recovery mobility & stretching',
+        noteType: 'checklist',
+        checklistData: [
+          { id: 'w1', text: 'Monday: 5km morning run + core stability', checked: true },
+          { id: 'w2', text: 'Wednesday: Upper body push/pull compound lifts', checked: true },
+          { id: 'w3', text: 'Friday: Leg day squats and lunges', checked: true },
+          { id: 'w4', text: 'Sunday: 45 min recovery mobility & stretching', checked: true }
+        ],
+        color: 'green',
         theme: 'none',
         status: 'completed',
         priority: 'medium',
         isPinned: false,
         isFavorite: false,
-        dueDate: now - 86400000,
-        createdAt: now - 86400000,
-        updatedAt: now - 3600000,
-        workspaceId: 'demo-ws-1',
-        tags: ['meeting', 'sprint'],
-        category: { id: 'cat-2', name: 'Engineering', color: '#8b5cf6' },
+        dueDate: null,
+        createdAt: now - 4 * 86400000,
+        updatedAt: now - 86400000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['fitness', 'health', 'workout'],
+        category: { id: 'cat-3', name: 'Personal', color: '#10b981' },
+      },
+      {
+        id: 'demo-memo-14',
+        title: 'Customer Feedback Summary',
+        content: 'User feedback highlights from 50 beta test sessions:\n1. Loved the pastel Google Keep aesthetic and fast search.\n2. Tablet drawer auto-close on backdrop tap received great praise.\n3. Mobile navigation is smooth and distraction-free.',
+        noteType: 'text',
+        color: 'yellow',
+        theme: 'none',
+        status: 'completed',
+        priority: 'medium',
+        isPinned: false,
+        isFavorite: false,
+        dueDate: null,
+        createdAt: now - 5 * 86400000,
+        updatedAt: now - 86400000,
+        workspaceId: 'demo-ws-personal',
+        tags: ['feedback', 'product', 'ux'],
+        category: { id: 'cat-1', name: 'Work', color: '#3b82f6' },
       },
     ];
 
-    state.setUser(demoUser, [demoWorkspace], demoWorkspace);
+    state.setUser(demoUser, demoWorkspaces, demoWorkspaces[0]);
     state.set('allWorkspaceMemos', demoMemos);
     state.set('categories', [
       { id: 'cat-1', name: 'Work', color: '#3b82f6' },
       { id: 'cat-2', name: 'Engineering', color: '#8b5cf6' },
       { id: 'cat-3', name: 'Personal', color: '#10b981' },
+      { id: 'cat-4', name: 'Study', color: '#f97316' },
+      { id: 'cat-5', name: 'Design', color: '#ec4899' },
     ]);
-    state.set('tags', [{ id: 't-1', name: 'getting-started' }, { id: 't-2', name: 'shopping' }, { id: 't-3', name: 'meeting' }]);
-    state.set('folders', [{ id: 'f-1', name: 'Sprint Memos' }]);
+    state.set('tags', [
+      { id: 't-1', name: 'project' },
+      { id: 't-2', name: 'planning' },
+      { id: 't-3', name: 'q4' },
+      { id: 't-4', name: 'study' },
+      { id: 't-5', name: 'japanese' },
+      { id: 't-6', name: 'shopping' },
+      { id: 't-7', name: 'devops' },
+      { id: 't-8', name: 'design' },
+      { id: 't-9', name: 'budget' }
+    ]);
+    state.set('folders', [
+      { id: 'f-1', name: 'Projects' },
+      { id: 'f-2', name: 'Personal' }
+    ]);
     state.updateKpisFromMemos(demoMemos);
 
     renderSidebarCategories(state.get('categories'));
     renderSidebarTags(state.get('tags'));
     renderSidebarFolders(state.get('folders'));
+    renderWorkspacesList(demoWorkspaces);
     updateSidebarBadges();
     updateDashboardDateBadge();
-    filterAndRenderMemos();
+    setFilter('dashboard');
+    renderInteractiveCalendar();
+    renderUpcomingReminders();
 
     navigateTo('dashboard');
-    showToast('Loaded interactive demo workspace with sample Keep notes!', 'success', 3000);
+    showToast('Loaded interactive demo workspace with sample memos!', 'success', 3000);
   });
   document.getElementById('bottom-cta-btn')?.addEventListener('click', () => navigateTo('auth', { mode: 'register' }));
+
+  // Landing navbar "Resources" dropdown (FAQ, API docs, GitHub).
+  const resourcesToggle = document.getElementById('nav-resources-link');
+  const resourcesMenu = document.getElementById('nav-resources-menu');
+  if (resourcesToggle && resourcesMenu) {
+    const setResourcesOpen = (open) => {
+      resourcesMenu.hidden = !open;
+      resourcesToggle.setAttribute('aria-expanded', String(open));
+    };
+    resourcesToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setResourcesOpen(resourcesMenu.hidden);
+    });
+    resourcesMenu.addEventListener('click', (e) => {
+      if (e.target.closest('.nav-dropdown-item')) setResourcesOpen(false);
+    });
+    document.addEventListener('click', (e) => {
+      if (!resourcesMenu.hidden && !e.target.closest('#nav-resources-dropdown')) setResourcesOpen(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !resourcesMenu.hidden) {
+        setResourcesOpen(false);
+        resourcesToggle.focus();
+      }
+    });
+  }
 
   document.getElementById('auth-switch-btn')?.addEventListener('click', () => {
     const currentMode = state.get('authMode') || 'login';
@@ -510,8 +780,27 @@ export function setupEventListeners() {
   };
 
   document.getElementById('dashboard-new-memo-btn')?.addEventListener('click', createNewMemoHandler);
+  document.getElementById('hero-new-memo-btn')?.addEventListener('click', createNewMemoHandler);
   document.getElementById('empty-state-action-btn')?.addEventListener('click', createNewMemoHandler);
   document.getElementById('mob-nav-create')?.addEventListener('click', createNewMemoHandler);
+
+  // Mobile quick filter tabs
+  document.querySelectorAll('.mobile-filter-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const tabFilter = tab.getAttribute('data-mobile-filter');
+      const statusSelect = document.getElementById('filter-status-select');
+      if (tabFilter === 'favorite') {
+        if (statusSelect) statusSelect.value = '';
+        setFilter('favorites');
+      } else if (tabFilter === 'pending') {
+        if (statusSelect) statusSelect.value = 'pending';
+        setFilter('all');
+      } else {
+        if (statusSelect) statusSelect.value = '';
+        setFilter('all');
+      }
+    });
+  });
 
   // Editor Actions
   document.getElementById('editor-back-btn')?.addEventListener('click', async () => {

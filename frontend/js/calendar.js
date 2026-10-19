@@ -11,9 +11,9 @@ export let currentCalMonth = new Date().getMonth();
 export function setCalYear(y) { currentCalYear = y; }
 export function setCalMonth(m) { currentCalMonth = m; }
 
-export function renderInteractiveCalendar(year, month, onSelectDate = null) {
+export function renderInteractiveCalendar(year = currentCalYear, month = currentCalMonth, onSelectDate = null) {
   const titleEl = document.getElementById('calendar-month-title');
-  const grid = document.querySelector('.calendar-days-grid');
+  const grid = document.querySelector('.calendar-grid') || document.querySelector('.calendar-days-grid');
   if (!grid) return;
 
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -21,7 +21,7 @@ export function renderInteractiveCalendar(year, month, onSelectDate = null) {
     titleEl.textContent = `${monthNames[month]} ${year}`;
   }
 
-  const staticHeaders = Array.from(grid.querySelectorAll('.calendar-day-header'));
+  const staticHeaders = Array.from(grid.querySelectorAll('.calendar-day-name, .calendar-day-header'));
   grid.replaceChildren(...staticHeaders);
 
   const allMemos = state.get('allWorkspaceMemos') || [];

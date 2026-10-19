@@ -105,7 +105,7 @@ export async function loadMoreMemos() {
 
 export async function fetchWorkspaceData() {
   const activeWs = state.get('activeWorkspace');
-  if (!activeWs || !activeWs.id) return;
+  if (!activeWs || !activeWs.id || String(activeWs.id).startsWith('demo-')) return;
 
   state.set('isLoadingMemos', true);
 

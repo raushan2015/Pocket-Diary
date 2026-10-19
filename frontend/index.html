@@ -44,11 +44,11 @@
         </svg>
       </button>
       <!-- Left: Logo & Brand -->
-      <div class="navbar-brand-section" id="nav-brand-btn" role="button" tabindex="0" title="Notes Home">
+      <div class="navbar-brand-section" id="nav-brand-btn" role="button" tabindex="0" title="Memo Manager Home">
         <div class="brand-logo-icon">
-          <img class="brand-logo-img" src="icons/logo-96.png" alt="Notes" width="38" height="38">
+          <img class="brand-logo-img" src="icons/logo-96.png" alt="Memo Manager" width="38" height="38">
         </div>
-        <span class="brand-title">Notes</span>
+        <span class="brand-title">Memo Manager</span>
       </div>
 
       <!-- Center: Landing Navigation Links (Visible on Landing View) -->
@@ -56,7 +56,26 @@
         <a class="nav-link" href="#features" id="nav-features-link">Features</a>
         <a class="nav-link" href="#pricing" id="nav-pricing-link">Pricing</a>
         <a class="nav-link" href="#solutions" id="nav-solutions-link">Solutions</a>
-        <a class="nav-link" href="#resources" id="nav-resources-link">Resources</a>
+        <div class="nav-dropdown" id="nav-resources-dropdown">
+          <button type="button" class="nav-link nav-dropdown-toggle" id="nav-resources-link" aria-haspopup="true" aria-expanded="false" aria-controls="nav-resources-menu">
+            Resources
+            <svg class="nav-dropdown-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="nav-dropdown-menu" id="nav-resources-menu" role="menu" hidden>
+            <a class="nav-dropdown-item" role="menuitem" href="#resources">
+              <span class="nav-dropdown-item-title">Help &amp; FAQ</span>
+              <span class="nav-dropdown-item-desc">Guides, migration and data security</span>
+            </a>
+            <a class="nav-dropdown-item" role="menuitem" href="/docs" target="_blank" rel="noopener">
+              <span class="nav-dropdown-item-title">API Documentation</span>
+              <span class="nav-dropdown-item-desc">OpenAPI / Swagger reference</span>
+            </a>
+            <a class="nav-dropdown-item" role="menuitem" href="https://github.com/raushan2015/notes" target="_blank" rel="noopener">
+              <span class="nav-dropdown-item-title">GitHub Repository</span>
+              <span class="nav-dropdown-item-desc">Source code &amp; self-hosting</span>
+            </a>
+          </div>
+        </div>
       </nav>
 
       <!-- Center: App Search Bar (Visible on Dashboard View) -->
@@ -96,8 +115,8 @@
 
         <!-- Unauthenticated Actions -->
         <div class="nav-unauth-actions" id="nav-unauth-actions" style="display: flex; align-items: center; gap: 0.5rem;">
-          <button class="btn btn-outline btn-sm" id="nav-login-btn">Sign In</button>
-          <button class="btn btn-primary btn-sm" id="nav-register-btn">Get Started</button>
+          <button class="btn btn-ghost btn-sm nav-login-link" id="nav-login-btn">Login</button>
+          <button class="btn btn-primary btn-sm nav-get-started-btn" id="nav-register-btn">Get Started</button>
         </div>
 
         <!-- Authenticated Actions -->
@@ -171,74 +190,138 @@
 
     <!-- ==========================================================================
          VIEW 1: Marketing / Landing Page
-         Source: frontend.PNG (Hero, Platform Trust, 8 Features, Conversion Banner)
+         Source: landing-page.PNG (Hero + product preview, Platform Trust, 8 Features, Conversion Banner)
          ========================================================================== -->
     <main class="view-container active" id="view-landing">
       <div class="landing-page">
+        <!-- Hero Backdrop: soft gradient band wrapping hero + platform trust row (landing-page.PNG) -->
+        <div class="hero-backdrop">
         <!-- Hero Section -->
         <section class="hero-section">
-          <h1 class="hero-headline">
-            Your Ideas, Notes and Tasks <span class="hero-gradient-text">All in One Place</span>
-          </h1>
-          <p class="hero-subhead">
-            A lightning-fast, secure, and beautiful workspace for capturing memos, organizing projects, and syncing effortlessly across all your devices.
-          </p>
+          <div class="hero-copy">
+            <h1 class="hero-headline">
+              <span class="hero-line">Your Ideas,</span> <span class="hero-line">Notes and Tasks</span> <span class="hero-line">All in <span class="hero-gradient-text">One Place</span></span>
+            </h1>
+            <p class="hero-subhead">
+              A modern, secure and easy-to-use memo application to capture ideas, organize your work, and stay productive anywhere. Available on web, mobile and desktop.
+            </p>
 
-          <!-- Call to Actions -->
-          <div class="hero-cta-group">
-            <button class="btn btn-primary btn-lg" id="hero-get-started-btn">
-              Get Started Free &rarr;
-            </button>
-            <button class="btn btn-outline btn-lg" id="hero-live-demo-btn">
-              Live Demo
-            </button>
-          </div>
+            <!-- Call to Actions -->
+            <div class="hero-cta-group">
+              <button class="btn btn-primary btn-lg hero-cta-primary" id="hero-get-started-btn">
+                Get Started Free
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+              </button>
+              <button class="btn btn-lg hero-cta-secondary" id="hero-live-demo-btn">
+                Live Demo
+              </button>
+            </div>
 
-          <!-- Trust Badges -->
-          <div class="hero-trust-badges">
-            <div class="trust-badge-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              <span>Free Plan Available</span>
-            </div>
-            <div class="trust-badge-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              <span>Works on All Devices</span>
-            </div>
-            <div class="trust-badge-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              <span>Your Data is Private</span>
-            </div>
-          </div>
-
-          <!-- Interactive Mockup Graphic Frame -->
-          <div class="hero-mockup-container">
-            <div class="mockup-inner-frame">
-              <div class="mockup-top-bar">
-                <div class="mockup-window-dot mockup-dot-red"></div>
-                <div class="mockup-window-dot mockup-dot-yellow"></div>
-                <div class="mockup-window-dot mockup-dot-green"></div>
-                <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: 0.5rem; font-family: var(--font-mono);">memo-manager.app</span>
+            <!-- Trust Badges -->
+            <div class="hero-trust-badges">
+              <div class="trust-badge-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Free Plan Available</span>
               </div>
-              <div class="mockup-preview-screen">
-                <div style="display: flex; gap: 1rem; align-items: center; justify-content: space-between; background: var(--bg-surface); padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
-                  <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <div style="width: 32px; height: 32px; border-radius: 6px; background: var(--color-primary-50); color: var(--color-primary-600); display: flex; align-items: center; justify-content: center; font-weight: bold;">📝</div>
-                    <div style="text-align: left;">
-                      <div style="font-size: 0.9rem; font-weight: 600;">Q4 Product Architecture & Roadmap</div>
-                      <div style="font-size: 0.75rem; color: var(--text-muted);">Updated 2 hours ago • Work • High Priority</div>
-                    </div>
-                  </div>
-                  <div style="display: flex; gap: 0.5rem;">
-                    <span class="badge badge-work">Work</span>
-                    <span class="badge badge-priority-high">High</span>
+              <div class="trust-badge-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Works on All Devices</span>
+              </div>
+              <div class="trust-badge-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Your Data is Private</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Product Preview: desktop dashboard + phone app (decorative) -->
+          <div class="hero-visual" aria-hidden="true">
+            <!-- Desktop dashboard mockup -->
+            <div class="hm-desktop">
+              <aside class="hm-sidebar">
+                <div class="hm-brand"><img src="icons/logo-32.png" alt="" width="18" height="18"><span>Memo Manager</span></div>
+                <ul class="hm-nav">
+                  <li class="active"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</li>
+                  <li><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Memos</li>
+                  <li><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Calendar</li>
+                  <li><svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</li>
+                  <li><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>Folders</li>
+                  <li><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>Shared</li>
+                  <li><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>Trash</li>
+                </ul>
+              </aside>
+              <div class="hm-main">
+                <div class="hm-topbar">
+                  <svg class="hm-topbar-back" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+                  <div class="hm-topbar-right">
+                    <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <span class="hm-avatar">A</span><span class="hm-username">Alex</span>
                   </div>
                 </div>
+                <div class="hm-greeting">Good Morning, Alex! <span class="hm-sun">☀</span></div>
+                <div class="hm-greeting-sub">Let's make today productive.</div>
+                <div class="hm-kpis">
+                  <div class="hm-kpi">
+                    <span class="hm-kpi-icon hm-c-blue"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg></span>
+                    <span class="hm-kpi-label">Total</span>
+                    <strong>24</strong>
+                  </div>
+                  <div class="hm-kpi">
+                    <span class="hm-kpi-icon hm-c-amber"><svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
+                    <span class="hm-kpi-label">Favorites</span>
+                    <strong>5</strong>
+                  </div>
+                  <div class="hm-kpi">
+                    <span class="hm-kpi-icon hm-c-green"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span>
+                    <span class="hm-kpi-label">Pending</span>
+                    <strong>8</strong>
+                  </div>
+                  <div class="hm-kpi">
+                    <span class="hm-kpi-icon hm-c-sky"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span>
+                    <span class="hm-kpi-label">Completed</span>
+                    <strong>11</strong>
+                  </div>
+                </div>
+                <div class="hm-toolbar">
+                  <div class="hm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search memos...</div>
+                  <span class="hm-new-btn">+ New Memo</span>
+                </div>
+                <div class="hm-list-head"><span>Recent Memos</span><span class="hm-link">View all</span></div>
+                <ul class="hm-list">
+                  <li><span class="hm-item-icon hm-c-blue"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/></svg></span><div class="hm-item-body"><b>Project Planning</b><span class="hm-tags"><i class="hm-tag hm-tag-work">Work</i><i class="hm-tag hm-tag-high">High</i></span></div><span class="hm-date">Oct 8, 2026</span></li>
+                  <li><span class="hm-item-icon hm-c-red"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/></svg></span><div class="hm-item-body"><b>Study Notes - Japanese</b><span class="hm-tags"><i class="hm-tag hm-tag-study">Study</i></span></div><span class="hm-date">Oct 7, 2026</span></li>
+                  <li><span class="hm-item-icon hm-c-amber"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/></svg></span><div class="hm-item-body"><b>Shopping List</b><span class="hm-tags"><i class="hm-tag hm-tag-personal">Personal</i></span></div><span class="hm-date">Oct 6, 2026</span></li>
+                  <li><span class="hm-item-icon hm-c-indigo"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/></svg></span><div class="hm-item-body"><b>Server Setup Guide</b><span class="hm-tags"><i class="hm-tag hm-tag-work">Work</i></span></div><span class="hm-date">Oct 5, 2026</span></li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Phone app mockup -->
+            <div class="hm-phone">
+              <div class="hm-phone-screen">
+                <div class="hm-phone-status"><span>9:41</span><span class="hm-notch"></span><span class="hm-phone-signal">▪▪▪</span></div>
+                <div class="hm-phone-header">
+                  <span class="hm-phone-brand"><img src="icons/logo-32.png" alt="" width="16" height="16"><span>Memo Manager</span></span>
+                  <svg class="hm-phone-grid-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                </div>
+                <div class="hm-phone-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search memos...</div>
+                <div class="hm-phone-tabs"><span class="active">All</span><span>Favorite</span><span>Pending</span></div>
+                <ul class="hm-phone-list">
+                  <li><span class="hm-item-icon hm-c-amber"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/></svg></span><div><b>Project Planning</b><span class="hm-tags"><i class="hm-tag hm-tag-work">Work</i><i class="hm-tag hm-tag-high">High</i></span></div></li>
+                  <li><span class="hm-item-icon hm-c-indigo"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/></svg></span><div><b>Study Notes</b><span class="hm-tags"><i class="hm-tag hm-tag-study">Study</i></span></div></li>
+                  <li><span class="hm-item-icon hm-c-red"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/></svg></span><div><b>Shopping List</b><span class="hm-tags"><i class="hm-tag hm-tag-personal">Personal</i></span></div></li>
+                  <li><span class="hm-item-icon hm-c-indigo"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="8" y1="13" x2="16" y2="13"/></svg></span><div><b>Server Setup Guide</b><span class="hm-tags"><i class="hm-tag hm-tag-work">Work</i></span></div></li>
+                  <li class="hm-phone-peek"><span class="hm-item-icon hm-c-amber"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></span><div><b>Design Inspiration</b></div></li>
+                </ul>
+                <span class="hm-phone-fab">+</span>
+                <span class="hm-phone-homebar"></span>
               </div>
             </div>
           </div>
@@ -246,50 +329,57 @@
 
         <!-- Trust Platforms Row -->
         <section class="trust-platforms-section">
-          <div class="trust-platforms-title">TRUSTED ACROSS MODERN PLATFORMS</div>
+          <div class="trust-platforms-title">Trusted by individuals and teams worldwide</div>
           <div class="platforms-logos-grid">
             <div class="platform-logo-item">
-              <svg viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.802"/></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-13.051-1.802"/></svg>
               <span>Windows</span>
             </div>
             <div class="platform-logo-item">
-              <svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.63 1.35-.55.63-1.03 1.69-.9 2.73 1.01.08 2.02-.49 2.61-1.23z"/></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8.92-2.85-.9.04-2 .6-2.63 1.35-.55.63-1.03 1.69-.9 2.73 1.01.08 2.02-.49 2.61-1.23z"/></svg>
               <span>macOS</span>
             </div>
             <div class="platform-logo-item">
-              <svg viewBox="0 0 24 24"><path d="M12.002 0c-2.33 0-4.324 1.83-4.324 4.225 0 .97.35 1.87.95 2.58C5.2 7.77 2.54 11.02 2.54 14.93c0 2.58 1.15 4.93 2.98 6.54L4.7 23.47c-.2.43.08.92.54.92h13.52c.46 0 .74-.49.54-.92l-.82-2c1.83-1.61 2.98-3.96 2.98-6.54 0-3.91-2.66-7.16-6.088-8.125.6-.71.95-1.61.95-2.58C16.326 1.83 14.332 0 12.002 0z"/></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 1.5c-2.3 0-3.7 1.9-3.7 4.4 0 1.3.25 2.3-.7 3.8C6.4 11.5 4.8 13.8 4.8 16.4c0 1.2.35 2.3 1 3.2l-1.3 1.3c-.45.45-.13 1.2.5 1.2h3.4c.9.5 2.2.9 3.6.9s2.7-.4 3.6-.9h3.4c.63 0 .95-.75.5-1.2l-1.3-1.3c.65-.9 1-2 1-3.2 0-2.6-1.6-4.9-2.8-6.7-.95-1.5-.7-2.5-.7-3.8 0-2.5-1.4-4.4-3.7-4.4z"/>
+                <ellipse cx="12" cy="16.2" rx="3.7" ry="4.7" fill="#fff" fill-opacity="0.55"/>
+                <circle cx="10.6" cy="5.6" r="0.9" fill="#fff"/>
+                <circle cx="13.4" cy="5.6" r="0.9" fill="#fff"/>
+                <path d="M10.6 7.6h2.8L12 9.1z" fill="#f59e0b"/>
+              </svg>
               <span>Linux</span>
             </div>
             <div class="platform-logo-item">
-              <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 14.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm0-4.5a1 1 0 0 1-2 0V7a1 1 0 0 1 2 0z"/></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true" class="platform-logo-outline"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8.92-2.85-.9.04-2 .6-2.63 1.35-.55.63-1.03 1.69-.9 2.73 1.01.08 2.02-.49 2.61-1.23z"/></svg>
               <span>iOS</span>
             </div>
             <div class="platform-logo-item">
-              <svg viewBox="0 0 24 24"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.551 0 .9993.4482.9993.9993.0001.5511-.4483.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.4116 13.8533 8.12 12 8.12s-3.5902.2916-5.1367.8307L4.841 5.4477a.416.416 0 00-.5676-.1521.416.416 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3432-4.1021-2.6889-7.5743-6.1185-9.4396"/></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.551 0 .9993.4482.9993.9993.0001.5511-.4483.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.4116 13.8533 8.12 12 8.12s-3.5902.2916-5.1367.8307L4.841 5.4477a.416.416 0 00-.5676-.1521.416.416 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3432-4.1021-2.6889-7.5743-6.1185-9.4396"/></svg>
               <span>Android</span>
             </div>
           </div>
         </section>
+        </div>
 
         <!-- 8 Feature Cards Grid Section -->
         <section class="features-section" id="features">
-          <div class="features-pill-badge">POWERFUL FEATURES</div>
-          <h2 class="features-heading">Everything You Need to Stay Productive</h2>
+          <div class="features-pill-badge">Features</div>
+          <h2 class="features-heading">Everything you need to stay organized</h2>
           <p class="features-subhead">
-            Engineered with modern SaaS reliability, full-text search, and frictionless memo organization.
+            Simple but powerful features to make your life more productive.
           </p>
 
           <div class="feature-cards-grid">
             <!-- 1. Rich Text Editor -->
             <div class="feature-card">
               <div class="feature-icon-wrapper">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M12 20h9"></path>
                   <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
                 </svg>
               </div>
               <h3 class="feature-card-title">Rich Text Editor</h3>
-              <p class="feature-card-desc">Markdown support, interactive checklists, code blocks, and intuitive typography controls.</p>
+              <p class="feature-card-desc">Write beautiful notes with formatting, lists, links and more.</p>
             </div>
 
             <!-- 2. Categories & Tags -->
@@ -300,20 +390,22 @@
                   <line x1="7" y1="7" x2="7.01" y2="7"></line>
                 </svg>
               </div>
-              <h3 class="feature-card-title">Categories & Tags</h3>
-              <p class="feature-card-desc">Organize your thoughts into custom workspaces, color-coded categories, and multi-tags.</p>
+              <h3 class="feature-card-title">Categories &amp; Tags</h3>
+              <p class="feature-card-desc">Organize your memos with custom categories and tags.</p>
             </div>
 
-            <!-- 3. Reminders & Alerts -->
+            <!-- 3. Reminders -->
             <div class="feature-card">
               <div class="feature-icon-wrapper">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                  <path d="M4 4l2 2"></path>
+                  <path d="M20 4l-2 2"></path>
                 </svg>
               </div>
               <h3 class="feature-card-title">Reminders</h3>
-              <p class="feature-card-desc">Set due dates, alerts, and time-sensitive reminders to never miss critical deadlines.</p>
+              <p class="feature-card-desc">Never forget important tasks with smart reminders.</p>
             </div>
 
             <!-- 4. Attachments -->
@@ -324,10 +416,10 @@
                 </svg>
               </div>
               <h3 class="feature-card-title">Attachments</h3>
-              <p class="feature-card-desc">Attach documents, screenshots, and assets with dedicated workspace storage quota.</p>
+              <p class="feature-card-desc">Add images, files and documents to your memos.</p>
             </div>
 
-            <!-- 5. Interactive Calendar -->
+            <!-- 5. Calendar View -->
             <div class="feature-card">
               <div class="feature-icon-wrapper">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -338,10 +430,10 @@
                 </svg>
               </div>
               <h3 class="feature-card-title">Calendar View</h3>
-              <p class="feature-card-desc">Visualize memo schedules, upcoming events, and milestone checklists on a clean monthly grid.</p>
+              <p class="feature-card-desc">See your memos and tasks in a beautiful calendar.</p>
             </div>
 
-            <!-- 6. Instant Search -->
+            <!-- 6. Search & Filters -->
             <div class="feature-card">
               <div class="feature-icon-wrapper">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -349,32 +441,34 @@
                   <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                 </svg>
               </div>
-              <h3 class="feature-card-title">Search & Filters</h3>
-              <p class="feature-card-desc">Instant SQLite FTS5 full-text search with sub-millisecond filtering across titles and notes.</p>
+              <h3 class="feature-card-title">Search &amp; Filters</h3>
+              <p class="feature-card-desc">Find any memo instantly with powerful search and filters.</p>
             </div>
 
-            <!-- 7. Dark & Light Mode -->
+            <!-- 7. Dark Mode -->
             <div class="feature-card">
               <div class="feature-icon-wrapper">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5">
                   <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                 </svg>
               </div>
               <h3 class="feature-card-title">Dark Mode</h3>
-              <p class="feature-card-desc">Carefully crafted dark and light themes designed for visual focus and eye comfort.</p>
+              <p class="feature-card-desc">Beautiful light and dark themes to match your preference.</p>
             </div>
 
-            <!-- 8. Multi-Device Sync -->
+            <!-- 8. Multi-Device -->
             <div class="feature-card">
               <div class="feature-icon-wrapper">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                  <line x1="8" y1="21" x2="16" y2="21"></line>
-                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="3" width="13" height="11" rx="1.5"></rect>
+                  <path d="M5 18h7"></path>
+                  <path d="M8.5 14v4"></path>
+                  <rect x="16" y="7" width="6" height="12" rx="1.5"></rect>
+                  <circle cx="19" cy="16.5" r="0.75" fill="currentColor"></circle>
                 </svg>
               </div>
               <h3 class="feature-card-title">Multi-Device</h3>
-              <p class="feature-card-desc">Cloud-synchronized workspaces with responsive layouts optimized for desktop, tablet, and mobile.</p>
+              <p class="feature-card-desc">Access your memos on web, mobile and desktop anywhere.</p>
             </div>
           </div>
         </section>
@@ -513,10 +607,11 @@
           <div class="bottom-cta-banner">
             <div class="bottom-cta-content">
               <h2 class="bottom-cta-title">Start organizing your ideas today</h2>
-              <p class="bottom-cta-subtitle">Join thousands of creators, engineers, and teams boosting productivity with Notes.</p>
+              <p class="bottom-cta-subtitle">Join thousands of users who trust Memo Manager to stay productive.</p>
             </div>
-            <button class="btn btn-primary btn-lg" id="bottom-cta-btn">
-              Create Free Account &rarr;
+            <button class="btn btn-primary btn-lg bottom-cta-btn" id="bottom-cta-btn">
+              Create Free Account
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
             </button>
           </div>
         </section>
@@ -534,7 +629,7 @@
           <div class="auth-form-column">
             <div class="auth-form-header">
               <h2 class="auth-title" id="auth-title">Welcome Back</h2>
-              <p class="auth-subtitle" id="auth-subtitle">Sign in to your Notes account</p>
+              <p class="auth-subtitle" id="auth-subtitle">Sign in to your Memo Manager account</p>
             </div>
 
             <!-- Alert Notification Banner inside Form -->
@@ -646,14 +741,9 @@
           <!-- Right Column: Brand Value Proposition Card -->
           <div class="auth-brand-column">
             <div class="auth-brand-logo-large">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-              </svg>
+              <img src="icons/logo-96.png" alt="Memo Manager" width="56" height="56" style="border-radius: 14px;">
             </div>
-            <h3 class="auth-brand-title">Notes</h3>
+            <h3 class="auth-brand-title">Memo Manager</h3>
             <p class="auth-brand-tagline">
               Your personal space for better ideas and a more organized life.
             </p>
@@ -662,25 +752,25 @@
                 <div class="auth-feature-check-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
-                <span>Secure and private cloud storage</span>
+                <span>Secure and private</span>
               </div>
               <div class="auth-brand-feature-item">
                 <div class="auth-feature-check-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
-                <span>Seamless access on all devices</span>
+                <span>Access on all devices</span>
               </div>
               <div class="auth-brand-feature-item">
                 <div class="auth-feature-check-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
-                <span>Free and flexible workspace plans</span>
+                <span>Free and paid plans</span>
               </div>
               <div class="auth-brand-feature-item">
                 <div class="auth-feature-check-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
-                <span>Easy to use, fast productivity</span>
+                <span>Easy to use</span>
               </div>
             </div>
           </div>
@@ -876,10 +966,10 @@
             <div>
               <h1 class="dashboard-greeting-title" id="dashboard-greeting-title">Good Morning, Alex! ☀️</h1>
               <p class="dashboard-greeting-subtitle">Here's your memo overview for today.</p>
-              <div class="dashboard-date-badge" id="dashboard-date-badge">Wednesday, October 10, 2026</div>
             </div>
-            <div>
-
+            <div class="dashboard-hero-right">
+              <button class="btn btn-primary" id="hero-new-memo-btn" type="button">+ New Memo</button>
+              <div class="dashboard-date-badge" id="dashboard-date-badge">Wednesday, October 10, 2026</div>
             </div>
           </div>
 
@@ -1080,6 +1170,13 @@
                 </form>
               </div>
 
+              <!-- Mobile Quick Filter Tabs (Concept screen matching: All | Favorite | Pending) -->
+              <div class="mobile-quick-filter-tabs" id="mobile-quick-filter-tabs">
+                <button type="button" class="mobile-filter-tab active" data-mobile-filter="all">All</button>
+                <button type="button" class="mobile-filter-tab" data-mobile-filter="favorite">Favorite</button>
+                <button type="button" class="mobile-filter-tab" data-mobile-filter="pending">Pending</button>
+              </div>
+
               <!-- Filter Bar & Controls -->
               <div class="memos-filter-bar">
                 <div class="filter-left-controls">
@@ -1192,13 +1289,13 @@
                 </div>
                 <div class="calendar-grid" id="calendar-grid">
                   <!-- Weekday headers -->
-                  <div class="calendar-day-name">S</div>
-                  <div class="calendar-day-name">M</div>
-                  <div class="calendar-day-name">T</div>
-                  <div class="calendar-day-name">W</div>
-                  <div class="calendar-day-name">T</div>
-                  <div class="calendar-day-name">F</div>
-                  <div class="calendar-day-name">S</div>
+                  <div class="calendar-day-name">Su</div>
+                  <div class="calendar-day-name">Mo</div>
+                  <div class="calendar-day-name">Tu</div>
+                  <div class="calendar-day-name">We</div>
+                  <div class="calendar-day-name">Th</div>
+                  <div class="calendar-day-name">Fr</div>
+                  <div class="calendar-day-name">Sa</div>
                   <!-- Days rendered via app.js -->
                 </div>
               </div>

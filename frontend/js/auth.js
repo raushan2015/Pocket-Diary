@@ -187,7 +187,7 @@ export function setAuthMode(mode) {
     if (switchBtn) switchBtn.textContent = 'Sign in';
   } else if (mode === 'register') {
     if (titleEl) titleEl.textContent = 'Create Account';
-    if (subtitleEl) subtitleEl.textContent = 'Get started with your free Notes workspace';
+    if (subtitleEl) subtitleEl.textContent = 'Get started with your free Memo Manager workspace';
     if (nameGroup) nameGroup.style.display = 'flex';
     if (emailGroup) emailGroup.style.display = 'block';
     if (passwordGroup) passwordGroup.style.display = 'block';
@@ -200,7 +200,7 @@ export function setAuthMode(mode) {
     if (switchBtn) switchBtn.textContent = 'Sign in';
   } else {
     if (titleEl) titleEl.textContent = 'Welcome Back';
-    if (subtitleEl) subtitleEl.textContent = 'Sign in to your Notes account';
+    if (subtitleEl) subtitleEl.textContent = 'Sign in to your Memo Manager account';
     if (nameGroup) nameGroup.style.display = 'none';
     if (emailGroup) emailGroup.style.display = 'block';
     if (passwordGroup) passwordGroup.style.display = 'block';
