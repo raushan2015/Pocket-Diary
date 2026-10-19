@@ -46,13 +46,27 @@ test('User Journey 21: OpenAPI docs served at /docs through the reverse proxy', 
     // Relative server URL: no internal hostname may leak into the spec.
     assert.deepEqual(specJson.servers, [{ url: '/', description: 'This instance (direct backend or the bundled reverse proxy)' }]);
 
-    // 5. CSP on the docs page allows its same-origin assets (no console errors
+    // 5. Missing-file requests must not kill the static server: the SPA
+    //    fallback once reused the failed stat's `stats` (undefined) for the
+    //    ETag, and a single request for a missing asset — e.g. the app icons
+    //    absent from a fresh checkout — crashed the whole frontend with an
+    //    unhandled TypeError. (Found when the CI e2e run killed its instance
+    //    this way on the very first journey.)
+    const serverSurvivesMissingFiles = await page.evaluate(async () => {
+      await fetch('/definitely-missing-asset.png').catch(() => {});
+      await fetch('/some-spa-route-without-extension').catch(() => {});
+      const after = await fetch('/health');
+      return after.status;
+    });
+    assert.equal(serverSurvivesMissingFiles, 200, 'static server must survive requests for missing files');
+
+    // 6. CSP on the docs page allows its same-origin assets (no console errors
     //    from blocked scripts), and the page is served with security headers.
     const csp = response.headers()['content-security-policy'] ?? '';
     assert.ok(csp.includes("script-src 'self'"), `docs page must keep a strict script-src CSP (got: ${csp})`);
     assert.equal(consoleErrors.length, 0, `docs page console must be clean: ${consoleErrors.join(' | ')}`);
 
-    // 6. The spec is reachable unauthenticated (public API reference) and the
+    // 7. The spec is reachable unauthenticated (public API reference) and the
     //    documented login operation is marked public (no lock icon needed).
     const lockless = specJson.paths['/api/v1/auth/login'].post.security;
     assert.deepEqual(lockless, [], 'login must be documented as public');

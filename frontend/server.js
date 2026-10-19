@@ -142,16 +142,18 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  fs.stat(filePath, (err, stats) => {
-    if (err || !stats.isFile()) {
-      // SPA Fallback: serve index.html for extensionless or non-file routes
-      filePath = path.join(__dirname, 'index.html');
-    }
-
-    const ext = path.extname(filePath).toLowerCase();
+  // Serve `targetPath` with a valid stat of THE FILE BEING SERVED. The stat
+  // must be re-read for the SPA fallback: the original stat failed (missing
+  // file), so reusing its `stats` (undefined) crashed the whole server with an
+  // unhandled TypeError inside the readFile callback — a single request for
+  // any missing asset (favicon, service-worker precache entry, typo URL) took
+  // the site down. Found when the GitHub CI e2e suite killed its ephemeral
+  // frontend this way on the first journey.
+  const serveFile = (targetPath, stats) => {
+    const ext = path.extname(targetPath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
-    fs.readFile(filePath, (readErr, content) => {
+    fs.readFile(targetPath, (readErr, content) => {
       if (readErr) {
         res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
         res.end('Not Found');
@@ -189,6 +191,22 @@ const server = http.createServer((req, res) => {
         res.end(content);
       }
     });
+  };
+
+  fs.stat(filePath, (err, stats) => {
+    if (err || !stats.isFile()) {
+      // SPA fallback: extensionless routes and missing files serve index.html.
+      const fallbackPath = path.join(__dirname, 'index.html');
+      return fs.stat(fallbackPath, (fallbackErr, fallbackStats) => {
+        if (fallbackErr) {
+          res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
+          res.end('Not Found');
+          return;
+        }
+        serveFile(fallbackPath, fallbackStats);
+      });
+    }
+    serveFile(filePath, stats);
   });
 });
 
