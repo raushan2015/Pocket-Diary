@@ -141,7 +141,9 @@
   flex: 1;
   padding: 2.5rem 3.5rem;
   overflow-y: auto;
-  max-width: 900px;
+  /* Fill the user's browser screen instead of a fixed 900px column: on a
+     1920px+ monitor the editor used to occupy under half the window. */
+  max-width: min(1600px, 94vw);
   margin: 0 auto;
   width: 100%;
 }
@@ -443,7 +445,7 @@
   flex: 1;
   padding: 2.5rem 3.5rem;
   overflow-y: auto;
-  max-width: 900px;
+  max-width: min(1600px, 94vw);
   margin: 0 auto;
   width: 100%;
 }

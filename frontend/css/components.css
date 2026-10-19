@@ -1384,6 +1384,14 @@ button.calendar-day-num {
   padding: 0.25rem 0;
 }
 
+/* Inside the now full-screen editor, the textarea stretches to fill the
+   body; the browser scrolls inside it, so the page never feels truncated. */
+.keep-modal-textarea {
+  flex: 1 1 auto;
+  min-height: 160px;
+  resize: none;
+}
+
 .keep-capture-expanded input::placeholder,
 .keep-capture-expanded textarea::placeholder,
 .keep-modal-title-input::placeholder,
@@ -1690,8 +1698,16 @@ button.calendar-day-num {
 .keep-checklist-editor {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 0.3rem;
   margin: 0.4rem 0;
+}
+
+.keep-checklist-items {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .keep-checklist-item {
@@ -2141,8 +2157,16 @@ button.calendar-day-num {
 }
 
 .keep-modal-card {
+  /* The note editor fills the user's browser screen rather than a compact
+     600px card: near-full width (capped for readability on ultrawide) and
+     near-full height, leaving a slim backdrop margin. The body below
+     flex-grows to fill the card in both text and checklist mode. */
   width: 100%;
-  max-width: 600px;
+  max-width: 1600px;
+  height: 92vh; /* fallback for browsers without dynamic viewport units */
+  height: 92dvh;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
   border-radius: var(--radius-sm);
   box-shadow: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 12px 4px rgba(60,64,67,0.25);
   display: flex;
@@ -2170,8 +2194,11 @@ button.calendar-day-num {
 }
 
 .keep-modal-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 0.4rem 1.25rem;
-  max-height: 68vh;
   overflow-y: auto;
 }
 
