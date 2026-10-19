@@ -103,9 +103,82 @@ export async function loadMoreMemos() {
   }
 }
 
+// Mirrors the backend's default quota (config.storageQuotaBytes, STORAGE_QUOTA_GB).
+const DEMO_QUOTA_BYTES = 10 * 1024 * 1024 * 1024;
+
+const utf8ByteLength = (value) => new TextEncoder().encode(String(value ?? '')).length;
+
+/** Human-readable byte size with a KB tier, for the client-computed demo meter. */
+function formatBytes(bytes) {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} bytes`;
+}
+
+/** Render real storage metrics into the sidebar widget (shape of GET /workspaces/:id/storage). */
+export function updateStorageWidget(quota) {
+  const percentText = document.getElementById('storage-percent-text');
+  const detailText = document.getElementById('storage-detail-text');
+  const fill = document.getElementById('storage-progress-fill');
+  if (percentText) percentText.textContent = `${quota.percentUsed}%`;
+  if (detailText) detailText.textContent = `${quota.usedFormatted} of ${quota.maxFormatted}`;
+  if (fill) {
+    fill.style.width = `${Math.max(0, Math.min(100, quota.percentUsed))}%`;
+    fill.parentElement?.setAttribute('aria-valuenow', String(quota.percentUsed));
+  }
+}
+
+/** Neutral signed-out state — the widget never shows fabricated numbers. */
+export function resetStorageWidget() {
+  updateStorageWidget({ percentUsed: 0, usedFormatted: '0 bytes', maxFormatted: '10 GB' });
+}
+
+/** Show "unavailable" instead of stale numbers when the quota endpoint fails. */
+function markStorageWidgetUnavailable() {
+  const percentText = document.getElementById('storage-percent-text');
+  const detailText = document.getElementById('storage-detail-text');
+  const fill = document.getElementById('storage-progress-fill');
+  if (percentText) percentText.textContent = '—';
+  if (detailText) detailText.textContent = 'Usage unavailable';
+  if (fill) {
+    fill.style.width = '0%';
+    fill.parentElement?.setAttribute('aria-valuenow', '0');
+  }
+}
+
+/**
+ * Demo workspaces have no server, so compute the meter client-side from the
+ * in-memory demo memos. Uses the same formula as the backend (UTF-8 bytes of
+ * title + content, per workspace), so the widget shows real numbers instead
+ * of the old hardcoded "2.4 GB / 24%" mock.
+ */
+export function refreshDemoStorageWidget() {
+  const activeWs = state.get('activeWorkspace');
+  if (!activeWs?.id) return;
+
+  const usedBytes = (state.get('allWorkspaceMemos') || [])
+    .filter((memo) => memo.workspaceId === activeWs.id)
+    .reduce((sum, memo) => sum + utf8ByteLength(memo.title) + utf8ByteLength(memo.content), 0);
+
+  const percentUsed = usedBytes > 0
+    ? Math.min(100, Math.max(0.1, Number(((usedBytes / DEMO_QUOTA_BYTES) * 100).toFixed(1))))
+    : 0;
+
+  updateStorageWidget({
+    percentUsed,
+    usedFormatted: formatBytes(usedBytes),
+    maxFormatted: `${(DEMO_QUOTA_BYTES / 1024 ** 3).toFixed(0)} GB`,
+  });
+}
+
 export async function fetchWorkspaceData() {
   const activeWs = state.get('activeWorkspace');
-  if (!activeWs || !activeWs.id || String(activeWs.id).startsWith('demo-')) return;
+  if (!activeWs || !activeWs.id) return;
+  if (String(activeWs.id).startsWith('demo-')) {
+    refreshDemoStorageWidget();
+    return;
+  }
 
   state.set('isLoadingMemos', true);
 
@@ -134,15 +207,8 @@ export async function fetchWorkspaceData() {
 
     updateDashboardDateBadge();
     api.getStorageQuota(activeWs.id)
-      .then((quota) => {
-        const percentText = document.getElementById('storage-percent-text');
-        const detailText = document.getElementById('storage-detail-text');
-        const fill = document.getElementById('storage-progress-fill');
-        if (percentText) percentText.textContent = `${quota.percentUsed}%`;
-        if (detailText) detailText.textContent = `${quota.usedFormatted} of ${quota.maxFormatted}`;
-        if (fill) fill.style.width = `${quota.percentUsed}%`;
-      })
-      .catch(() => {});
+      .then(updateStorageWidget)
+      .catch(markStorageWidgetUnavailable);
 
     renderSidebarCategories(categories);
     renderSidebarTags(tags);

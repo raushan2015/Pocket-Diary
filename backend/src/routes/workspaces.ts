@@ -131,6 +131,14 @@ const storageMeta = {
   },
 };
 
+/** Tiered size formatting so small workspaces read "8.2 KB", not "0.00 MB". */
+function formatStorageSize(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} bytes`;
+}
+
 const updateMeta = {
   tags: ['Workspaces'],
   summary: 'Rename a workspace',
@@ -407,13 +415,11 @@ export const workspaceRoutes: FastifyPluginAsync = async (fastify) => {
 
       const totalBytes = Number(attRow?.total || 0) + Number(memoRow?.total || 0);
       const maxBytes = config.storageQuotaBytes; // configurable via STORAGE_QUOTA_GB (audit L-10)
-      const usedMB = (totalBytes / (1024 * 1024)).toFixed(2);
-      const usedGB = (totalBytes / (1024 * 1024 * 1024)).toFixed(2);
       const percentUsed = Math.min(100, Math.max(totalBytes > 0 ? 0.1 : 0, Number((totalBytes / maxBytes * 100).toFixed(1))));
 
       return reply.status(200).send({
         totalBytes,
-        usedFormatted: totalBytes > 1024 * 1024 * 1024 ? `${usedGB} GB` : `${usedMB} MB`,
+        usedFormatted: formatStorageSize(totalBytes),
         maxBytes,
         maxFormatted: `${(maxBytes / (1024 * 1024 * 1024)).toFixed(0)} GB`,
         percentUsed,

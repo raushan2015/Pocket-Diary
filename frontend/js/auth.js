@@ -8,7 +8,7 @@ import { api } from './api.js';
 import { state } from './state.js';
 import { showToast } from './utils.js';
 import { navigateTo } from './navigation.js';
-import { fetchWorkspaceData } from './workspace-data.js';
+import { fetchWorkspaceData, resetStorageWidget } from './workspace-data.js';
 
 // Active workspace invitation token captured from the URL (#invite=<token>)
 let pendingInviteToken = null;
@@ -540,12 +540,14 @@ export async function handleLogout() {
 
     await api.logout();
     state.clearUser();
+    resetStorageWidget();
     showToast('Signed out successfully', 'info');
     closeUserDropdown();
     navigateTo('landing');
   } catch (err) {
     console.error('Logout error:', err);
     state.clearUser();
+    resetStorageWidget();
     closeUserDropdown();
     navigateTo('landing');
   }

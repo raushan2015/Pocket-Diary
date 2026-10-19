@@ -16,7 +16,7 @@ import {
   toggleUserDropdown,
   renderStrengthMeter
 } from './auth.js';
-import { refreshWorkspaceMemos, updateDashboardDateBadge, loadMoreMemos } from './workspace-data.js';
+import { refreshWorkspaceMemos, updateDashboardDateBadge, loadMoreMemos, refreshDemoStorageWidget } from './workspace-data.js';
 import { setFilter, filterAndRenderMemos } from './search-filter.js';
 import { renderUpcomingReminders } from './memo-renderer.js';
 import {
@@ -428,6 +428,10 @@ export function setupEventListeners() {
       { id: 'f-2', name: 'Personal' }
     ]);
     state.updateKpisFromMemos(demoMemos);
+
+    // Real storage meter for demo mode: computed client-side from the demo
+    // memos' actual byte size (no server in demo, but no fake 24% either).
+    refreshDemoStorageWidget();
 
     renderSidebarCategories(state.get('categories'));
     renderSidebarTags(state.get('tags'));
