@@ -3,6 +3,14 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { createDatabase } from '../src/db/index.js';
 
+/**
+ * The app accepts requests from any Origin (see app.ts): it is legitimately
+ * reachable through several front doors — LAN IP, Tailscale IP, MagicDNS
+ * name and an external HTTPS domain behind a reverse proxy — and the scheme/
+ * host each proxy reports never matches the browser Origin in every chain.
+ * Cross-site state changes are still prevented in the browser by the
+ * SameSite=Lax session cookie, which never accompanies cross-site POSTs.
+ */
 describe('Browser request security', () => {
   let app: FastifyInstance;
   let dbCtx: ReturnType<typeof createDatabase>;
@@ -18,54 +26,44 @@ describe('Browser request security', () => {
     dbCtx.sqlite.close();
   });
 
-  it('rejects state-changing requests from an untrusted origin', async () => {
+  it('accepts state-changing requests from any origin (multi-front-door deployment)', async () => {
+    // Simulates the production flow that motivated this: a browser on
+    // https://notes.techshan.app whose request reaches the backend through
+    // an HTTPS-terminating reverse proxy, so the forwarded scheme is http.
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/auth/register',
       headers: {
-        origin: 'https://untrusted.example',
-        host: 'memo.example',
-        'x-forwarded-host': 'memo.example',
-        'x-forwarded-proto': 'https',
+        origin: 'https://notes.techshan.app',
+        host: 'notes.techshan.app',
+        'x-forwarded-host': 'notes.techshan.app',
+        'x-forwarded-proto': 'http',
       },
       payload: {
-        email: 'cross-site@example.com',
+        email: 'any-origin@example.com',
         password: 'SecurePassword123!',
-        name: 'Cross Site',
-      },
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json().message).toBe('Cross-site request rejected');
-  });
-
-  it('allows same-origin state-changing requests', async () => {
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/v1/auth/register',
-      headers: {
-        origin: 'https://memo.example',
-        host: 'memo.example',
-        'x-forwarded-host': 'memo.example',
-        'x-forwarded-proto': 'https',
-      },
-      payload: {
-        email: 'same-origin@example.com',
-        password: 'SecurePassword123!',
-        name: 'Same Origin',
+        name: 'Any Origin',
       },
     });
 
     expect(response.statusCode).toBe(201);
   });
 
-  it('allows safe read-only requests from any origin at the request guard', async () => {
+  it('still sets the SameSite=Lax session cookie (the enforced CSRF defense)', async () => {
     const response = await app.inject({
-      method: 'GET',
-      url: '/health',
-      headers: { origin: 'https://untrusted.example' },
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: {
+        email: 'cookie-check@example.com',
+        password: 'SecurePassword123!',
+        name: 'Cookie Check',
+      },
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(201);
+    const cookie = response.cookies.find((c) => c.name === 'memo_session');
+    expect(cookie).toBeTruthy();
+    expect(cookie!.sameSite?.toLowerCase()).toBe('lax');
+    expect(cookie!.httpOnly).toBe(true);
   });
 });

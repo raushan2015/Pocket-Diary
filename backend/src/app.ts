@@ -73,33 +73,16 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
-  // Cookie-authenticated state changes must originate from the same site.
-  app.addHook('onRequest', async (request, reply) => {
-    if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return;
-    const origin = request.headers.origin;
-    if (!origin) return; // Non-browser clients do not send Origin; session auth still applies.
-
-    try {
-      const originUrl = new URL(origin);
-      const forwardedHost = request.headers['x-forwarded-host'];
-      const forwardedProto = request.headers['x-forwarded-proto'];
-      const expectedHost = String(forwardedHost || request.headers.host || '').split(',')[0].trim();
-      const expectedProto = String(forwardedProto || request.protocol).split(',')[0].trim().replace(/:$/, '');
-
-      if (originUrl.host.toLowerCase() !== expectedHost.toLowerCase()
-        || originUrl.protocol.replace(/:$/, '') !== expectedProto) {
-        return reply.status(403).send({
-          error: 'Forbidden',
-          message: 'Cross-site request rejected',
-        });
-      }
-    } catch {
-      return reply.status(403).send({
-        error: 'Forbidden',
-        message: 'Invalid request origin',
-      });
-    }
-  });
+  // CSRF defense: the session cookie is SameSite=Lax (see the auth routes),
+  // which stops browsers from attaching it to cross-site state-changing
+  // requests. A stricter server-side Origin check was tried and removed: this
+  // app is legitimately served through several front doors (LAN IP, Tailscale
+  // IP, MagicDNS name, and an external HTTPS domain behind a reverse proxy),
+  // and each outer proxy observes a different scheme/host than the browser
+  // Origin — e.g. https://notes.techshan.app reached the backend as plain
+  // HTTP, so every login POST was rejected as cross-site. Operators accept
+  // any origin here; per-account lockout, rate limits and the Lax cookie
+  // remain the enforced protections.
 
   // Register auth decorator/plugin
   app.register(authPlugin);
