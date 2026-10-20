@@ -6,6 +6,7 @@ Repository: [github.com/raushan2015/notes](https://github.com/raushan2015/notes)
 
 ## Contents
 
+- [Screenshots](#screenshots)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Requirements](#requirements)
@@ -18,6 +19,24 @@ Repository: [github.com/raushan2015/notes](https://github.com/raushan2015/notes)
 - [Known limitations](#known-limitations)
 - [Contributing](#contributing)
 - [License](#license)
+
+## Screenshots
+
+### Desktop View
+
+| Workspace Dashboard & Notes Grid | Note Editor (Markdown & Split Preview) |
+| :---: | :---: |
+| ![Desktop Dashboard](docs/screenshots/desktop-dashboard.png) | ![Desktop Editor](docs/screenshots/desktop-editor.png) |
+
+| Landing Page |
+| :---: |
+| ![Desktop Landing](docs/screenshots/desktop-landing.png) |
+
+### Mobile Device View
+
+| Mobile Landing | Mobile Dashboard | Mobile Note Editor |
+| :---: | :---: | :---: |
+| ![Mobile Landing](docs/screenshots/mobile-landing.png) | ![Mobile Dashboard](docs/screenshots/mobile-dashboard.png) | ![Mobile Editor](docs/screenshots/mobile-editor.png) |
 
 ## Features
 

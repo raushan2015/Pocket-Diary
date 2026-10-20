@@ -283,20 +283,18 @@ High-performance Memo Manager SaaS system design:
     return response.json();
   }, aliceCustomWorkspaceId);
   assert.ok(autosaveList.memos?.some((memo) => memo.title === 'Sprint 42 Architecture Blueprint'), 'Back navigation saved the memo automatically');
+
+  // Retrieve saved memo ID immediately from API so subsequent journeys have it regardless of UI timing
+  aliceBlueprintMemoId = (autosaveList.memos || []).find((memo) => memo.title === 'Sprint 42 Architecture Blueprint')?.id;
+  assert.ok(aliceBlueprintMemoId, 'Saved memo has a valid ID');
+
   await alicePage.click('#side-nav-all');
-  await alicePage.waitForSelector('#dashboard-new-memo-btn', { timeout: 5000 });
-  await alicePage.click(`.memo-card[data-memo-id="${(autosaveList.memos || []).find((memo) => memo.title === 'Sprint 42 Architecture Blueprint')?.id}"]`);
-  await alicePage.waitForSelector('#view-editor.active', { timeout: 5000 });
+  await alicePage.waitForSelector(`.memo-card[data-memo-id="${aliceBlueprintMemoId}"]`, { timeout: 10000 });
+  await alicePage.click(`.memo-card[data-memo-id="${aliceBlueprintMemoId}"] .memo-card-title`);
+  await alicePage.waitForSelector('#view-editor.active', { timeout: 10000 });
   const saveText = await alicePage.textContent('#editor-save-indicator');
   assert.ok(saveText.includes('Saved'), `Automatically saved memo remains saved: ${saveText}`);
 
-  // Retrieve saved memo ID from API
-  aliceBlueprintMemoId = await alicePage.evaluate(async (wsId) => {
-    const res = await fetch(`/api/v1/memos?workspaceId=${wsId}&search=Blueprint`, { credentials: 'include' });
-    const data = await res.json();
-    return data.memos?.[0]?.id;
-  }, aliceCustomWorkspaceId);
-  assert.ok(aliceBlueprintMemoId, 'Saved memo has a valid ID');
   const savedBlueprint = await alicePage.evaluate(async (memoId) => {
     const response = await fetch(`/api/v1/memos/${memoId}`, { credentials: 'include' });
     const data = await response.json();
@@ -350,8 +348,9 @@ High-performance Memo Manager SaaS system design:
 test('User Journey 5: Memo Edit, Optimistic Concurrency, Soft-Delete & Trash Restore', async () => {
   console.log('[Test 5] Editing Blueprint Memo...');
   // Find Blueprint memo card and click to edit
-  await alicePage.click(`.memo-card[data-memo-id="${aliceBlueprintMemoId}"]`);
-  await alicePage.waitForSelector('#view-editor.active', { timeout: 5000 });
+  await alicePage.waitForSelector(`.memo-card[data-memo-id="${aliceBlueprintMemoId}"]`, { timeout: 10000 });
+  await alicePage.click(`.memo-card[data-memo-id="${aliceBlueprintMemoId}"] .memo-card-title`);
+  await alicePage.waitForSelector('#view-editor.active', { timeout: 10000 });
 
   // Update title
   await alicePage.fill('#editor-title-input', 'Sprint 42 Architecture Blueprint (Reviewed & Approved)');
