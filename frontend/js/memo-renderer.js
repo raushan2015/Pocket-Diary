@@ -20,6 +20,85 @@ import { openLightbox } from './keep-lightbox.js';
 import { isMemoSelected, toggleSelectMemo, updateSelectionUi } from './keep-selection.js';
 import { setFilter } from './search-filter.js';
 
+const checklistDebounceTimers = new Map();
+
+function debouncedChecklistSync(memo) {
+  if (checklistDebounceTimers.has(memo.id)) {
+    clearTimeout(checklistDebounceTimers.get(memo.id));
+  }
+
+  const timer = setTimeout(async () => {
+    checklistDebounceTimers.delete(memo.id);
+    try {
+      // Omit explicit version to prevent race 409 conflicts during rapid clicking
+      const res = await api.updateMemo(memo.id, { checklistData: memo.checklistData });
+      if (res?.memo?.version) {
+        memo.version = res.memo.version;
+      }
+    } catch (err) {
+      console.error('Failed to sync card checklist:', err);
+      showToast('Failed to update checklist item', 'error');
+    }
+  }, 350);
+
+  checklistDebounceTimers.set(memo.id, timer);
+}
+
+export function renderCardChecklistHtml(memo) {
+  const items = Array.isArray(memo.checklistData) ? memo.checklistData : [];
+  if (!items.length) return '';
+
+  const active = items.filter((i) => !i.checked);
+  const completed = items.filter((i) => !!i.checked);
+
+  const visibleActive = active.slice(0, 6);
+  const overflowActive = active.length - visibleActive.length;
+
+  let activeHtml = visibleActive.map((item) => `
+    <div class="keep-checklist-item" data-item-id="${escapeHtml(item.id)}">
+      <input type="checkbox" data-memo-id="${memo.id}" data-check-id="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.text || 'Item')}">
+      <span class="keep-item-text" style="font-size:0.875rem;">${escapeHtml(item.text || '')}</span>
+    </div>
+  `).join('');
+
+  if (overflowActive > 0) {
+    activeHtml += `<span class="keep-checklist-more-badge">+${overflowActive} more item${overflowActive === 1 ? '' : 's'}</span>`;
+  }
+
+  let completedHtml = '';
+  if (completed.length > 0) {
+    const visibleCompleted = completed.slice(0, 4);
+    const overflowCompleted = completed.length - visibleCompleted.length;
+
+    completedHtml = `
+      <details class="keep-card-checked-drawer">
+        <summary class="keep-checked-summary">
+          <svg class="keep-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          <span>${completed.length} Checked item${completed.length === 1 ? '' : 's'}</span>
+        </summary>
+        <div class="keep-checked-items-body">
+          ${visibleCompleted.map((item) => `
+            <div class="keep-checklist-item completed" data-item-id="${escapeHtml(item.id)}">
+              <input type="checkbox" checked data-memo-id="${memo.id}" data-check-id="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.text || 'Item')}">
+              <span class="keep-item-text" style="font-size:0.875rem;">${escapeHtml(item.text || '')}</span>
+            </div>
+          `).join('')}
+          ${overflowCompleted > 0 ? `<span class="keep-checklist-more-badge">+${overflowCompleted} more completed</span>` : ''}
+        </div>
+      </details>
+    `;
+  }
+
+  return `
+    <div class="keep-card-checklist" data-memo-id="${memo.id}">
+      <div class="keep-unchecked-items-body">
+        ${activeHtml}
+      </div>
+      ${completedHtml}
+    </div>
+  `;
+}
+
 export function renderMemos(memoList, customHeading = null, bannerMessage = null) {
   const gridContainer = document.getElementById('memos-grid-container');
   const listContainer = document.getElementById('recent-memos-list');
@@ -145,24 +224,10 @@ export function renderCardGridView(memos, container, isTrash, skipPinnedGrouping
 
     const isSelected = isMemoSelected(memo.id);
 
-    let checklistHtml = '';
     const isChecklist = memo.noteType === 'checklist' || (Array.isArray(memo.checklistData) && memo.checklistData.length > 0);
-    if (isChecklist && Array.isArray(memo.checklistData) && memo.checklistData.length > 0) {
-      const itemsToShow = memo.checklistData.slice(0, 8);
-      checklistHtml = `
-        <div class="keep-card-checklist">
-          ${itemsToShow.map(item => `
-            <div class="keep-checklist-item ${item.checked ? 'completed' : ''}">
-              <input type="checkbox" ${item.checked ? 'checked' : ''} data-memo-id="${memo.id}" data-check-id="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.text || 'Item')}">
-              <span class="keep-item-text" style="font-size:0.875rem;">${escapeHtml(item.text || '')}</span>
-            </div>
-          `).join('')}
-          ${memo.checklistData.length > 8 ? `<span style="font-size:0.75rem; color:var(--text-muted); display:block; padding-top:0.25rem;">+${memo.checklistData.length - 8} more items</span>` : ''}
-        </div>
-      `;
-    } else {
-      checklistHtml = `<div class="memo-card-snippet">${escapeHtml((memo.snippet || memo.content || '').slice(0, 160))}</div>`;
-    }
+    const checklistHtml = isChecklist
+      ? renderCardChecklistHtml(memo)
+      : `<div class="memo-card-snippet">${escapeHtml((memo.snippet || memo.content || '').slice(0, 160))}</div>`;
 
     let attachmentsHtml = '';
     if (Array.isArray(memo.attachments) && memo.attachments.length > 0) {
@@ -370,26 +435,42 @@ export function attachMemoItemInteractions(container, memos) {
     setFilter('tag', chip.getAttribute('data-tag'));
   }));
 
-  // Card interactive checklist item toggle
-  container.querySelectorAll('.keep-checklist-item input[type="checkbox"]').forEach((chk) => {
-    chk.addEventListener('change', async (e) => {
-      e.stopPropagation();
-      const memoId = chk.getAttribute('data-memo-id');
-      const checkId = chk.getAttribute('data-check-id');
-      const memo = memos.find((m) => m.id === memoId);
-      if (!memo || !Array.isArray(memo.checklistData)) return;
-      const item = memo.checklistData.find((i) => String(i.id) === String(checkId));
-      if (!item) return;
-      item.checked = chk.checked;
-      chk.closest('.keep-checklist-item')?.classList.toggle('completed', chk.checked);
-      try {
-        await api.updateMemo(memo.id, { checklistData: memo.checklistData, version: memo.version });
-        memo.version = (memo.version || 1) + 1;
-      } catch {
-        showToast('Failed to update checklist item', 'error');
-      }
+  // Card interactive checklist item toggle with Google Keep style instant segregation and debouncing
+  function attachCardChecklistListeners(rootEl) {
+    rootEl.querySelectorAll('.keep-checklist-item input[type="checkbox"]').forEach((chk) => {
+      chk.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const memoId = chk.getAttribute('data-memo-id');
+        const checkId = chk.getAttribute('data-check-id');
+        const memo = memos.find((m) => m.id === memoId);
+        if (!memo || !Array.isArray(memo.checklistData)) return;
+        const item = memo.checklistData.find((i) => String(i.id) === String(checkId));
+        if (!item) return;
+
+        item.checked = chk.checked;
+
+        const cardEl = chk.closest(`[data-memo-id="${memoId}"]`);
+        const checklistContainer = cardEl?.querySelector('.keep-card-checklist');
+        if (checklistContainer) {
+          const wasDrawerOpen = !!checklistContainer.querySelector('.keep-card-checked-drawer')?.open;
+          const temp = document.createElement('div');
+          temp.innerHTML = renderCardChecklistHtml(memo);
+          const newEl = temp.firstElementChild;
+          if (newEl) {
+            const newDrawer = newEl.querySelector('.keep-card-checked-drawer');
+            if (newDrawer && wasDrawerOpen) {
+              newDrawer.open = true;
+            }
+            checklistContainer.replaceWith(newEl);
+            attachCardChecklistListeners(newEl);
+          }
+        }
+
+        debouncedChecklistSync(memo);
+      });
     });
-  });
+  }
+  attachCardChecklistListeners(container);
 
   // Setup HTML5 drag-and-drop manual ordering
   setupCardDragAndDrop(container, memos, () => {

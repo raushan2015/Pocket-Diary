@@ -1730,6 +1730,50 @@ button.calendar-day-num {
   accent-color: var(--color-primary-600);
 }
 
+/* Google Keep In-Card Checked Items Accordion Drawer */
+.keep-card-checked-drawer {
+  margin-top: 0.35rem;
+  border-top: 1px dashed var(--border-color, rgba(0, 0, 0, 0.12));
+  padding-top: 0.3rem;
+}
+
+.keep-checked-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  padding: 0.15rem 0;
+}
+
+.keep-checked-summary::-webkit-details-marker {
+  display: none;
+}
+
+.keep-checked-summary .keep-chevron {
+  transition: transform var(--transition-fast, 0.15s ease);
+}
+
+.keep-card-checked-drawer[open] .keep-checked-summary .keep-chevron {
+  transform: rotate(90deg);
+}
+
+.keep-checked-items-body {
+  padding-left: 0.2rem;
+  margin-top: 0.2rem;
+}
+
+.keep-checklist-more-badge {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 0.15rem 0;
+  display: block;
+}
+
 .keep-item-input {
   flex: 1;
   border: none;

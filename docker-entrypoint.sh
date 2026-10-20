@@ -54,7 +54,12 @@ echo "Starting Memo Manager Backend service on ${BACKEND_HOST}:${BACKEND_PORT}..
   cd "${BACKEND_DIR}"
   export PORT="${BACKEND_PORT}"
   export HOST="${BACKEND_HOST}"
-  exec node dist/index.js
+  if [ "${NODE_ENV}" = "development" ]; then
+    echo "Running backend in development mode with live watch..."
+    exec node --watch dist/index.js
+  else
+    exec node dist/index.js
+  fi
 ) &
 BACKEND_PID=$!
 

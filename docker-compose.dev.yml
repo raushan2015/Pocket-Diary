@@ -1,0 +1,16 @@
+# Memo Manager SaaS — Docker Compose Development Override
+# TECHSHAN AI Office
+# Enables live volume bind mounts and development watch mode
+
+services:
+  memo-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app/frontend:ro
+      - ./backend/dist:/app/backend/dist:ro
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh:ro
+      - memo_data:/app/data
