@@ -1,5 +1,5 @@
 /**
- * Notes SaaS - Main Application Bootstrap & Controller
+ * Pocket Diary SaaS - Main Application Bootstrap & Controller
  * Modular architecture wiring together Keep quick-capture, modals, popovers, canvas, dnd, and document editor.
  */
 
@@ -164,7 +164,7 @@ async function initApp() {
     });
   }
 
-  console.log('Notes - Google Keep Alternative Web App initialized successfully.');
+  console.log('Pocket Diary Web App initialized successfully.');
 }
 
 if (document.readyState === 'loading') {

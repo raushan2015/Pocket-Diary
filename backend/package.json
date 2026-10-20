@@ -1,7 +1,7 @@
 {
-  "name": "memo-manager-backend",
+  "name": "pocket-diary-backend",
   "version": "1.0.0",
-  "description": "Memo Manager SaaS Backend",
+  "description": "Pocket Diary Backend",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "keywords": [
-    "memo-manager",
+    "pocket-diary",
     "fastify",
     "drizzle-orm",
     "sqlite"

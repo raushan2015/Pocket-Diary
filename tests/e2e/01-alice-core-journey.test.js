@@ -248,7 +248,7 @@ test('User Journey 4: Memo Creation with Status, Priority, Due Date, Tags & Chec
   // Fill markdown content with checklist
   const memoContent = `# Sprint 42 Architecture Blueprint
 
-High-performance Memo Manager SaaS system design:
+High-performance Pocket Diary SaaS system design:
 - [x] Fastify API engine with Drizzle ORM
 - [x] Strict workspace-scoped tenant isolation
 - [ ] SQLite FTS5 sub-millisecond full-text search

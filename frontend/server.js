@@ -214,5 +214,5 @@ server.headersTimeout = PROXY_TIMEOUT_MS + 5000;
 server.requestTimeout = PROXY_TIMEOUT_MS + 5000;
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Memo Manager Frontend listening on http://0.0.0.0:${PORT} (proxying /api to ${BACKEND_URL})`);
+  console.log(`Pocket Diary Frontend listening on http://0.0.0.0:${PORT} (proxying /api to ${BACKEND_URL})`);
 });

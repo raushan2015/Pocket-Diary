@@ -1,6 +1,6 @@
-# Notes
+# Pocket Diary
 
-A self-hosted, responsive note-taking app for capturing, organizing, searching, and managing personal or team notes. Notes provides a clean notes-first interface backed by a Fastify API and SQLite, with workspaces and tenant-aware access controls.
+A self-hosted, responsive note-taking app for capturing, organizing, searching, and managing personal or team notes. Pocket Diary provides a clean notes-first interface backed by a Fastify API and SQLite, with workspaces and tenant-aware access controls.
 
 Repository: [github.com/raushan2015/notes](https://github.com/raushan2015/notes)
 
@@ -95,7 +95,7 @@ Repository: [github.com/raushan2015/notes](https://github.com/raushan2015/notes)
 - Health endpoint for container health checks.
 - Backend unit/integration tests and browser-based end-to-end tests.
 
-> Notes is an actively developed project. Review [Known limitations](#known-limitations) before using it for sensitive or business-critical data.
+> Pocket Diary is an actively developed project. Review [Known limitations](#known-limitations) before using it for sensitive or business-critical data.
 
 ## Architecture
 

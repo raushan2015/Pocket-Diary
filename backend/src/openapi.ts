@@ -49,7 +49,7 @@ declare module 'fastify' {
 const pkgPath = fileURLToPath(new URL('../package.json', import.meta.url));
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { name?: string; version?: string };
 
-export const API_TITLE = 'Memo Manager SaaS API';
+export const API_TITLE = 'Pocket Diary SaaS API';
 export const API_VERSION: string = pkg.version || '1.0.0';
 
 /**

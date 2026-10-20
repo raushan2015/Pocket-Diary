@@ -1,4 +1,4 @@
-# Backend Dockerfile for standalone microservice deployment
+# Backend Dockerfile for Pocket Diary standalone microservice deployment
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 

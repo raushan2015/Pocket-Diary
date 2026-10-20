@@ -1,5 +1,5 @@
 /**
- * Service Worker for Notes (Google Keep Alternative)
+ * Service Worker for Pocket Diary
  * Provides offline shell caching and network fallback
  *
  * CACHE_NAME (audit L-12): bump the version whenever PRECACHE_ASSETS changes

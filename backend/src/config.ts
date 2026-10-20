@@ -48,7 +48,7 @@ export const smtpConfig = {
   secure: process.env.SMTP_SECURE === 'true',
   user: process.env.SMTP_USER?.trim() || '',
   pass: process.env.SMTP_PASS ?? '',
-  from: process.env.SMTP_FROM?.trim() || 'Notes <no-reply@notes.local>',
+  from: process.env.SMTP_FROM?.trim() || 'Pocket Diary <no-reply@notes.local>',
 };
 
 // Optional Web Push (VAPID) credentials. Generate with:

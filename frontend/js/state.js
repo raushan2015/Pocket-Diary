@@ -1,5 +1,5 @@
 /**
- * Memo Manager SaaS - Centralized Application State Store
+ * Pocket Diary SaaS - Centralized Application State Store
  */
 
 class AppState {

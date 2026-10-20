@@ -1,7 +1,7 @@
 {
-  "name": "memo-manager-qa-tests",
+  "name": "pocket-diary-qa-tests",
   "version": "1.0.0",
-  "description": "End-to-End QA Verification and System Certification Test Suites for Memo Manager SaaS (split into e2e/*.test.js journey files)",
+  "description": "End-to-End QA Verification and System Certification Test Suites for Pocket Diary (split into e2e/*.test.js journey files)",
   "type": "module",
   "scripts": {
     "test": "node --test --test-timeout=180000 --test-concurrency=4 e2e/*.test.js",

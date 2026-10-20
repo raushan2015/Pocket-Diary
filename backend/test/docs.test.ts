@@ -206,7 +206,7 @@ describe('OpenAPI documentation (GET /docs)', () => {
 
   it('exposes the spec with the expected document shape', () => {
     expect(spec.openapi).toBe('3.0.3');
-    expect(spec.info?.title).toBe('Memo Manager SaaS API');
+    expect(spec.info?.title).toBe('Pocket Diary SaaS API');
     expect(spec.info?.version).toBeTruthy();
     expect(spec.info?.description).toContain('memo_session');
     // Relative server URL keeps "Try it out" working both directly and behind

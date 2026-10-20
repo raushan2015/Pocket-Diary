@@ -365,7 +365,7 @@ export async function buildPayloadFromLooseFiles(fileList) {
   }
 
   if (!htmlFiles.length && !mdFiles.length) {
-    throw new Error('Select a Google Takeout .zip file, extracted Keep .html files, a Notes JSON backup, or Markdown (.md) files.');
+    throw new Error('Select a Google Takeout .zip file, extracted Keep .html files, a Pocket Diary JSON backup, or Markdown (.md) files.');
   }
 
   // Audit M-17: extracted Keep folders carry the same Note.json metadata files

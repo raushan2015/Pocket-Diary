@@ -42,7 +42,7 @@ export async function guardedFetch(rawUrl: string | URL, options: GuardedFetchOp
   const {
     timeoutMs = 4000,
     maxBytes = 256 * 1024,
-    userAgent = 'Mozilla/5.0 (compatible; NotesBot/1.0)',
+    userAgent = 'Mozilla/5.0 (compatible; PocketDiaryBot/1.0)',
     headers: extraHeaders = {},
     method = 'GET',
   } = options;

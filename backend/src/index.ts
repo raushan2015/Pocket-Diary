@@ -35,7 +35,7 @@ async function start() {
       port: config.port,
       host: config.host,
     });
-    app.log.info(`Memo Manager backend listening on ${address}`);
+    app.log.info(`Pocket Diary backend listening on ${address}`);
     const databasePath = process.env.DATABASE_PATH ?? path.resolve(process.cwd(), 'data/memo_manager.db');
     stopBackupScheduler = startBackupScheduler({
       sqlite: app.dbCtx.sqlite,

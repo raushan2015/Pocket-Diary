@@ -344,7 +344,7 @@ export function setupEventListeners() {
       {
         id: 'demo-memo-12',
         title: 'API Architecture Specs',
-        content: '# Memo Manager Backend API\n\n- OpenAPI 3.1 Swagger docs reachable at `/docs`\n- Rate limiting at 300 req/min with trusted proxy evaluation\n- Content Security Policy locked to `default-src \'self\'`\n- SQLite WAL journaling with FTS5 search index',
+        content: '# Pocket Diary Backend API\n\n- OpenAPI 3.1 Swagger docs reachable at `/docs`\n- Rate limiting at 300 req/min with trusted proxy evaluation\n- Content Security Policy locked to `default-src \'self\'`\n- SQLite WAL journaling with FTS5 search index',
         noteType: 'text',
         color: 'darkblue',
         theme: 'none',
@@ -961,7 +961,7 @@ export function setupEventListeners() {
 
       if (previewEl) {
         if (prepared.backupPayload) {
-          previewEl.innerHTML = `Detected a <strong>Notes JSON backup</strong> with <strong>${(prepared.backupPayload.memos || []).length}</strong> note(s).`;
+          previewEl.innerHTML = `Detected a <strong>Pocket Diary JSON backup</strong> with <strong>${(prepared.backupPayload.memos || []).length}</strong> note(s).`;
         } else {
           const checks = prepared.notes.filter((n) => n.noteType === 'checklist').length;
           if (prepared.source === 'markdown') {

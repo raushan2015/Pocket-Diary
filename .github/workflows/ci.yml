@@ -1,4 +1,4 @@
-# Continuous Integration for Memo Manager SaaS
+# Continuous Integration for Pocket Diary SaaS
 #
 # Audit §6 asked for the Playwright e2e suite to run against an ephemeral
 # instance in CI. This workflow runs:

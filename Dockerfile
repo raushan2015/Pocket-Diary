@@ -1,4 +1,4 @@
-# Multi-stage production Dockerfile for Memo Manager SaaS
+# Multi-stage production Dockerfile for Pocket Diary SaaS
 # TECHSHAN AI Office — High performance, unified deployment
 
 # ----------------------------------------------------
@@ -28,7 +28,7 @@ RUN npm prune --omit=dev
 FROM node:22-bookworm-slim AS runner
 
 LABEL maintainer="TECHSHAN AI Office"
-LABEL application="Memo Manager SaaS"
+LABEL application="Pocket Diary SaaS"
 LABEL version="1.0.0"
 
 WORKDIR /app

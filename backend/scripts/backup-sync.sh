@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ==============================================================================
-# Memo Manager - SQLite Backup Replication & Disaster Recovery Restore
+# Pocket Diary - SQLite Backup Replication & Disaster Recovery Restore
 # ==============================================================================
 
 BACKUP_DIR="${BACKUP_DIR:-/data/backups}"

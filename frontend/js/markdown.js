@@ -1,5 +1,5 @@
 /**
- * Memo Manager SaaS - Markdown & Checklist Engine
+ * Pocket Diary SaaS - Markdown & Checklist Engine
  * Lightweight, secure Markdown renderer with interactive checklist support
  *
  * Security (audit C-1): inline formatting is tokenized on the RAW text

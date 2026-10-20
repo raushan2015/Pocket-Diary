@@ -1,7 +1,7 @@
 # Backup, Replication & Disaster Recovery Guide
 
 ## Architecture Overview
-Memo Manager utilizes an embedded SQLite database running in Write-Ahead Logging (`WAL`) mode with automatic online backups managed by `backend/src/services/backup.service.ts`.
+Pocket Diary utilizes an embedded SQLite database running in Write-Ahead Logging (`WAL`) mode with automatic online backups managed by `backend/src/services/backup.service.ts`.
 
 1. **Automated Online Snapshots**: Every 24 hours (configurable via `BACKUP_INTERVAL_HOURS`), a live snapshot is taken using SQLite's native backup API into `BACKUP_DIR` (`/data/backups`).
 2. **Snapshot Retention**: The newest 7 snapshots (configurable via `BACKUP_RETENTION`) are retained locally; older snapshots are safely rotated.

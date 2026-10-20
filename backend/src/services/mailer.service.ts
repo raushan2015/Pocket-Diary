@@ -103,7 +103,7 @@ export function renderReminderEmail(params: {
     `This is your reminder for the note "${params.memoTitle}" (${when}).`,
   ];
   if (params.memoBody) textLines.push('', `Note preview: ${params.memoBody.slice(0, 280)}`);
-  textLines.push('', `Open your notes: ${params.appUrl}`, '', '— Notes (self-hosted Google Keep alternative)');
+  textLines.push('', `Open your notes: ${params.appUrl}`, '', '— Pocket Diary');
   const text = textLines.join('\n');
 
   const escapedTitle = escapeHtmlText(params.memoTitle);
@@ -114,8 +114,8 @@ export function renderReminderEmail(params: {
     params.memoBody
       ? `<blockquote style="border-left: 3px solid #fbbc04; margin: 0.75rem 0; padding: 0.35rem 0.85rem; color: #57606a;">${escapeHtmlText(params.memoBody.slice(0, 280))}…</blockquote>`
       : '',
-    `<p><a href="${params.appUrl}" style="background: #fbbc04; color: #202124; padding: 0.55rem 1rem; border-radius: 18px; text-decoration: none; font-weight: 600;">Open Notes</a></p>`,
-    '<p style="font-size: 0.75rem; color: #8b949e;">Sent by your self-hosted Notes instance.</p>',
+    `<p><a href="${params.appUrl}" style="background: #fbbc04; color: #202124; padding: 0.55rem 1rem; border-radius: 18px; text-decoration: none; font-weight: 600;">Open Pocket Diary</a></p>`,
+    '<p style="font-size: 0.75rem; color: #8b949e;">Sent by your self-hosted Pocket Diary instance.</p>',
     '</div>',
   ].join('\n');
 
@@ -128,7 +128,7 @@ export function renderInviteEmail(params: {
   inviteUrl: string;
   role: string;
 }): { subject: string; text: string; html: string } {
-  const subject = `You've been invited to join "${params.workspaceName}" on Notes`;
+  const subject = `You've been invited to join "${params.workspaceName}" on Pocket Diary`;
 
   const text = [
     `Hi there,`,
@@ -139,7 +139,7 @@ export function renderInviteEmail(params: {
     '',
     'The link expires in 7 days. If you already have an account you will join the workspace after signing in.',
     '',
-    '— Notes (self-hosted Google Keep alternative)',
+    '— Pocket Diary',
   ].join('\n');
 
   const escapedName = escapeHtmlText(params.workspaceName);
@@ -161,19 +161,19 @@ export function renderPasswordResetEmail(params: {
   resetUrl: string;
   expiresInMinutes: number;
 }): { subject: string; text: string; html: string } {
-  const subject = 'Reset your Notes password';
+  const subject = 'Reset your Pocket Diary password';
 
   const text = [
     `Hi ${params.userName},`,
     '',
-    'We received a request to reset the password for your Notes account.',
+    'We received a request to reset the password for your Pocket Diary account.',
     `Reset your password within ${params.expiresInMinutes} minutes using this link:`,
     '',
     params.resetUrl,
     '',
     'If you did not request this, you can safely ignore this email — the link expires and your password stays unchanged.',
     '',
-    '— Notes (self-hosted Google Keep alternative)',
+    '— Pocket Diary',
   ].join('\n');
 
   const html = [
@@ -182,7 +182,7 @@ export function renderPasswordResetEmail(params: {
     `<p>Hi <strong>${escapeHtmlText(params.userName)}</strong>, use the button below to choose a new password. This link is valid for <strong>${params.expiresInMinutes} minutes</strong> and can be used only once.</p>`,
     `<p><a href="${params.resetUrl}" style="background: #fbbc04; color: #202124; padding: 0.55rem 1rem; border-radius: 18px; text-decoration: none; font-weight: 600;">Reset password</a></p>`,
     '<p style="font-size: 0.8rem; color: #8b949e;">If you did not request a password reset, ignore this email and your password will stay unchanged.</p>',
-    '<p style="font-size: 0.75rem; color: #8b949e;">Sent by your self-hosted Notes instance.</p>',
+    '<p style="font-size: 0.75rem; color: #8b949e;">Sent by your self-hosted Pocket Diary instance.</p>',
     '</div>',
   ].join('\n');
 

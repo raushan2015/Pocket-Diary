@@ -1,6 +1,6 @@
 {
-  "name": "Notes - Google Keep Alternative",
-  "short_name": "Notes",
+  "name": "Pocket Diary",
+  "short_name": "Pocket Diary",
   "description": "Capture, organize, and find your ideas in one place.",
   "start_url": "/",
   "scope": "/",

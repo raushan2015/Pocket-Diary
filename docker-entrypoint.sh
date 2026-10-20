@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# Memo Manager SaaS Container Entrypoint
+# Pocket Diary SaaS Container Entrypoint
 # TECHSHAN AI Office — Orchestrates unified backend and frontend reverse proxy
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +20,7 @@ mkdir -p "${ATTACHMENTS_DIR}"
 export NODE_ENV="${NODE_ENV:-production}"
 
 echo "========================================================"
-echo " Starting Memo Manager SaaS Application"
+echo " Starting Pocket Diary SaaS Application"
 echo " Environment: ${NODE_ENV}"
 echo " Frontend / Public Port: ${FRONTEND_PORT}"
 echo " Backend Internal Port:  ${BACKEND_PORT}"
@@ -33,7 +33,7 @@ mkdir -p "$(dirname "${DATABASE_PATH}")"
 # Graceful termination handler
 cleanup() {
   echo ""
-  echo "Received shutdown signal. Stopping Memo Manager services..."
+  echo "Received shutdown signal. Stopping Pocket Diary services..."
   if [ -n "${FRONTEND_PID}" ]; then
     kill -TERM "${FRONTEND_PID}" 2>/dev/null || true
   fi
@@ -41,7 +41,7 @@ cleanup() {
     kill -TERM "${BACKEND_PID}" 2>/dev/null || true
   fi
   wait
-  echo "Memo Manager services terminated cleanly."
+  echo "Pocket Diary services terminated cleanly."
 }
 
 # Graceful shutdown on signals: children are stopped and the container exits 0.
@@ -49,7 +49,7 @@ cleanup() {
 trap 'cleanup; exit 0' SIGTERM SIGINT
 
 # 1. Start Backend Fastify service
-echo "Starting Memo Manager Backend service on ${BACKEND_HOST}:${BACKEND_PORT}..."
+echo "Starting Pocket Diary Backend service on ${BACKEND_HOST}:${BACKEND_PORT}..."
 (
   cd "${BACKEND_DIR}"
   export PORT="${BACKEND_PORT}"
@@ -87,7 +87,7 @@ fi
 echo "Backend is ready and responding at http://${BACKEND_HOST}:${BACKEND_PORT}/health"
 
 # 2. Start Frontend reverse proxy service
-echo "Starting Memo Manager Frontend service on 0.0.0.0:${FRONTEND_PORT} (proxying to ${BACKEND_URL})..."
+echo "Starting Pocket Diary Frontend service on 0.0.0.0:${FRONTEND_PORT} (proxying to ${BACKEND_URL})..."
 (
   cd "${FRONTEND_DIR}"
   export FRONTEND_PORT="${FRONTEND_PORT}"
@@ -97,7 +97,7 @@ echo "Starting Memo Manager Frontend service on 0.0.0.0:${FRONTEND_PORT} (proxyi
 FRONTEND_PID=$!
 
 echo "========================================================"
-echo " Memo Manager SaaS is running successfully!"
+echo " Pocket Diary SaaS is running successfully!"
 echo " Public URL:   http://0.0.0.0:${FRONTEND_PORT}/"
 echo " Health Check: http://0.0.0.0:${FRONTEND_PORT}/health"
 echo " API Endpoint: http://0.0.0.0:${FRONTEND_PORT}/api/v1"
@@ -111,10 +111,10 @@ set +e
 wait -n "${BACKEND_PID}" "${FRONTEND_PID}"; EXIT_CODE=$?
 set -e
 if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "A Memo Manager service exited unexpectedly with code ${EXIT_CODE}."
+  echo "A Pocket Diary service exited unexpectedly with code ${EXIT_CODE}."
 fi
 cleanup
 if [ "${EXIT_CODE}" -ne 0 ]; then
-  echo "Memo Manager shutting down with exit code ${EXIT_CODE}."
+  echo "Pocket Diary shutting down with exit code ${EXIT_CODE}."
   exit "${EXIT_CODE}"
 fi

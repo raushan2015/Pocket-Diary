@@ -1,5 +1,5 @@
 /**
- * Memo Manager SaaS - API Client Layer
+ * Pocket Diary SaaS - API Client Layer
  * Strictly implements API contract from system-design.md §4.2, §4.3, §4.4, §4.6
  */
 

@@ -187,7 +187,7 @@ export function setAuthMode(mode) {
     if (switchBtn) switchBtn.textContent = 'Sign in';
   } else if (mode === 'register') {
     if (titleEl) titleEl.textContent = 'Create Account';
-    if (subtitleEl) subtitleEl.textContent = 'Get started with your free Memo Manager workspace';
+    if (subtitleEl) subtitleEl.textContent = 'Get started with your free Pocket Diary workspace';
     if (nameGroup) nameGroup.style.display = 'flex';
     if (emailGroup) emailGroup.style.display = 'block';
     if (passwordGroup) passwordGroup.style.display = 'block';
@@ -200,7 +200,7 @@ export function setAuthMode(mode) {
     if (switchBtn) switchBtn.textContent = 'Sign in';
   } else {
     if (titleEl) titleEl.textContent = 'Welcome Back';
-    if (subtitleEl) subtitleEl.textContent = 'Sign in to your Memo Manager account';
+    if (subtitleEl) subtitleEl.textContent = 'Sign in to your Pocket Diary account';
     if (nameGroup) nameGroup.style.display = 'none';
     if (emailGroup) emailGroup.style.display = 'block';
     if (passwordGroup) passwordGroup.style.display = 'block';
@@ -415,7 +415,7 @@ export async function handleAuthSubmit(e) {
       renderInviteBanner();
 
       state.setUser(user, [workspace], workspace);
-      showToast(`Welcome to Notes, ${user.name}!`, 'success');
+      showToast(`Welcome to Pocket Diary, ${user.name}!`, 'success');
       resetAuthForm();
       await fetchWorkspaceData();
       navigateTo('dashboard');

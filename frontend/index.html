@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Notes - Capture, organize, and find your ideas in one place.">
+  <meta name="description" content="Pocket Diary - Capture, organize, and find your ideas in one place.">
   <meta name="theme-color" content="#6552F8">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="32x32" href="icons/logo-32.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/logo-192.png">
   <link rel="apple-touch-icon" sizes="192x192" href="icons/logo-192.png">
-  <title>Notes</title>
+  <title>Pocket Diary</title>
 
   <!-- Google Font: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -44,11 +44,11 @@
         </svg>
       </button>
       <!-- Left: Logo & Brand -->
-      <div class="navbar-brand-section" id="nav-brand-btn" role="button" tabindex="0" title="Memo Manager Home">
+      <div class="navbar-brand-section" id="nav-brand-btn" role="button" tabindex="0" title="Pocket Diary Home">
         <div class="brand-logo-icon">
-          <img class="brand-logo-img" src="icons/logo-96.png" alt="Memo Manager" width="38" height="38">
+          <img class="brand-logo-img" src="icons/logo-96.png" alt="Pocket Diary" width="38" height="38">
         </div>
-        <span class="brand-title">Memo Manager</span>
+        <span class="brand-title">Pocket Diary</span>
       </div>
 
       <!-- Center: Landing Navigation Links (Visible on Landing View) -->
@@ -245,7 +245,7 @@
             <!-- Desktop dashboard mockup -->
             <div class="hm-desktop">
               <aside class="hm-sidebar">
-                <div class="hm-brand"><img src="icons/logo-32.png" alt="" width="18" height="18"><span>Memo Manager</span></div>
+                <div class="hm-brand"><img src="icons/logo-32.png" alt="" width="18" height="18"><span>Pocket Diary</span></div>
                 <ul class="hm-nav">
                   <li class="active"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</li>
                   <li><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Memos</li>
@@ -308,7 +308,7 @@
               <div class="hm-phone-screen">
                 <div class="hm-phone-status"><span>9:41</span><span class="hm-notch"></span><span class="hm-phone-signal">▪▪▪</span></div>
                 <div class="hm-phone-header">
-                  <span class="hm-phone-brand"><img src="icons/logo-32.png" alt="" width="16" height="16"><span>Memo Manager</span></span>
+                  <span class="hm-phone-brand"><img src="icons/logo-32.png" alt="" width="16" height="16"><span>Pocket Diary</span></span>
                   <svg class="hm-phone-grid-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 </div>
                 <div class="hm-phone-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search memos...</div>
@@ -585,14 +585,14 @@
           <div class="resources-grid">
             <div class="resource-faq-item">
               <h4 class="faq-question">Where is my note data stored?</h4>
-              <p class="faq-answer">Notes uses an embedded SQLite database with WAL mode and dedicated file storage for attachments. In Docker deployments, your data lives in a persistent Docker volume on your server.</p>
+              <p class="faq-answer">Pocket Diary uses an embedded SQLite database with WAL mode and dedicated file storage for attachments. In Docker deployments, your data lives in a persistent Docker volume on your server.</p>
             </div>
             <div class="resource-faq-item">
               <h4 class="faq-question">Can I migrate notes from other tools?</h4>
               <p class="faq-answer">Yes! The Migration & Backup Wizard automatically detects legacy notes in browser localStorage and allows importing/exporting standard JSON backup files in one click. Google Keep exports and Markdown (.md) files can be imported from Account Settings → Import & Export Notes.</p>
             </div>
             <div class="resource-faq-item">
-              <h4 class="faq-question">Does Notes support Markdown and shortcuts?</h4>
+              <h4 class="faq-question">Does Pocket Diary support Markdown and shortcuts?</h4>
               <p class="faq-answer">Yes, full Markdown is supported including tables, checklists, code blocks, headings, blockquotes, and keyboard shortcuts like ⌘S (save), ⌘K (search), and ⌘B / ⌘I formatting.</p>
             </div>
             <div class="resource-faq-item">
@@ -607,7 +607,7 @@
           <div class="bottom-cta-banner">
             <div class="bottom-cta-content">
               <h2 class="bottom-cta-title">Start organizing your ideas today</h2>
-              <p class="bottom-cta-subtitle">Join thousands of users who trust Memo Manager to stay productive.</p>
+              <p class="bottom-cta-subtitle">Join thousands of users who trust Pocket Diary to stay productive.</p>
             </div>
             <button class="btn btn-primary btn-lg bottom-cta-btn" id="bottom-cta-btn">
               Create Free Account
@@ -629,7 +629,7 @@
           <div class="auth-form-column">
             <div class="auth-form-header">
               <h2 class="auth-title" id="auth-title">Welcome Back</h2>
-              <p class="auth-subtitle" id="auth-subtitle">Sign in to your Memo Manager account</p>
+              <p class="auth-subtitle" id="auth-subtitle">Sign in to your Pocket Diary account</p>
             </div>
 
             <!-- Alert Notification Banner inside Form -->
@@ -741,9 +741,9 @@
           <!-- Right Column: Brand Value Proposition Card -->
           <div class="auth-brand-column">
             <div class="auth-brand-logo-large">
-              <img src="icons/logo-96.png" alt="Memo Manager" width="56" height="56" style="border-radius: 14px;">
+              <img src="icons/logo-96.png" alt="Pocket Diary" width="56" height="56" style="border-radius: 14px;">
             </div>
-            <h3 class="auth-brand-title">Memo Manager</h3>
+            <h3 class="auth-brand-title">Pocket Diary</h3>
             <p class="auth-brand-tagline">
               Your personal space for better ideas and a more organized life.
             </p>
@@ -1539,7 +1539,7 @@
             <div class="migration-dropzone" id="migration-dropzone">
               <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--color-primary-600); margin: 0 auto 0.5rem;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
               <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.25rem;">Upload or Drop JSON Backup File</div>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">Select a Notes JSON export or legacy backup file</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Select a Pocket Diary JSON export or legacy backup file</div>
               <input type="file" id="migration-file-input" accept=".json,application/json" style="display: none;">
               <button type="button" class="btn btn-outline btn-sm" style="margin-top: 0.75rem;" id="mig-browse-file-btn">Browse Files</button>
             </div>
@@ -1859,7 +1859,7 @@
               <div class="settings-data-row" style="flex-direction: column; align-items: stretch;">
                 <div>
                   <div class="settings-data-title">Import from Google Keep or Markdown</div>
-                  <div class="settings-data-desc">Export your notes from <a href="https://takeout.google.com/settings/takeout" target="_blank" rel="noopener noreferrer">Google Takeout</a> (select “Keep”), then upload the <strong>.zip</strong> here — or pick the extracted <strong>.html</strong> files. Checklists and labels are converted automatically. You can also import <strong>.md</strong> files (loose or zipped): each file becomes a new note with all of its content. Notes JSON backups are also accepted.</div>
+                  <div class="settings-data-desc">Export your notes from <a href="https://takeout.google.com/settings/takeout" target="_blank" rel="noopener noreferrer">Google Takeout</a> (select “Keep”), then upload the <strong>.zip</strong> here — or pick the extracted <strong>.html</strong> files. Checklists and labels are converted automatically. You can also import <strong>.md</strong> files (loose or zipped): each file becomes a new note with all of its content. Pocket Diary JSON backups are also accepted.</div>
                 </div>
                 <input type="file" id="settings-import-file-input" accept=".zip,.html,.htm,.json,.md,.markdown" multiple style="display: none;">
                 <div class="settings-import-controls">
@@ -1936,7 +1936,7 @@
     <div class="modal-backdrop" id="modal-upgrade-plan" role="dialog" aria-modal="true" aria-labelledby="modal-plan-title">
       <div class="modal-card" style="max-width: 640px;">
         <div class="modal-header">
-          <h3 class="modal-title" id="modal-plan-title">Your Notes Plan</h3>
+          <h3 class="modal-title" id="modal-plan-title">Your Pocket Diary Plan</h3>
           <button type="button" class="modal-close-btn" id="modal-plan-close-btn" aria-label="Close modal">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
