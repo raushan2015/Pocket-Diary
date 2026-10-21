@@ -298,6 +298,7 @@ const memoSchema = {
       },
     },
     tags: { type: 'array', items: { type: 'string' }, description: 'Tag names, case-insensitively unique (audit M-3).' },
+    clientId: { ...nullableString, description: 'Idempotency key supplied at create time by offline-first clients (mobile-apps); null otherwise. Not editable via PATCH.' },
     version: { type: 'integer', description: 'Optimistic-concurrency counter. PATCH may send it; a stale value yields 409.' },
     createdBy: { type: 'string', description: 'User id of the author (reassigned if the author deletes their account).' },
     createdAt: { type: 'integer', description: 'Unix epoch milliseconds.' },

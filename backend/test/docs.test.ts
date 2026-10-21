@@ -23,6 +23,7 @@ const EXPECTED_OPERATIONS: Array<[string, string, 'public' | 'auth', string]> = 
   // [method, path, auth, tag]
   ['get', '/health', 'public', 'System'],
   ['get', '/api/v1/health', 'public', 'System'],
+  ['get', '/api/v1/system/info', 'public', 'System'],
   ['get', '/api/v1/system/backup-status', 'auth', 'System'],
 
   ['post', '/api/v1/auth/register', 'public', 'Auth'],

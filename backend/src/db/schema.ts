@@ -132,6 +132,12 @@ export const memos = sqliteTable('memos', {
   collaborators: text('collaborators').notNull().default('[]'), // JSON array of collaborator emails
   checklistData: text('checklist_data').notNull().default('[]'), // JSON array of items: [{id, text, completed}]
   linkPreviews: text('link_previews').notNull().default('[]'), // JSON array of {url, title, description, imageUrl, faviconUrl}
+  /**
+   * Optional idempotency key supplied by native/offline clients on create.
+   * UNIQUE per workspace (idx_memos_client_id): replaying the same clientId
+   * returns the original memo instead of duplicating it. Never editable.
+   */
+  clientId: text('client_id'),
   version: integer('version').notNull().default(1), // Optimistic lock counter
   createdBy: text('created_by')
     .notNull()
@@ -146,6 +152,7 @@ export const memos = sqliteTable('memos', {
   index('idx_memos_sort_order').on(table.workspaceId, table.sortOrder),
   index('idx_memos_due_date').on(table.workspaceId, table.dueDate),
   index('idx_memos_deleted_at').on(table.workspaceId, table.deletedAt),
+  uniqueIndex('idx_memos_client_id').on(table.workspaceId, table.clientId),
 ]);
 
 // 9. Memo Tags (Junction)

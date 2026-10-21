@@ -10,7 +10,7 @@ import { attachmentRoutes } from './attachments.js';
 import { notificationRoutes } from './notifications.js';
 import { pushRoutes } from './push.js';
 import { inviteRoutes } from './invites.js';
-import { systemRoutes } from './system.js';
+import { systemInfoRoutes, systemRoutes } from './system.js';
 import { jsonResponse, errorResponses, PUBLIC_SECURITY } from '../openapi.js';
 
 const healthMeta = (direct: boolean) => ({
@@ -77,6 +77,10 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
   // Workspace invitations (public lookup + authenticated accept)
   await fastify.register(inviteRoutes, { prefix: '/invites' });
 
-  // Self-hosted system status (backup snapshots)
+  // Self-hosted system status (backup snapshots) — authenticated, admin-only
   await fastify.register(systemRoutes, { prefix: '/system' });
+
+  // Public server identity/capabilities for first-launch mobile clients
+  // (registered separately: it must be reachable without a session).
+  await fastify.register(systemInfoRoutes, { prefix: '/system' });
 };

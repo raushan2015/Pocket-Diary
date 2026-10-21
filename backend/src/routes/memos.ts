@@ -127,6 +127,8 @@ const memoBodyBaseSchema = {
       },
     },
     tags: { type: 'array', maxItems: 50, items: tagItemSchema },
+    /** Mobile-apps idempotency key: replaying a create with the same workspaceId + clientId returns the original memo (8-64 chars). */
+    clientId: { type: 'string', minLength: 8, maxLength: 64 },
     version: { type: 'integer', minimum: 1 },
   },
   additionalProperties: false,
@@ -250,7 +252,7 @@ const listMeta = {
 const createMeta = {
   tags: ['Memos'],
   summary: 'Create a note',
-  description: 'Creates a note in the workspace. Viewers are rejected (403). `version` must not be sent on create. Tags are deduplicated case-insensitively (audit M-3); unknown colors are normalized into the palette (audit M-2).',
+  description: 'Creates a note in the workspace. Viewers are rejected (403). `version` must not be sent on create. Tags are deduplicated case-insensitively (audit M-3); unknown colors are normalized into the palette (audit M-2). Optional `clientId` (8-64 chars) makes offline-create replays idempotent: a duplicate submission returns the memo the first attempt created.',
   security: SESSION_SECURITY,
   openapi: {
     responses: {

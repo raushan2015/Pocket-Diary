@@ -133,6 +133,8 @@ export interface FormattedMemo {
   categoryId: string | null;
   category: { id: string; name: string; color: string | null; icon: string | null } | null;
   tags: string[];
+  /** Idempotency key supplied by offline-first clients at create time (mobile-apps). Null when absent. */
+  clientId: string | null;
   version: number;
   createdBy: string;
   createdAt: number;
@@ -183,6 +185,13 @@ export interface CreateMemoInput {
   checklistData?: ChecklistItem[];
   linkPreviews?: LinkPreview[];
   tags?: string[];
+  /**
+   * Idempotency key (8-64 chars) for offline-capable clients: replaying a
+   * create with the same workspaceId + clientId returns the memo that the
+   * first (possibly response-lost) attempt created, instead of duplicating
+   * it. Optional and ignored by all pre-mobile consumers.
+   */
+  clientId?: string;
 }
 
 export interface UpdateMemoInput {
@@ -344,6 +353,7 @@ function hydrateMemos(
       categoryId: catId ?? null,
       category: catId ? categoryMap.get(catId) ?? null : null,
       tags: tagsMap.get(m.id) ?? [],
+      clientId: m.client_id !== undefined ? (m.client_id ?? null) : (m.clientId ?? null),
       version: Number(m.version ?? 1),
       createdBy: m.created_by !== undefined ? m.created_by : m.createdBy,
       createdAt: Number(m.created_at !== undefined ? m.created_at : m.createdAt),
@@ -679,6 +689,23 @@ export function createMemo(
     throw new ValidationError('Folder must belong to the same workspace as the memo');
   }
 
+  // Idempotent-create replay (mobile-apps): if a create with this clientId
+  // already succeeded in this workspace — possibly with a response the client
+  // never received — return the memo that exists instead of writing a second
+  // one. Uniqueness is also enforced by idx_memos_client_id as the backstop.
+  if (data.clientId !== undefined) {
+    if (typeof data.clientId !== 'string' || data.clientId.length < 8 || data.clientId.length > 64) {
+      throw new ValidationError('clientId must be a string of 8 to 64 characters');
+    }
+    const existing = sqlite
+      .prepare('SELECT id FROM memos WHERE workspace_id = ? AND client_id = ?')
+      .get(workspaceId, data.clientId) as { id: string } | undefined;
+    if (existing) {
+      const memo = getMemoById(dbCtx, existing.id, workspaceId);
+      if (memo) return memo;
+    }
+  }
+
   const memoId = crypto.randomUUID();
   const now = Date.now();
   const initialVersion = 1;
@@ -711,6 +738,7 @@ export function createMemo(
       collaborators: JSON.stringify(data.collaborators || []),
       checklistData: JSON.stringify(data.checklistData || []),
       linkPreviews: JSON.stringify(sanitizeLinkPreviews(data.linkPreviews)),
+      clientId: data.clientId ?? null,
       version: initialVersion,
       createdBy: userId,
       createdAt: now,

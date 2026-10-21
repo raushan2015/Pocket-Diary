@@ -8,7 +8,8 @@
  * could add it. This test recreates a REAL legacy database using the old
  * schema verbatim from that commit and proves the new code migrates it:
  *
- *   legacy (user_version 0) --createDatabase--> v3, data preserved, app boots
+ *   legacy (user_version 0) --createDatabase--> current schema (v4),
+ *   data preserved, app boots
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
@@ -276,7 +277,7 @@ describe('Migration from the pre-remediation (e804dcf) database', () => {
     dbCtx = createDatabase(dbPath);
     const sqlite = dbCtx.sqlite;
 
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(3);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(4);
 
     // --- 3. The L-8 step added public_id and backfilled existing sessions.
     const sessionCols = sqlite.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
@@ -302,7 +303,7 @@ describe('Migration from the pre-remediation (e804dcf) database', () => {
     // --- 7. Idempotent: migrating an already-migrated database is a no-op.
     dbCtx.sqlite.close();
     dbCtx = createDatabase(dbPath);
-    expect(dbCtx.sqlite.pragma('user_version', { simple: true })).toBe(3);
+    expect(dbCtx.sqlite.pragma('user_version', { simple: true })).toBe(4);
   });
 
   it('boots the full app against a migrated legacy database and serves traffic', async () => {

@@ -225,7 +225,7 @@ const FTS_SCHEMA_VERSION = 2;
  * ad-hoc approach. Steps stay idempotent (PRAGMA guards are kept as
  * belt-and-braces for databases that predate versioning).
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export function runMigrations(sqlite: Database.Database): void {
   // Base schema (idempotent CREATE IF NOT EXISTS statements)
@@ -241,7 +241,7 @@ export function runMigrations(sqlite: Database.Database): void {
   // idempotent (PRAGMA guards are kept as belt-and-braces for databases
   // that predate versioning), so replaying one is harmless.
   // -----------------------------------------------------------------------
-  if (dbVersion < SCHEMA_VERSION) {
+  if (dbVersion < 3) {
     // --- Step v3 -----------------------------------------------------------
     // (memo color/theme/archive/checklist columns, reminder ownership,
     //  public session ids, missing indexes, FTS update-trigger upgrade)
@@ -349,7 +349,29 @@ END;`);
       }
     }
 
-    // Record the reached schema version.
-    sqlite.pragma(`user_version = ${SCHEMA_VERSION}`);
+    // Record the reached schema version. Pinned to 3 (not SCHEMA_VERSION)
+    // so later steps gate independently of this one.
+    sqlite.pragma('user_version = 3');
+  }
+
+  // --- Step v4 -----------------------------------------------------------
+  // (mobile-apps support): idempotent note creation. Offline-first clients
+  // retry creates when an HTTP response is lost after the server already
+  // applied the write; a stable client-supplied key makes that retry safe.
+  // The column is nullable — notes created without a clientId (the web
+  // frontend and every pre-mobile API consumer) are unaffected, and SQLite
+  // UNIQUE indexes allow any number of NULLs.
+  if (dbVersion < 4) {
+    const memoColumnsV4 = sqlite.prepare('PRAGMA table_info(memos)').all() as Array<{ name: string }>;
+    if (!memoColumnsV4.some((col) => col.name === 'client_id')) {
+      sqlite.exec('ALTER TABLE memos ADD COLUMN client_id TEXT');
+    }
+    try {
+      sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_memos_client_id ON memos(workspace_id, client_id);');
+    } catch {
+      // Non-fatal for very old databases (the column was just created empty,
+      // so a duplicate-non-null conflict is impossible).
+    }
+    sqlite.pragma('user_version = 4');
   }
 }

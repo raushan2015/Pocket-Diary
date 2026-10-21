@@ -1,0 +1,20 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+.DS_Store
+*.tsbuildinfo
+
+# EAS
+/.eas/
+
+# Env — never commit secrets. Only non-secret EXPO_PUBLIC_* build-time values.
+.env
+.env.local
+
+# Test artifacts
+/test/tmp/
+
+# Expo Router generated types
+ expo-env.d.ts
