@@ -106,7 +106,7 @@ export function setupEventListeners() {
   document.getElementById('nav-register-btn')?.addEventListener('click', () => navigateTo('auth', { mode: 'register' }));
   document.getElementById('hero-get-started-btn')?.addEventListener('click', () => navigateTo('auth', { mode: 'register' }));
   document.getElementById('hero-live-demo-btn')?.addEventListener('click', () => {
-    const demoUser = { id: 'demo-user-1', name: 'Alex', email: 'alex.morgan@memomanager.local' };
+    const demoUser = { id: 'demo-user-1', name: 'Alex', email: 'alex.morgan@pocketdiary.local' };
     const demoWorkspaces = [
       { id: 'demo-ws-personal', name: 'Personal', slug: 'personal', role: 'owner' },
       { id: 'demo-ws-work', name: 'Work', slug: 'work', role: 'member' }

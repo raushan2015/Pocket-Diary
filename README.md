@@ -2,7 +2,7 @@
 
 A self-hosted, responsive note-taking app for capturing, organizing, searching, and managing personal or team notes. Pocket Diary provides a clean notes-first interface backed by a Fastify API and SQLite, with workspaces and tenant-aware access controls.
 
-Repository: [github.com/raushan2015/notes](https://github.com/raushan2015/notes)
+Repository: [github.com/raushan2015/Pocket-Diary](https://github.com/raushan2015/Pocket-Diary)
 
 ## Contents
 
@@ -133,8 +133,8 @@ For development without Docker:
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/raushan2015/notes.git
-   cd notes
+   git clone https://github.com/raushan2015/Pocket-Diary.git
+   cd Pocket-Diary
    ```
 
 2. Create a local environment file and generate a unique cookie secret:
