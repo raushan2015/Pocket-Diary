@@ -423,7 +423,13 @@ export class NotesRepository {
 
     if (existing) {
       // If note has pending local edits, preserve them! Conflict will be surfaced on push.
-      if (existing.syncState === 'pending') {
+      // The same protection applies to `conflicted` notes: the local copy is
+      // the user's version that "Keep mine" must be able to send. Overwriting
+      // it with the server row (which happens right after a 409 in the same
+      // sync run) would silently discard the user's edits — the exact failure
+      // the conflict banner exists to prevent. `error` rows keep their local
+      // state too: their op is parked for manual retry, not reconciled.
+      if (existing.syncState === 'pending' || existing.syncState === 'conflicted' || existing.syncState === 'error') {
         if (existing.serverId !== apiMemo.id) {
           // Link the server ID if it was created offline
           this.db.run(

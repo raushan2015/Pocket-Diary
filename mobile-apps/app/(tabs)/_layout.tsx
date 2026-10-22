@@ -5,6 +5,9 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 export default function TabsLayout() {
   const theme = useTheme();
+  // RN 0.88 widened the icon color type; theme colors are always strings here.
+  const tint = theme.colors.primary as string;
+  const inactive = theme.colors.textSubtle as string;
 
   return (
     <Tabs
@@ -18,8 +21,8 @@ export default function TabsLayout() {
           paddingBottom: 8,
           paddingTop: 6,
         },
-        tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.textSubtle,
+        tabBarActiveTintColor: tint,
+        tabBarInactiveTintColor: inactive,
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: theme.weight.medium,
@@ -31,7 +34,7 @@ export default function TabsLayout() {
         options={{
           title: 'Notes',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'document-text' : 'document-text-outline'} size={22} color={color} />
+            <Ionicons name={focused ? 'document-text' : 'document-text-outline'} size={22} color={color as string} />
           ),
         }}
       />
@@ -40,7 +43,7 @@ export default function TabsLayout() {
         options={{
           title: 'Reminders',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'alarm' : 'alarm-outline'} size={22} color={color} />
+            <Ionicons name={focused ? 'alarm' : 'alarm-outline'} size={22} color={color as string} />
           ),
         }}
       />
@@ -49,7 +52,7 @@ export default function TabsLayout() {
         options={{
           title: 'Search',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'search' : 'search-outline'} size={22} color={color} />
+            <Ionicons name={focused ? 'search' : 'search-outline'} size={22} color={color as string} />
           ),
         }}
       />
@@ -58,7 +61,7 @@ export default function TabsLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={22} color={color} />
+            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={22} color={color as string} />
           ),
         }}
       />

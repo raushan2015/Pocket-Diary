@@ -4,7 +4,7 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  type TextInput as TextInputType,
+  type TextInputInstance,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -26,7 +26,7 @@ export function ChecklistEditor({
 }: ChecklistEditorProps) {
   const theme = useTheme();
   const ink = inkColor || theme.colors.text;
-  const inputRefs = useRef<Record<string, TextInputType | null>>({});
+  const inputRefs = useRef<Record<string, TextInputInstance | null>>({});
 
   const handleToggle = (id: string) => {
     if (!editable) return;

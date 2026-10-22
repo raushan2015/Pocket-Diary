@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ScrollView,
   Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -28,47 +29,44 @@ export default function NotesScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { session, switchWorkspace } = useAuth();
-  const { notesRepo, syncStatus, isOnline, runSync } = useSync();
+  const { notesRepo, outbox, syncStatus, isOnline, runSync } = useSync();
 
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [workspaceModalVisible, setWorkspaceModalVisible] = useState(false);
 
   const activeWorkspaceId = session?.activeWorkspaceId || '';
 
-  const loadNotes = useCallback(() => {
-    if (!activeWorkspaceId) return;
+  // Local-first list: derived synchronously from SQLite (no state cascade).
+  // A bump counter re-derives after local mutations (restore, empty trash);
+  // sync completions arrive via syncStatus deps.
+  const [dataBump, setDataBump] = useState(0);
+  const bumpData = () => setDataBump((c) => c + 1);
 
-    let res: { notes: Note[]; total: number };
+  const notes: Note[] = useMemo(() => {
+    if (!activeWorkspaceId) return [];
     switch (activeFilter) {
       case 'all':
-        res = notesRepo.listNotes({ workspaceId: activeWorkspaceId });
-        break;
+        return notesRepo.listNotes({ workspaceId: activeWorkspaceId }).notes;
       case 'pinned':
-        res = notesRepo.listNotes({ workspaceId: activeWorkspaceId, isPinned: true });
-        break;
+        return notesRepo.listNotes({ workspaceId: activeWorkspaceId, isPinned: true }).notes;
       case 'favorites':
-        res = notesRepo.listNotes({ workspaceId: activeWorkspaceId, isFavorite: true });
-        break;
+        return notesRepo.listNotes({ workspaceId: activeWorkspaceId, isFavorite: true }).notes;
       case 'checklists':
-        res = notesRepo.listNotes({ workspaceId: activeWorkspaceId, noteType: 'checklist' });
-        break;
+        return notesRepo.listNotes({ workspaceId: activeWorkspaceId, noteType: 'checklist' }).notes;
       case 'archived':
-        res = notesRepo.listNotes({ workspaceId: activeWorkspaceId, isArchived: true });
-        break;
+        return notesRepo.listNotes({ workspaceId: activeWorkspaceId, isArchived: true }).notes;
       case 'trash':
-        res = notesRepo.listNotes({ workspaceId: activeWorkspaceId, deletedOnly: true });
-        break;
+        return notesRepo.listNotes({ workspaceId: activeWorkspaceId, deletedOnly: true }).notes;
     }
-    setNotes(res.notes);
-    setLoading(false);
-  }, [notesRepo, activeWorkspaceId, activeFilter]);
+    // The deps below are deliberate invalidation triggers for the
+    // SQLite-derived data (sync completions + local mutations); they are not
+    // referenced inside the callback because the repository reads the DB.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesRepo, activeWorkspaceId, activeFilter, syncStatus.lastSyncAt, syncStatus.pendingCount, syncStatus.failedCount, dataBump]);
 
-  useEffect(() => {
-    loadNotes();
-  }, [loadNotes, syncStatus.lastSyncAt, syncStatus.pendingCount]);
+  // Skeletons only while a first sync is actually running.
+  const loading = notes.length === 0 && syncStatus.isSyncing;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -76,8 +74,51 @@ export default function NotesScreen() {
       await runSync();
     } finally {
       setRefreshing(false);
-      loadNotes();
     }
+  };
+
+  const handleRestore = (note: Note) => {
+    const restored = notesRepo.restoreNote(note.id);
+    outbox.enqueue({
+      entity: 'note',
+      noteId: restored.id,
+      op: 'restore',
+      payload: { serverId: restored.serverId },
+    });
+    void runSync().catch(() => {});
+    bumpData();
+  };
+
+  const handleEmptyTrash = () => {
+    Alert.alert(
+      'Empty Trash',
+      'All notes in the trash will be erased permanently, on this device and on the server.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Empty Trash',
+          style: 'destructive',
+          onPress: () => {
+            const trashed = notesRepo.listNotes({ workspaceId: activeWorkspaceId, deletedOnly: true }).notes;
+            for (const n of trashed) {
+              if (n.serverId) {
+                outbox.enqueue({
+                  entity: 'note',
+                  noteId: n.id,
+                  op: 'delete',
+                  payload: { serverId: n.serverId, permanent: true },
+                });
+              } else {
+                outbox.removeNoteOps(n.id);
+              }
+            }
+            notesRepo.emptyTrash(activeWorkspaceId);
+            void runSync().catch(() => {});
+            bumpData();
+          },
+        },
+      ],
+    );
   };
 
   const activeWorkspace = session?.workspaces.find((w) => w.id === activeWorkspaceId);
@@ -154,7 +195,7 @@ export default function NotesScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, gap: 8 }}
+          contentContainerStyle={{ paddingHorizontal: theme.spacing.lg, gap: 8, maxWidth: 720, alignSelf: 'center', width: '100%' }}
         >
           <Chip
             label="All Notes"
@@ -198,6 +239,20 @@ export default function NotesScreen() {
             size="sm"
           />
         </ScrollView>
+        {activeFilter === 'trash' && notes.length > 0 ? (
+          <Pressable
+            onPress={handleEmptyTrash}
+            accessibilityRole="button"
+            accessibilityLabel="Empty trash permanently"
+            hitSlop={8}
+            style={[styles.emptyTrashBtn, { borderColor: theme.colors.danger, borderRadius: theme.radii.pill, alignSelf: 'center' }]}
+          >
+            <Ionicons name="trash" size={14} color={theme.colors.danger} style={{ marginRight: 4 }} />
+            <Text style={{ color: theme.colors.danger, fontSize: theme.font.caption, fontWeight: theme.weight.semibold }}>
+              Empty Trash
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Notes List */}
@@ -208,34 +263,38 @@ export default function NotesScreen() {
           <NoteCardSkeleton />
         </View>
       ) : notes.length === 0 ? (
-        <EmptyState
-          icon={
-            activeFilter === 'trash'
-              ? 'trash-outline'
-              : activeFilter === 'archived'
-              ? 'archive-outline'
-              : 'create-outline'
-          }
-          title={
-            activeFilter === 'trash'
-              ? 'Trash is empty'
-              : activeFilter === 'archived'
-              ? 'No archived notes'
-              : 'No notes yet'
-          }
-          description={
-            activeFilter === 'trash' || activeFilter === 'archived'
-              ? 'Notes you archive or delete will appear here.'
-              : 'Tap the button below to jot down your first note or checklist.'
-          }
-          actionLabel={activeFilter === 'all' ? 'Create Note' : undefined}
-          onAction={() => router.push('/note/new')}
-        />
+        <View style={{ flex: 1, maxWidth: 720, width: '100%', alignSelf: 'center' }}>
+          <EmptyState
+            icon={
+              activeFilter === 'trash'
+                ? 'trash-outline'
+                : activeFilter === 'archived'
+                ? 'archive-outline'
+                : 'create-outline'
+            }
+            title={
+              activeFilter === 'trash'
+                ? 'Trash is empty'
+                : activeFilter === 'archived'
+                ? 'No archived notes'
+                : 'No notes yet'
+            }
+            description={
+              activeFilter === 'trash'
+                ? 'Deleted notes land here first — open a trashed note to restore it.'
+                : activeFilter === 'archived'
+                ? 'Notes you archive will appear here.'
+                : 'Tap the button below to jot down your first note or checklist.'
+            }
+            actionLabel={activeFilter === 'all' ? 'Create Note' : undefined}
+            onAction={() => router.push('/note/new')}
+          />
+        </View>
       ) : (
         <FlatList
           data={unpinnedNotes}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.listContent, { padding: theme.spacing.lg }]}
+          contentContainerStyle={[styles.listContent, { padding: theme.spacing.lg, maxWidth: 720, width: '100%', alignSelf: 'center' }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -244,9 +303,18 @@ export default function NotesScreen() {
             />
           }
           ListHeaderComponent={
-            pinnedNotes.length > 0 ? (
-              <View style={{ marginBottom: theme.spacing.md }}>
-                <Text
+            activeFilter === 'trash'
+              ? (
+                  <Banner
+                    variant="info"
+                    message="Open a trashed note to restore or permanently delete it."
+                    style={{ marginBottom: theme.spacing.md }}
+                  />
+                )
+              : pinnedNotes.length > 0
+              ? (
+                  <View style={{ marginBottom: theme.spacing.md }}>
+                    <Text
                   style={[
                     styles.sectionHeader,
                     {
@@ -280,14 +348,35 @@ export default function NotesScreen() {
                 >
                   OTHERS
                 </Text>
-              </View>
-            ) : null
+                </View>
+              ) : undefined
           }
           renderItem={({ item }) => (
-            <NoteCard
-              note={item}
-              onPress={() => router.push(`/note/${item.id}`)}
-            />
+            <View>
+              <NoteCard
+                note={item}
+                onPress={() => router.push(`/note/${item.id}`)}
+                onLongPress={
+                  activeFilter === 'trash'
+                    ? () => handleRestore(item)
+                    : undefined
+                }
+              />
+              {activeFilter === 'trash' ? (
+                <Pressable
+                  onPress={() => handleRestore(item)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Restore ${item.title || 'note'}`}
+                  hitSlop={6}
+                  style={[styles.restoreRow, { borderTopColor: theme.colors.border }]}
+                >
+                  <Ionicons name="refresh" size={16} color={theme.colors.primary} style={{ marginRight: 6 }} />
+                  <Text style={{ color: theme.colors.primary, fontSize: theme.font.caption, fontWeight: theme.weight.semibold }}>
+                    Restore
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           )}
         />
       )}
@@ -371,7 +460,7 @@ export default function NotesScreen() {
                   onPress={async () => {
                     await switchWorkspace(ws.id);
                     setWorkspaceModalVisible(false);
-                    loadNotes();
+                    bumpData();
                   }}
                   style={[
                     styles.modalItem,
@@ -440,6 +529,23 @@ const styles = StyleSheet.create({
   },
   filterBar: {
     paddingVertical: 10,
+  },
+  emptyTrashBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginTop: 6,
+    alignSelf: 'center',
+  },
+  restoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 10,
   },
   listContent: {
     paddingBottom: 90,

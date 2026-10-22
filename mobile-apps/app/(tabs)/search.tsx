@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,39 +21,31 @@ export default function SearchScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { session } = useAuth();
-  const { notesRepo, workspaceRepo } = useSync();
+  const { notesRepo, workspaceRepo, syncStatus } = useSync();
 
   const [query, setQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [results, setResults] = useState<Note[]>([]);
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
 
   const activeWorkspaceId = session?.activeWorkspaceId || '';
 
-  useEffect(() => {
-    if (!activeWorkspaceId) return;
-    const tags = workspaceRepo.listTags(activeWorkspaceId);
-    setAvailableTags(tags.map((t) => t.name));
-  }, [workspaceRepo, activeWorkspaceId]);
+  // Both lists are derived synchronously from SQLite; no effect cascades.
+  const availableTags = useMemo(() => {
+    if (!activeWorkspaceId) return [];
+    return workspaceRepo.listTags(activeWorkspaceId).map((t) => t.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceRepo, activeWorkspaceId, syncStatus.lastSyncAt]);
 
-  const performSearch = useCallback(() => {
-    if (!activeWorkspaceId) return;
-    if (!query.trim() && !selectedTag) {
-      setResults([]);
-      return;
-    }
-
-    const res = notesRepo.listNotes({
+  const queryTrimmed = query.trim();
+  const results: Note[] = useMemo(() => {
+    if (!activeWorkspaceId) return [];
+    if (!queryTrimmed && !selectedTag) return [];
+    return notesRepo.listNotes({
       workspaceId: activeWorkspaceId,
-      search: query.trim() || undefined,
+      search: queryTrimmed || undefined,
       tagName: selectedTag || undefined,
-    });
-    setResults(res.notes);
-  }, [notesRepo, activeWorkspaceId, query, selectedTag]);
-
-  useEffect(() => {
-    performSearch();
-  }, [performSearch]);
+    }).notes;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesRepo, activeWorkspaceId, queryTrimmed, selectedTag, syncStatus.lastSyncAt]);
 
   return (
     <SafeAreaView edges={['top']} style={[styles.safeArea, { backgroundColor: theme.colors.bg }]}>

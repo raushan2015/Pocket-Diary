@@ -244,8 +244,10 @@ export async function updateMemo(
   return parseOrThrow(S.memoSchema, (data as { memo: unknown }).memo, 'memo update');
 }
 
-export async function deleteMemo(api: ApiClient, id: string): Promise<void> {
-  await api.requestJson('DELETE', `/api/v1/memos/${encodeURIComponent(id)}`);
+export async function deleteMemo(api: ApiClient, id: string, opts?: { permanent?: boolean }): Promise<void> {
+  await api.requestJson('DELETE', `/api/v1/memos/${encodeURIComponent(id)}`, {
+    query: { permanent: opts?.permanent === undefined ? undefined : String(opts.permanent) },
+  });
 }
 
 export async function restoreMemo(api: ApiClient, id: string): Promise<ApiMemo> {
@@ -303,6 +305,34 @@ export async function getMemoAttachments(api: ApiClient, memoId: string): Promis
   const { data } = await api.requestJson('GET', `/api/v1/attachments/memo/${encodeURIComponent(memoId)}`);
   const parsed = parseOrThrow(S.attachmentsListSchema, data, 'attachments');
   return parsed.attachments;
+}
+
+/** Multipart upload. `form` carries a `file` part: RN `{uri,name,type}` or a Blob in tests. */
+export async function uploadAttachment(api: ApiClient, memoId: string, form: FormData): Promise<S.ApiAttachment> {
+  const res = await api.requestMultipart(`/api/v1/attachments/memo/${encodeURIComponent(memoId)}`, form);
+  const text = await res.text();
+  if (!res.ok) {
+    let serverMessage: string | undefined;
+    try {
+      const parsed = JSON.parse(text) as { message?: string; error?: string };
+      serverMessage = parsed.message ?? parsed.error;
+    } catch {
+      // non-JSON error body
+    }
+    throw new ApiError({
+      kind: 'http',
+      status: res.status,
+      message: `Attachment upload failed with ${res.status}`,
+      serverMessage,
+    });
+  }
+  let parsed: unknown;
+  try {
+    parsed = text.length ? JSON.parse(text) : {};
+  } catch {
+    throw new ApiError({ kind: 'not-json', status: res.status, message: 'Invalid JSON from attachment upload' });
+  }
+  return parseOrThrow(S.attachmentSchema, (parsed as { attachment?: unknown }).attachment, 'attachment');
 }
 
 export async function deleteAttachment(api: ApiClient, id: string): Promise<void> {

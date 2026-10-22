@@ -16,6 +16,46 @@ import type { NotesRepository } from '@/features/notes/repository';
 import type { WorkspaceRepository } from '@/features/workspaces/repository';
 import type { OutboxQueue, OutboxEntry } from './outbox';
 import type { SqliteDriver } from '@/services/db/driver';
+import type { NoteAttachment } from '@/features/notes/types';
+
+/**
+ * Builds the multipart form for an attachment upload from an outbox payload.
+ *
+ * Outbox payloads must survive JSON serialization in SQLite, so the file
+ * source is always a string:
+ *  - `uri` — a file:// path read by the native layer (React Native devices);
+ *  - `fileBytesB64` — base64 bytes (Node test harness / tooling).
+ */
+export function buildAttachmentForm(payload: Record<string, any>): FormData {
+  const form = new FormData();
+  const fileName = payload.fileName ?? 'attachment';
+  const mimeType = payload.mimeType ?? 'application/octet-stream';
+
+  if (typeof payload.fileBytesB64 === 'string' && payload.fileBytesB64.length > 0) {
+    const bytes = b64ToBytes(payload.fileBytesB64);
+    // TS 5.9 + lib.dom Blob requires an ArrayBuffer-backed view.
+    form.append('file', new Blob([bytes.buffer as ArrayBuffer], { type: mimeType }), fileName);
+  } else if (payload.uri) {
+    form.append('file', {
+      uri: payload.uri,
+      name: fileName,
+      type: mimeType,
+    } as any);
+  } else {
+    throw new Error('Attachment payload has neither a file URI nor file content');
+  }
+  return form;
+}
+
+/** Base64 → bytes (works on Hermes and Node ≥ 16). */
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = typeof atob === 'function' ? atob(b64) : Buffer.from(b64, 'base64').toString('binary');
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) {
+    bytes[i] = bin.charCodeAt(i);
+  }
+  return bytes;
+}
 
 export interface SyncEngineScope {
   serverKey: string;
@@ -39,6 +79,12 @@ export class SyncEngine {
   private scope: SyncEngineScope;
 
   private isRunning = false;
+  private currentRun: Promise<{
+    pushed: number;
+    pulled: number;
+    conflicts: number;
+    errors: number;
+  }> | null = null;
   private listeners = new Set<(status: SyncStatus) => void>();
   private lastSyncAt: number | null = null;
   private lastError: string | null = null;
@@ -50,6 +96,8 @@ export class SyncEngine {
     outbox: OutboxQueue;
     db: SqliteDriver;
     scope: SyncEngineScope;
+    /** Invoked once when a push hits 401: the caller clears the local session (never the outbox). */
+    onAuthExpired?: () => void | Promise<void>;
   }) {
     this.api = opts.api;
     this.notesRepo = opts.notesRepo;
@@ -57,7 +105,13 @@ export class SyncEngine {
     this.outbox = opts.outbox;
     this.db = opts.db;
     this.scope = opts.scope;
+    this.onAuthExpired = opts.onAuthExpired;
+    // Crash recovery: anything left `in_flight` by a previous process must be
+    // requeued, or it would never run again (getReadyEntries only picks `pending`).
+    this.outbox.requeueInFlight();
   }
+
+  private onAuthExpired?: () => void | Promise<void>;
 
   setScope(scope: SyncEngineScope): void {
     this.scope = scope;
@@ -103,12 +157,15 @@ export class SyncEngine {
     conflicts: number;
     errors: number;
   }> {
-    if (this.isRunning) {
+    if (!this.api.getToken()) {
       return { pushed: 0, pulled: 0, conflicts: 0, errors: 0 };
     }
 
-    if (!this.api.getToken()) {
-      return { pushed: 0, pulled: 0, conflicts: 0, errors: 0 };
+    // A sync is already in flight: join it instead of silently reporting
+    // "nothing happened" — callers (pull-to-refresh, reconnect, mutation
+    // debounce) need the real outcome to update the UI.
+    if (this.isRunning && this.currentRun) {
+      return this.currentRun;
     }
 
     this.isRunning = true;
@@ -122,29 +179,43 @@ export class SyncEngine {
 
     const pushedServerIds = new Set<string>();
 
-    try {
-      // 1. Push local mutations
-      const pushRes = await this.pushOutbox(pushedServerIds);
-      pushed = pushRes.pushed;
-      conflicts = pushRes.conflicts;
-      errors = pushRes.errors;
+    const run = (async () => {
+      try {
+        // 1. Push local mutations
+        const pushRes = await this.pushOutbox(pushedServerIds);
+        pushed = pushRes.pushed;
+        conflicts = pushRes.conflicts;
+        errors = pushRes.errors;
 
-      // 2. Pull server changes
-      const pulledCount = await this.pullServer(options, pushedServerIds);
-      pulled = pulledCount;
+        // 2. Pull server changes
+        const pulledCount = await this.pullServer(options, pushedServerIds);
+        pulled = pulledCount;
 
-      this.lastSyncAt = Date.now();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.lastError = msg;
-      errors++;
-      throw err;
-    } finally {
-      this.isRunning = false;
-      this.notify();
-    }
+        this.lastSyncAt = Date.now();
+        return { pushed, pulled, conflicts, errors };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.lastError = msg;
+        if (err instanceof ApiError && err.status === 401 && this.onAuthExpired) {
+          // Session expired or was revoked (also mid-pull): clear the local
+          // session so the app routes to sign-in. The outbox is untouched —
+          // pending work resumes after re-authentication.
+          try {
+            await this.onAuthExpired();
+          } catch {
+            // notification-only hook; never mask the sync error
+          }
+        }
+        throw err;
+      } finally {
+        this.isRunning = false;
+        this.currentRun = null;
+        this.notify();
+      }
+    })();
 
-    return { pushed, pulled, conflicts, errors };
+    this.currentRun = run;
+    return run;
   }
 
   // -------------------------------------------------------------------------
@@ -168,8 +239,17 @@ export class SyncEngine {
       } catch (err) {
         if (err instanceof ApiError) {
           if (err.status === 401) {
-            // Auth token invalid or expired: park op as pending and abort push
+            // Auth token invalid or expired: park op as pending and abort push.
+            // The outbox survives — after re-authentication the same ops run.
             this.outbox.markFailed(op.id, 'Session expired', false);
+            this.outbox.requeueInFlight();
+            if (this.onAuthExpired) {
+              try {
+                await this.onAuthExpired();
+              } catch {
+                // notification-only hook; never block the sync result
+              }
+            }
             throw err;
           }
 
@@ -181,8 +261,10 @@ export class SyncEngine {
             continue;
           }
 
-          if (err.status === 404 && (op.op === 'delete' || op.op === 'restore')) {
-            // Already deleted / not found on server — consider completed
+          if (err.status === 404 && (op.op === 'delete' || op.op === 'restore' || op.op === 'attachment_upload')) {
+            // Already deleted / not found on server — consider completed.
+            // For attachment_upload this means the note is gone server-side;
+            // there is nothing left to attach the file to.
             this.outbox.markCompleted(op.id);
             pushed++;
             continue;
@@ -304,7 +386,7 @@ export class SyncEngine {
           // Note never reached server
           return;
         }
-        await api.deleteMemo(this.api, serverId);
+        await api.deleteMemo(this.api, serverId, { permanent: Boolean(op.payload.permanent) });
         break;
       }
 
@@ -322,7 +404,74 @@ export class SyncEngine {
         }
         break;
       }
+
+      case 'attachment_upload': {
+        const serverId = localNote?.serverId ?? op.payload.serverId;
+        if (!serverId) {
+          // The note itself has not reached the server yet (its create op is
+          // still queued ahead of us). Wait — retryable, not an error the user
+          // must fix: as soon as the create lands, the upload proceeds.
+          throw new Error('Waiting for the note to sync before uploading its attachment');
+        }
+        const form = buildAttachmentForm(op.payload);
+        const attachment = await api.uploadAttachment(this.api, serverId, form);
+        if (localNote) {
+          this.mergeLocalAttachment(localNote.id, {
+            id: attachment.id,
+            memoId: attachment.memoId,
+            fileName: attachment.fileName,
+            fileSize: attachment.fileSize,
+            mimeType: attachment.mimeType,
+            createdAt: attachment.createdAt,
+            url: attachment.url,
+          });
+        }
+        break;
+      }
+
+      case 'attachment_delete': {
+        const attachmentId: string | undefined = op.payload.attachmentId;
+        if (!attachmentId) return;
+        try {
+          await api.deleteAttachment(this.api, attachmentId);
+        } catch (err) {
+          // Already gone server-side (double delete) — still drop it locally.
+          if (!(err instanceof ApiError && err.status === 404)) throw err;
+        }
+        if (localNote) {
+          this.db.run(
+            `UPDATE notes SET attachments_json = ? WHERE id = ?`,
+            [
+              JSON.stringify(
+                (localNote.attachments ?? []).filter((a) => a.id !== attachmentId),
+              ),
+              localNote.id,
+            ],
+          );
+        }
+        break;
+      }
     }
+  }
+
+  /** Idempotently merges a server attachment DTO into the note's cached list. */
+  private mergeLocalAttachment(noteId: string, attachment: NoteAttachment): void {
+    const row = this.db.get<{ attachments_json: string }>(
+      'SELECT attachments_json FROM notes WHERE id = ?',
+      [noteId],
+    );
+    if (!row) return;
+    let existing: NoteAttachment[] = [];
+    try {
+      existing = JSON.parse(row.attachments_json || '[]');
+    } catch {
+      existing = [];
+    }
+    if (existing.some((a) => a.id === attachment.id)) return;
+    this.db.run('UPDATE notes SET attachments_json = ? WHERE id = ?', [
+      JSON.stringify([...existing, attachment]),
+      noteId,
+    ]);
   }
 
   // -------------------------------------------------------------------------

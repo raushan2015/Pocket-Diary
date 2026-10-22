@@ -7,8 +7,10 @@
     "icon": "./assets/icon.png",
     "scheme": "pocketdiary",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.pocketdiary.mobile",
@@ -22,13 +24,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundImage": "./assets/adaptive-icon-bg.png"
-      },
-      "edgeToEdgeEnabled": true
-    },
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1E1B4B"
+      }
     },
     "plugins": [
       "expo-router",
@@ -43,6 +39,21 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#4F46E5"
+        }
+      ],
+      "expo-font",
+      "@react-native-community/datetimepicker",
+      "expo-localization",
+      "expo-sharing",
+      "expo-sqlite",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#1E1B4B"
         }
       ]
     ],

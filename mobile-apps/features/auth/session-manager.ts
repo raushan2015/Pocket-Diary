@@ -363,6 +363,29 @@ export class SessionManager {
     this.notify();
   }
 
+  /**
+   * Clears the local session after a 401 (expired or revoked server-side).
+   *
+   * Deliberately does NOT call the server and does NOT touch the outbox or
+   * any cached data: pending offline work must survive re-authentication.
+   * After this, the app routes to the sign-in screen; logging back in resumes
+   * synchronization with the same durable queue.
+   */
+  async expireSessionLocally(): Promise<void> {
+    if (this.currentSession) {
+      const tokenKey = this.tokenStorageKey(
+        this.currentSession.server.serverKey,
+        this.currentSession.user.id,
+      );
+      await this.secure.delete(tokenKey);
+    }
+    this.currentSession = null;
+    if (this.currentApiClient) {
+      this.currentApiClient.setToken(null);
+    }
+    this.notify();
+  }
+
   async logout(): Promise<void> {
     if (this.currentSession && this.currentApiClient) {
       try {

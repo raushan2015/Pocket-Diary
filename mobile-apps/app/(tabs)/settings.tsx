@@ -36,6 +36,8 @@ export default function SettingsScreen() {
       outbox.retryFailedOps();
       const res = await runSync();
       setStatusMessage(`Retry complete: ${res.pushed} pushed, ${res.errors} failed.`);
+    } catch (err) {
+      setStatusMessage(`Sync failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     } finally {
       setRetrying(false);
     }
@@ -47,6 +49,8 @@ export default function SettingsScreen() {
     try {
       const res = await runSync({ fullReconciliation: true });
       setStatusMessage(`Full sync complete: ${res.pulled} pulled from server.`);
+    } catch (err) {
+      setStatusMessage(`Full sync failed: ${err instanceof Error ? err.message : 'unknown error'}`);
     } finally {
       setResyncing(false);
     }

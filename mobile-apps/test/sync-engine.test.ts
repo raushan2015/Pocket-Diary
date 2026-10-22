@@ -212,6 +212,113 @@ describe('Synchronization Engine', () => {
     expect(outbox.getPendingCount()).toBe(0);
   });
 
+  it('preserves the local conflicted copy when the pull sees the newer server row', async () => {
+    // Regression: the pull that follows a 409 used to overwrite the local
+    // "conflicted" copy with the server version — silently discarding the
+    // user's edits and making "Keep mine" a no-op.
+    const note = notesRepo.createNote({ workspaceId: 'ws-default', title: 'My Phone Edits' });
+    db.run(
+      "UPDATE notes SET server_id = 'memo-fight-1', server_version = 2, sync_state = 'pending' WHERE id = ?",
+      [note.id],
+    );
+
+    // The other device's edit is on the server now (version 3).
+    const serverMemo = (title: string, version: number) => ({
+      id: 'memo-fight-1',
+      workspaceId: 'ws-default',
+      folderId: null,
+      categoryId: null,
+      category: null,
+      title,
+      content: 'Edited on the web',
+      color: 'default',
+      theme: 'default',
+      priority: 'medium',
+      status: 'pending',
+      noteType: 'text',
+      sortOrder: 0,
+      isFavorite: false,
+      isPinned: false,
+      isArchived: false,
+      dueDate: null,
+      reminderTime: null,
+      reminderLocation: null,
+      collaborators: [],
+      checklistData: [],
+      linkPreviews: [],
+      attachments: [],
+      tags: [],
+      clientId: null,
+      version,
+      createdBy: scope.userId,
+      createdAt: 1720000000000,
+      updatedAt: 1720000009000,
+      deletedAt: null,
+    });
+
+    transport.patch('/api/v1/memos/memo-fight-1', () =>
+      MockHttpTransport.json(409, {
+        error: 'Conflict',
+        message: 'Version conflict',
+        currentVersion: 3,
+      }),
+    );
+    // The pull WILL see the server's newer version of the memo.
+    transport.get('/api/v1/memos/', () =>
+      MockHttpTransport.json(200, { memos: [serverMemo('Server Wins?', 3)], total: 1, page: 1, limit: 100 }),
+    );
+
+    outbox.enqueue({
+      entity: 'note',
+      noteId: note.id,
+      op: 'update',
+      payload: { serverId: 'memo-fight-1', title: 'My Phone Edits', content: 'Edited on mobile' },
+      baseVersion: 2,
+    });
+
+    const res = await engine.runSync({ workspaceId: 'ws-default' });
+    expect(res.conflicts).toBe(1);
+
+    // The local conflicted copy must survive the pull untouched.
+    const afterPull = notesRepo.getNoteById(note.id);
+    expect(afterPull?.title).toBe('My Phone Edits');
+    expect(afterPull?.syncState).toBe('conflicted');
+
+    // "Keep mine" must send the LOCAL values, not the server's.
+    let keepMineTitle = '';
+    transport.patch('/api/v1/memos/memo-fight-1', (req) => {
+      const body = JSON.parse(req.body as string);
+      keepMineTitle = body.title;
+      return MockHttpTransport.json(200, { memo: serverMemo(body.title, 4) });
+    });
+    await engine.resolveConflictKeepMine(note.id);
+    expect(keepMineTitle).toBe('My Phone Edits');
+    expect(notesRepo.getNoteById(note.id)?.syncState).toBe('synced');
+  });
+
+  it('requeues in_flight operations abandoned by a crash (crash recovery)', async () => {
+    const note = notesRepo.createNote({ workspaceId: 'ws-default', title: 'Crashed Mid Push' });
+    const entry = outbox.enqueue({
+      entity: 'note',
+      noteId: note.id,
+      op: 'create',
+      payload: { title: 'Crashed Mid Push' },
+      clientId: note.clientId,
+    });
+
+    // Simulate the app dying between markInFlight and the HTTP response.
+    outbox.markInFlight(entry!.id);
+    expect(outbox.getReadyEntries().length).toBe(0); // stranded: not `pending`
+
+    // New engine instance (app restart) must requeue it.
+    const engine2 = new SyncEngine({ api, notesRepo, workspaceRepo, outbox, db, scope });
+    void engine2;
+    const ready = outbox.getReadyEntries();
+    expect(ready.length).toBe(1);
+    expect(ready[0]?.id).toBe(entry?.id);
+    expect(ready[0]?.status).toBe('pending');
+  });
+
   it('pulls server changes without overwriting pending local edits', async () => {
     // 1. A local note has pending offline edits
     const localPending = notesRepo.createNote({

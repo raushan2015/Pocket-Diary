@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import NetInfo, { type NetInfoState } from '@react-native-community/netinfo';
 import { useAuth } from '../auth/AuthContext';
@@ -6,7 +6,9 @@ import { NotesRepository } from '../notes/repository';
 import { WorkspaceRepository } from '../workspaces/repository';
 import { OutboxQueue } from './outbox';
 import { SyncEngine, type SyncStatus } from './engine';
+import { collectUpcomingReminders } from '../reminders/notifications';
 import type { PlatformServices } from '@/services/platform';
+import type { AttachmentCache } from '@/services/attachments/cache';
 
 export interface SyncContextValue {
   syncStatus: SyncStatus;
@@ -14,6 +16,7 @@ export interface SyncContextValue {
   notesRepo: NotesRepository;
   workspaceRepo: WorkspaceRepository;
   outbox: OutboxQueue;
+  attachmentCache: AttachmentCache;
   runSync(options?: { workspaceId?: string; fullReconciliation?: boolean }): Promise<{
     pushed: number;
     pulled: number;
@@ -33,7 +36,7 @@ export function SyncProvider({
   services: PlatformServices;
   children: React.ReactNode;
 }) {
-  const { session, apiClient } = useAuth();
+  const { session, apiClient, sessionManager } = useAuth();
   const [isOnline, setIsOnline] = useState(true);
 
   // Derive scope: if not logged in, use fallback guest scope
@@ -58,8 +61,11 @@ export function SyncProvider({
       outbox,
       db: services.db,
       scope,
+      // A 401 anywhere in sync clears the local session (never the outbox):
+      // the gate routes to sign-in, and pending work resumes after login.
+      onAuthExpired: () => sessionManager.expireSessionLocally(),
     });
-  }, [apiClient, notesRepo, workspaceRepo, outbox, services.db, scope]);
+  }, [apiClient, notesRepo, workspaceRepo, outbox, services.db, scope, sessionManager]);
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     isSyncing: false,
@@ -68,6 +74,20 @@ export function SyncProvider({
     lastSyncAt: null,
     lastError: null,
   });
+
+  // Reconcile OS-local reminder notifications after every successful sync.
+  // Best effort by design — see features/reminders/notifications.ts.
+  const refreshLocalReminders = useCallback(() => {
+    if (!session || !syncEngine) return;
+    try {
+      const { notes } = notesRepo.listNotes({ workspaceId: session.activeWorkspaceId, limit: 400 });
+      void services.reminders
+        .syncScheduled(collectUpcomingReminders(notes))
+        .catch(() => {});
+    } catch {
+      // never block sync on reminder scheduling
+    }
+  }, [session, syncEngine, notesRepo, services.reminders]);
 
   // 1. Subscribe to SyncEngine status
   useEffect(() => {
@@ -105,15 +125,18 @@ export function SyncProvider({
     notesRepo,
     workspaceRepo,
     outbox,
+    attachmentCache: services.attachments,
 
     async runSync(options) {
       if (!syncEngine || !session) {
         return { pushed: 0, pulled: 0, conflicts: 0, errors: 0 };
       }
-      return syncEngine.runSync({
+      const result = await syncEngine.runSync({
         workspaceId: options?.workspaceId || session.activeWorkspaceId,
         fullReconciliation: options?.fullReconciliation,
       });
+      refreshLocalReminders();
+      return result;
     },
 
     async resolveConflictKeepMine(noteId: string) {

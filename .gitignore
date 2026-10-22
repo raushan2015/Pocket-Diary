@@ -26,7 +26,8 @@ data/
 *.sqlite3
 *.log
 uploads/
-attachments/
+data/attachments/
+backend/data/attachments/
 
 # Local tools and generated artifacts
 .agents/
@@ -46,4 +47,5 @@ attachments/
 # untracked by *.png, so fresh clones served a page whose icon requests 404'd —
 # which is how the GitHub CI e2e run first exposed the static-server crash.
 !frontend/icons/**
+!mobile-apps/assets/**
 !docs/screenshots/**

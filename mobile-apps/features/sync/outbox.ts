@@ -14,8 +14,11 @@ import type { SqliteDriver } from '@/services/db/driver';
 import { defaultIdGen, type IdGen } from '@/utils/ids';
 import { backoffDelay } from '@/utils/time';
 
-export type OutboxOpType = 'create' | 'update' | 'delete' | 'restore';
+export type OutboxOpType = 'create' | 'update' | 'delete' | 'restore' | 'attachment_upload' | 'attachment_delete';
 export type OutboxStatus = 'pending' | 'in_flight' | 'conflicted' | 'failed';
+
+/** Note-lifecycle ops that participate in coalescing. */
+const LIFECYCLE_OPS = new Set<OutboxOpType>(['create', 'update', 'delete', 'restore']);
 
 export interface OutboxEntry {
   id: string;
@@ -92,10 +95,53 @@ export class OutboxQueue {
     const now = Date.now();
 
     return this.db.transaction(() => {
-      // Find pending op for the same note
+      // Attachment ops never merge into note-lifecycle ops. A pending upload
+      // for the same attachment replaces the earlier one (re-pick / retry);
+      // a note delete elides its pending uploads (they would 404 anyway).
+      if (!LIFECYCLE_OPS.has(input.op)) {
+        if (input.op === 'attachment_upload' && input.payload.attachmentId) {
+          this.db.run(
+            `DELETE FROM outbox
+             WHERE server_key = ? AND user_id = ? AND note_id = ?
+               AND op = 'attachment_upload' AND status = 'pending'
+               AND json_extract(payload, '$.attachmentId') = ?`,
+            [this.scope.serverKey, this.scope.userId, input.noteId, String(input.payload.attachmentId)],
+          );
+        }
+        const id = this.idGen();
+        this.db.run(
+          `INSERT INTO outbox (
+            id, server_key, user_id, entity, note_id, op, payload,
+            base_version, client_id, status, attempts, next_attempt_at,
+            last_error, created_at, updated_at
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, 'pending', 0, 0,
+            NULL, ?, ?
+          )`,
+          [
+            id,
+            this.scope.serverKey,
+            this.scope.userId,
+            input.entity,
+            input.noteId,
+            input.op,
+            JSON.stringify(input.payload || {}),
+            input.baseVersion ?? null,
+            input.clientId ?? null,
+            now,
+            now,
+          ],
+        );
+        return this.getEntryById(id);
+      }
+
+      // Find the latest pending lifecycle op for the same note (attachment
+      // ops must not hide an older lifecycle op from coalescing).
       const pendingRow = this.db.get<any>(
         `SELECT * FROM outbox
          WHERE server_key = ? AND user_id = ? AND note_id = ? AND status = 'pending'
+           AND op IN ('create', 'update')
          ORDER BY created_at DESC LIMIT 1`,
         [this.scope.serverKey, this.scope.userId, input.noteId],
       );
@@ -135,12 +181,23 @@ export class OutboxQueue {
           if (input.op === 'delete') {
             // Replace pending update with delete
             this.db.run(
-              `UPDATE outbox SET op = 'delete', payload = '{}', updated_at = ? WHERE id = ?`,
-              [now, existing.id],
+              `UPDATE outbox SET op = 'delete', payload = ?, updated_at = ? WHERE id = ?`,
+              [JSON.stringify(input.payload || {}), now, existing.id],
             );
             return this.getEntryById(existing.id);
           }
         }
+      }
+
+      if (input.op === 'delete') {
+        // A trashed note's pending uploads are moot — they would 404 after
+        // the delete lands. Elide them (keeps FIFO order intact otherwise).
+        this.db.run(
+          `DELETE FROM outbox
+           WHERE server_key = ? AND user_id = ? AND note_id = ?
+             AND op = 'attachment_upload' AND status = 'pending'`,
+          [this.scope.serverKey, this.scope.userId, input.noteId],
+        );
       }
 
       // No pending op to coalesce with — insert fresh op
@@ -220,6 +277,22 @@ export class OutboxQueue {
     );
   }
 
+  /**
+   * Crash recovery: requeues operations that were mid-flight when the app
+   * died. Without this, an `in_flight` op is stranded forever (it is never
+   * picked up by getReadyEntries, which only selects `pending`). Every op is
+   * idempotent or version-guarded, so replaying is safe. Returns the number
+   * of requeued ops.
+   */
+  requeueInFlight(now = Date.now()): number {
+    const result = this.db.run(
+      `UPDATE outbox SET status = 'pending', next_attempt_at = 0, updated_at = ?
+       WHERE server_key = ? AND user_id = ? AND status = 'in_flight'`,
+      [now, this.scope.serverKey, this.scope.userId],
+    );
+    return result.changes;
+  }
+
   markCompleted(id: string): void {
     this.db.run('DELETE FROM outbox WHERE id = ?', [id]);
   }
@@ -260,6 +333,32 @@ export class OutboxQueue {
       `UPDATE outbox SET status = 'pending', next_attempt_at = 0, updated_at = ?
        WHERE server_key = ? AND user_id = ? AND status = 'failed'`,
       [Date.now(), this.scope.serverKey, this.scope.userId],
+    );
+  }
+
+  /** Requeues one parked operation (by id) for the current scope. */
+  retryOp(opId: string): void {
+    this.db.run(
+      `UPDATE outbox SET status = 'pending', next_attempt_at = 0, attempts = 0, updated_at = ?
+       WHERE id = ? AND server_key = ? AND user_id = ? AND status = 'failed'`,
+      [Date.now(), opId, this.scope.serverKey, this.scope.userId],
+    );
+  }
+
+  /**
+   * Drops every pending/in-flight op for a note — used when a note that
+   * never reached the server is discarded locally (empty draft cleanup,
+   * permanent delete of an unsynced note). Ops already completed are rows
+   * that no longer exist; conflicted/failed lifecycle ops keep their state
+   * so nothing disappears silently — callers only invoke this for notes
+   * with no server identity.
+   */
+  removeNoteOps(noteId: string): void {
+    this.db.run(
+      `DELETE FROM outbox
+       WHERE server_key = ? AND user_id = ? AND note_id = ?
+         AND status IN ('pending', 'in_flight')`,
+      [this.scope.serverKey, this.scope.userId, noteId],
     );
   }
 

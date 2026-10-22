@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Animated, View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -16,7 +16,9 @@ export function Skeleton({
   style,
 }: SkeletonProps) {
   const theme = useTheme();
-  const opacity = useRef(new Animated.Value(0.4)).current;
+  // Lazy state initializer keeps the Animated.Value outside render (refs are
+  // not allowed during render under the React-compiler lint rules).
+  const [opacity] = useState(() => new Animated.Value(0.4));
 
   useEffect(() => {
     const pulse = Animated.loop(

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,21 +24,23 @@ export default function RemindersScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { session } = useAuth();
-  const { notesRepo, runSync } = useSync();
-
-  const [sections, setSections] = useState<ReminderSection[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
+  const { notesRepo, runSync, syncStatus } = useSync();
 
   const activeWorkspaceId = session?.activeWorkspaceId || '';
+  const [refreshing, setRefreshing] = useState(false);
+  // "Now" for bucketing: captured at mount (lazy initializer — runs once) and
+  // refreshed from each sync completion. Never read during render.
+  const [nowBase] = useState(() => Date.now());
+  const now = syncStatus.lastSyncAt ?? nowBase;
 
-  const loadReminders = useCallback(() => {
-    if (!activeWorkspaceId) return;
+  // Derived synchronously from SQLite; recomputed after syncs and refreshes.
+  const sections: ReminderSection[] = useMemo(() => {
+    if (!activeWorkspaceId) return [];
 
     const res = notesRepo.listNotes({ workspaceId: activeWorkspaceId });
     const withReminders = res.notes.filter((n) => n.reminderTime != null && !n.isArchived && !n.deletedAt);
 
-    const now = Date.now();
-    const endOfDay = new Date();
+    const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
     const endOfDayMs = endOfDay.getTime();
 
@@ -61,13 +63,13 @@ export default function RemindersScreen() {
     if (overdue.length > 0) list.push({ title: 'OVERDUE', data: overdue });
     if (today.length > 0) list.push({ title: 'TODAY', data: today });
     if (upcoming.length > 0) list.push({ title: 'UPCOMING', data: upcoming });
+    return list;
+    // `now` flows in via deps (sync completions re-bucket); SQLite reads are
+    // the reason the repo deps are not referenced in the callback body.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesRepo, activeWorkspaceId, syncStatus.lastSyncAt, syncStatus.pendingCount, now]);
 
-    setSections(list);
-  }, [notesRepo, activeWorkspaceId]);
-
-  useEffect(() => {
-    loadReminders();
-  }, [loadReminders]);
+  const totalCount = sections.reduce((acc, s) => acc + s.data.length, 0);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -75,11 +77,8 @@ export default function RemindersScreen() {
       await runSync();
     } finally {
       setRefreshing(false);
-      loadReminders();
     }
   };
-
-  const totalCount = sections.reduce((acc, s) => acc + s.data.length, 0);
 
   return (
     <SafeAreaView edges={['top']} style={[styles.safeArea, { backgroundColor: theme.colors.bg }]}>
