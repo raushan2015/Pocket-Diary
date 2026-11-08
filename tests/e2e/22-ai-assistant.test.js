@@ -142,6 +142,50 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   await page.selectOption('#ai-thinking-select', 'auto');
   console.log('[Journey 22] Thinking choice routes to server; unsupported model is explicitly rejected.');
 
+  // ---------- Exact reported bug: NVIDIA GLM-5.3-Flash + High ----------
+  const openAiProviderId = await page.inputValue('#ai-provider-select');
+  const glmProviderId = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/ai/providers', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'nvidia_nim', label: 'GLM reasoning QA',
+        modelId: 'z-ai/glm-5.3-flash', apiKey: 'nvapi-e2e-mock-only-123456789',
+      }),
+    });
+    if (!response.ok) throw Error('Cannot add GLM mock provider: ' + response.status);
+    return (await response.json()).config.id;
+  });
+  await page.click('#ai-drawer-close-btn');
+  await page.click('#nav-ai-btn');
+  await page.waitForFunction((id) =>
+    !!document.querySelector(`#ai-provider-select option[value="${id}"]`),
+    glmProviderId, { timeout: 12_000 });
+  await page.selectOption('#ai-provider-select', glmProviderId);
+  await page.selectOption('#ai-thinking-select', 'high');
+  assert.ok((await page.textContent('#ai-thinking-hint')).includes('max'),
+    'GLM High is described as NVIDIA max reasoning');
+  const glmmockBefore = (await getRecorded()).length;
+  await page.fill('#ai-composer-input', 'GLM High reasoning should send successfully');
+  const acceptedGlm = page.waitForResponse((response) =>
+    response.request().method() === 'POST' &&
+    /\/api\/v1\/ai\/conversations\/[^/]+\/messages$/.test(response.url()) &&
+    response.status() === 202, { timeout: 18_000 });
+  await page.click('#ai-send-btn');
+  await acceptedGlm;
+  await page.waitForFunction(() =>
+    !document.querySelector('#ai-send-btn')?.disabled &&
+    document.querySelector('#ai-drawer-messages')?.textContent.includes('GLM High reasoning'),
+    { timeout: 30_000 });
+  const glmBodies = (await getRecorded()).slice(glmmockBefore)
+    .map((record) => { try { return JSON.parse(record.body); } catch { return {}; } });
+  assert.ok(glmBodies.some((body) =>
+    body.model === 'z-ai/glm-5.3-flash' && body.reasoning_effort === 'max'),
+    'the exact GLM model receives native max reasoning in the provider HTTP body');
+  await page.selectOption('#ai-provider-select', openAiProviderId);
+  await page.selectOption('#ai-thinking-select', 'auto');
+  console.log('[Journey 22] NVIDIA GLM-5.3-Flash High reasoning accepted and answered.');
+
   // ---------- General chat round trip (no note open) ----------
   await page.fill('#ai-composer-input', 'Help me plan an online electronics shop');
   await page.click('#ai-send-btn');

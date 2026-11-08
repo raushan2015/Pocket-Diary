@@ -49,8 +49,11 @@ export function resolveThinkingEffort(
       // that maps to high. Keep the user's selected level in the app metadata.
       return selected;
     case 'nvidia_nim':
-      // NVIDIA reasoning controls are recipe/model-specific. Only use the
-      // documented set here. Future models can be added after verification.
+      // NVIDIA documents native low/high/max reasoning for GLM-5.3 and
+      // GLM-5.3-Flash. Map UI Low/Medium/High to all three distinct levels
+      // in the provider adapter (low/high/max). Never reject these GLM models.
+      if (isNvidiaGlm53(model)) return selected;
+      // Other NVIDIA reasoning controls are recipe/model-specific.
       if (/^openai\/gpt-oss-(?:20b|120b)$/.test(model)) return selected;
       if (/^nvidia\/nemotron-3(?:\.5)?-super(?:-|$)/.test(model)) {
         if (selected === 'medium') throw new ThinkingUnavailableError('This NVIDIA model supports Low or High thinking, not Medium.');
@@ -61,6 +64,11 @@ export function resolveThinkingEffort(
   throw new ThinkingUnavailableError(
     'The selected model has no verified thinking-effort control in Pocket Diary. Choose a reasoning-capable model in AI Settings or select Auto.'
   );
+}
+
+/** Exact verified GLM-5.3 family (avoid granting unsupported models). */
+export function isNvidiaGlm53(modelId: string): boolean {
+  return /^(?:z-ai|zai-org)\/glm-5\.3(?:-flash)?$/i.test(modelId.trim());
 }
 
 export function providerThinkingValue(provider: string, effort: ThinkingEffort): string {

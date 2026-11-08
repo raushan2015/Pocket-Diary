@@ -832,6 +832,15 @@ async function runGenerationJob(
       if (!sawDone && collected.text === '' && collected.toolCalls.size === 0 && !requestedNewNote) {
         throw new AiChatError('bad_response', 'The provider closed the stream without a reply.', 502);
       }
+      // Thinking models may spend every output token on hidden reasoning,
+      // returning no readable answer. Do not silently save an empty reply.
+      if (!requestedNewNote && collected.toolCalls.size === 0 && !collected.text.trim()) {
+        const isNvidiaGlm = resolved.provider === 'nvidia_nim' &&
+          /^(?:z-ai|zai-org)\/glm-5\.3(?:-flash)?$/i.test(resolved.modelId);
+        throw new AiChatError('empty_model_answer', isNvidiaGlm
+          ? 'GLM finished reasoning without a readable answer. Try Medium or Low thinking, or shorten the question.'
+          : 'The model returned no readable answer. Try a lower thinking level or a different model.', 502);
+      }
 
       // --- Tool round -----------------------------------------------------
       if (collected.toolCalls.size > 0 && round <= MAX_TOOL_ROUNDS) {

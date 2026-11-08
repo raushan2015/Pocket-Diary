@@ -20,6 +20,7 @@ import {
   type ProviderStreamEvent,
 } from '../provider-types.js';
 import { providerFetchStream, providerFetchJson, scrubKeyMaterial } from '../provider-fetch.js';
+import { isNvidiaGlm53 } from '../thinking.service.js';
 
 const CHAT_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const MODELS_URL = 'https://integrate.api.nvidia.com/v1/models';
@@ -52,7 +53,14 @@ function buildRequestBody(req: AdapterChatRequest, stream: boolean): string {
     stream,
     max_tokens: req.maxOutputTokens ?? 2048,
   };
-  if (req.thinkingEffort) body.reasoning_effort = req.thinkingEffort;
+  if (req.thinkingEffort) {
+    // NVIDIA GLM-5.3 implements low/high/max, not Pocket Diary's
+    // low/medium/high. Sending 'medium' silently selects max, so explicitly
+    // map all three user choices to distinct documented native levels.
+    body.reasoning_effort = isNvidiaGlm53(req.config.modelId)
+      ? ({ low: 'low', medium: 'high', high: 'max' } as const)[req.thinkingEffort]
+      : req.thinkingEffort;
+  }
   if (req.tools && req.tools.length > 0) {
     body.tools = req.tools.map((tool) => ({
       type: 'function',

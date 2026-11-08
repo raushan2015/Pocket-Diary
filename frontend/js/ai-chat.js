@@ -75,6 +75,15 @@ function currentActiveMemo() {
   return state.get('activeMemo') || null;
 }
 
+/** An explicit request about the currently open note authorizes only that
+ * note for this task. Ordinary chat while the editor is open remains private. */
+function requestsOpenNoteTask(message) {
+  const memo = currentActiveMemo();
+  if (!memo?.id || typeof message !== 'string') return false;
+  return /\b(?:this|the|current|open|opened|existing)\s+(?:note|memo|diary entry)\b/i.test(message)
+    && /\b(?:summari[sz]e|update|edit|rewrite|improve|review|analy[sz]e|explain|read|correct|fix|expand|revise|translate|modify)\b/i.test(message);
+}
+
 function scopeInfo() {
   const memo = currentActiveMemo();
   if (searchMode) {
@@ -133,6 +142,24 @@ async function loadProviderConfigs() {
   renderProviderSelector();
 }
 
+function updateThinkingHint() {
+  const hint = qs('ai-thinking-hint');
+  if (!hint) return;
+  const selection = qs('ai-thinking-select')?.value ?? 'auto';
+  const config = providerConfigs.find((item) => item.id === selectedProviderConfigId);
+  // NVIDIA GLM-5.3 has a built-in reasoning model and distinct native
+  // low/high/max effort controls (Medium maps to high, High maps to max).
+  if (config?.provider === 'nvidia_nim' &&
+      /^(?:z-ai|zai-org)\/glm-5\.3(?:-flash)?$/i.test(config.modelId)) {
+    const key = selection === 'auto' ? 'thinkingGlmAuto'
+      : selection === 'low' ? 'thinkingGlmLow'
+      : selection === 'medium' ? 'thinkingGlmMedium' : 'thinkingGlmHigh';
+    hint.textContent = t('ai.' + key);
+    return;
+  }
+  hint.textContent = t('ai.thinkingHint');
+}
+
 function renderProviderSelector() {
   const select = qs('ai-provider-select');
   if (!select) return;
@@ -143,6 +170,7 @@ function renderProviderSelector() {
     opt.textContent = t('ai.noProvider');
     select.appendChild(opt);
     select.disabled = true;
+    updateThinkingHint();
     return;
   }
   select.disabled = false;
@@ -153,6 +181,7 @@ function renderProviderSelector() {
     if (config.id === selectedProviderConfigId) opt.selected = true;
     select.appendChild(opt);
   }
+  updateThinkingHint();
 }
 
 // ---------------------------------------------------------------------------
@@ -868,7 +897,7 @@ async function sendMessage(options = {}) {
   // from High to Auto (or changing chat/provider) cannot alter a queued send.
   const requestedThinking = qs('ai-thinking-select')?.value || 'auto';
   const requestedProvider = selectedProviderConfigId;
-  const requestedMode = options.mode || (searchMode ? 'search' : scopeInfo().kind === 'note' ? 'note_task' : 'general');
+  const requestedMode = options.mode || (searchMode ? 'search' : (scopeInfo().kind === 'note' || requestsOpenNoteTask(content)) ? 'note_task' : 'general');
   sendingInProgress = true;
   const sendButton = qs('ai-send-btn');
   if (sendButton) sendButton.disabled = true;
@@ -1161,8 +1190,7 @@ export function initAiChat() {
     } catch { /* private browser mode */ }
     thinkingSelect.addEventListener('change', () => {
       try { sessionStorage.setItem(THINKING_KEY, thinkingSelect.value); } catch { /* ignore */ }
-      const hint = qs('ai-thinking-hint');
-      if (hint) hint.textContent = t('ai.thinkingHint');
+      updateThinkingHint();
     });
   }
 
@@ -1186,6 +1214,7 @@ export function initAiChat() {
   qs('ai-history-btn')?.addEventListener('click', () => toggleHistory());
   qs('ai-provider-select')?.addEventListener('change', (e) => {
     selectedProviderConfigId = e.target.value || null;
+    updateThinkingHint();
   });
   qs('ai-send-btn')?.addEventListener('click', () => void sendMessage());
   qs('ai-cancel-btn')?.addEventListener('click', () => void cancelGeneration());
