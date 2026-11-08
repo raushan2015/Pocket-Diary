@@ -7,7 +7,7 @@
  * outlive the assets it references.
  */
 
-const CACHE_NAME = 'notes-v3';
+const CACHE_NAME = 'notes-v8';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -28,6 +28,7 @@ const PRECACHE_ASSETS = [
   '/js/api.js',
   '/js/state.js',
   '/js/utils.js',
+  '/js/i18n.js',
   '/js/markdown.js',
   // Audit L-12: voice-notes.js and md-import.js are statically imported by
   // keep-modal/app-events and keep-import/migration respectively — the cold
@@ -55,7 +56,12 @@ const PRECACHE_ASSETS = [
   '/js/search-filter.js',
   '/js/memo-renderer.js',
   '/js/sidebar.js',
-  '/js/app-events.js'
+  '/js/app-events.js',
+  // Pocket Diary AI assistant modules (v6): chat drawer, settings, privacy.
+  '/js/ai-chat.js',
+  '/js/ai-settings.js',
+  '/js/ai-privacy.js',
+  '/css/ai-chat.css'
 ];
 
 self.addEventListener('install', (event) => {

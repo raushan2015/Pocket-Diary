@@ -36,6 +36,12 @@ services:
       - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
       - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@notes.local}
+      # Pocket Diary AI assistant (optional). AI_CREDENTIAL_ENCRYPTION_KEY is
+      # REQUIRED to let users store provider API keys: generate with
+      #   openssl rand -hex 32
+      # Keep it outside Git. Without it, note-taking works but AI credentials
+      # are disabled (the AI settings screen explains this to operators).
+      - AI_CREDENTIAL_ENCRYPTION_KEY=${AI_CREDENTIAL_ENCRYPTION_KEY:-}
       # Backups: local cadence + optional off-host replication directory
       - BACKUP_INTERVAL_HOURS=${BACKUP_INTERVAL_HOURS:-24}
       - BACKUP_RETENTION=${BACKUP_RETENTION:-7}
@@ -43,6 +49,8 @@ services:
       - BACKUP_REPLICATION_RETENTION=${BACKUP_REPLICATION_RETENTION:-7}
       # Global request budget per minute
       - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-300}
+      # Enable OpenAPI/Swagger docs at /docs (set false to disable)
+      - DOCS_ENABLED=${DOCS_ENABLED:-true}
     volumes:
       # Mount the replication directory when configured so snapshots are
       # copied outside the data volume:

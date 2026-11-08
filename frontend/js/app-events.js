@@ -8,6 +8,7 @@ import { state } from './state.js';
 import { escapeHtml } from './markdown.js';
 import { showToast, openModal, closeModal, toggleTheme, showConfirmDialog } from './utils.js';
 import { navigateTo } from './navigation.js';
+import { t } from './i18n.js';
 import {
   setAuthMode,
   handleAuthSubmit,
@@ -74,7 +75,6 @@ export function setupEventListeners() {
     clearTimeout(remoteRefreshTimer);
     remoteRefreshTimer = setTimeout(() => void refreshWorkspaceMemos(false), 150);
   };
-
   // Audit L-11: an expired session used to fail one action at a time. The
   // API client broadcasts this once on the first data-endpoint 401; here we
   // return the user to the sign-in screen instead.
@@ -82,7 +82,7 @@ export function setupEventListeners() {
     if (!state.get('isAuthenticated')) return;
     state.clearUser();
     closeKeepPopovers?.();
-    showToast('Your session has expired. Please sign in again.', 'warning', 5000);
+    showToast(t('auth.sessionExpired'), 'warning', 5000);
     navigateTo('auth', { mode: 'login' });
   });
 

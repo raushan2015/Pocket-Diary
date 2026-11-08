@@ -526,4 +526,5 @@ export const apiTags: Array<{ name: string; description: string }> = [
   { name: 'Push', description: 'Web Push (VAPID) subscription management.' },
   { name: 'Invites', description: 'Public invitation lookup and authenticated acceptance.' },
   { name: 'Migration', description: 'Legacy import and full workspace export.' },
+  { name: 'AI', description: 'Privacy-first AI assistant: BYOK provider keys (encrypted at rest), persistent chat, note proposals, task-scoped grants, per-note AI privacy and two-stage private search. All authorization is enforced server-side.' },
 ];

@@ -227,3 +227,184 @@ export const storageSchema = z
     percentUsed: z.number(),
   })
   .passthrough();
+
+// ---------------------------------------------------------------------------
+// Pocket Diary AI assistant (server-persisted, privacy-first)
+// ---------------------------------------------------------------------------
+
+export const aiProviderConfigSchema = z
+  .object({
+    id: z.string(),
+    provider: z.enum(['openai', 'gemini', 'deepseek', 'nvidia_nim']),
+    label: z.string(),
+    modelId: z.string(),
+    keyLast4: z.string(),
+    hasKey: z.boolean().optional(),
+    isDefault: z.boolean(),
+    createdAt: z.number().optional(),
+    updatedAt: z.number().optional(),
+  })
+  .passthrough();
+export type ApiAiProviderConfig = z.infer<typeof aiProviderConfigSchema>;
+
+export const aiProvidersResponseSchema = z
+  .object({
+    configs: z.array(aiProviderConfigSchema),
+    vault: z.object({ configured: z.boolean(), hint: z.string().optional() }).passthrough(),
+  })
+  .passthrough();
+export type ApiAiProvidersResponse = z.infer<typeof aiProvidersResponseSchema>;
+
+export const aiModelListSchema = z.object({
+  models: z.array(z.object({
+    id: z.string(),
+    supportsTools: z.boolean().optional(),
+    supportsStreaming: z.boolean().optional(),
+  }).passthrough()),
+  manualEntryOnly: z.boolean(),
+}).passthrough();
+
+export const aiConversationSchema = z
+  .object({
+    id: z.string(),
+    workspaceId: z.string(),
+    title: z.string(),
+    providerConfigId: z.string().nullable().optional(),
+    autoSaveNotes: z.boolean().optional(),
+    createdAt: z.number().nullable().optional(),
+    updatedAt: z.number().nullable().optional(),
+    messageCount: z.number().optional(),
+  })
+  .passthrough();
+export type ApiAiConversation = z.infer<typeof aiConversationSchema>;
+
+export const aiConversationsResponseSchema = z
+  .object({ conversations: z.array(aiConversationSchema), total: z.number() })
+  .passthrough();
+
+export const aiMessageSchema = z
+  .object({
+    id: z.string(),
+    conversationId: z.string(),
+    role: z.enum(['user', 'assistant', 'system', 'tool']),
+    content: z.string(),
+    status: z.string(),
+    provider: z.string().nullable().optional(),
+    model: z.string().nullable().optional(),
+    sources: z.array(z.record(z.unknown())).optional(),
+    meta: z.record(z.unknown()).optional(),
+    errorCode: z.string().nullable().optional(),
+    createdAt: z.number(),
+  })
+  .passthrough();
+export type ApiAiMessage = z.infer<typeof aiMessageSchema>;
+
+export const aiConversationDetailSchema = z
+  .object({
+    conversation: aiConversationSchema,
+    messages: z.array(aiMessageSchema),
+    total: z.number(),
+  })
+  .passthrough();
+
+export const aiRequestSchema = z
+  .object({
+    id: z.string(),
+    conversationId: z.string(),
+    status: z.enum(['queued', 'running', 'complete', 'failed', 'interrupted', 'canceled']),
+    errorCode: z.string().nullable().optional(),
+    errorMessage: z.string().nullable().optional(),
+    messageId: z.string().nullable().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    finishedAt: z.number().nullable().optional(),
+  })
+  .passthrough();
+export type ApiAiRequest = z.infer<typeof aiRequestSchema>;
+
+export const aiSendMessageResponseSchema = z
+  .object({ userMessage: aiMessageSchema, request: aiRequestSchema })
+  .passthrough();
+
+export const aiGrantSchema = z
+  .object({
+    grantId: z.string(),
+    memoId: z.string(),
+    version: z.number(),
+    expiresAt: z.number().optional(),
+  })
+  .passthrough();
+
+export const aiProposalSchema = z
+  .object({
+    id: z.string(),
+    action: z.enum(['create', 'update']),
+    status: z.string(),
+    targetNoteId: z.string().nullable().optional(),
+    expectedNoteVersion: z.number().nullable().optional(),
+    payload: z
+      .object({
+        title: z.string().optional(),
+        content: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+      })
+      .passthrough(),
+    resultMemoId: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type ApiAiProposal = z.infer<typeof aiProposalSchema>;
+
+export const aiSearchResponseSchema = z
+  .object({
+    hits: z.array(
+      z
+        .object({
+          id: z.string(),
+          title: z.string(),
+          snippet: z.string(),
+          updatedAt: z.number(),
+          llmEligible: z.boolean(),
+          eligibility: z.enum(['search_allowed', 'blocked', 'current_only']),
+        })
+        .passthrough(),
+    ),
+    total: z.number(),
+  })
+  .passthrough();
+export type ApiAiSearchResponse = z.infer<typeof aiSearchResponseSchema>;
+
+export const aiPrivacySchema = z
+  .object({
+    sections: z.array(
+      z
+        .object({
+          id: z.string(),
+          noteVersion: z.number(),
+          passageLength: z.number(),
+          createdAt: z.number(),
+        })
+        .passthrough(),
+    ),
+    aiAccess: z.enum(['blocked', 'current_only', 'search_allowed']),
+  })
+  .passthrough();
+
+export const aiProviderConfigResponseSchema = z
+  .object({ config: aiProviderConfigSchema })
+  .passthrough();
+
+export const aiConversationCreateResponseSchema = z
+  .object({ conversation: aiConversationSchema })
+  .passthrough();
+
+export const aiRequestResponseSchema = z
+  .object({ request: aiRequestSchema })
+  .passthrough();
+
+export const aiGrantResponseSchema = z
+  .object({ grant: aiGrantSchema })
+  .passthrough();
+
+export const aiProposalResponseSchema = z
+  .object({ proposal: aiProposalSchema })
+  .passthrough();

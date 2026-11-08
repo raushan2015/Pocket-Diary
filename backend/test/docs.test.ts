@@ -96,6 +96,36 @@ const EXPECTED_OPERATIONS: Array<[string, string, 'public' | 'auth', string]> = 
 
   ['post', '/api/v1/migration/import-local', 'auth', 'Migration'],
   ['get', '/api/v1/migration/export', 'auth', 'Migration'],
+
+  // AI assistant (handoff feature): providers, chat, search, privacy.
+  ['get', '/api/v1/ai/providers', 'auth', 'AI'],
+  ['post', '/api/v1/ai/providers', 'auth', 'AI'],
+  ['patch', '/api/v1/ai/providers/{id}', 'auth', 'AI'],
+  ['delete', '/api/v1/ai/providers/{id}', 'auth', 'AI'],
+  ['post', '/api/v1/ai/providers/{id}/test', 'auth', 'AI'],
+  ['get', '/api/v1/ai/providers/{id}/models', 'auth', 'AI'],
+  ['post', '/api/v1/ai/providers/models-preview', 'auth', 'AI'],
+  ['post', '/api/v1/ai/conversations', 'auth', 'AI'],
+  ['get', '/api/v1/ai/conversations', 'auth', 'AI'],
+  ['get', '/api/v1/ai/conversations/{id}', 'auth', 'AI'],
+  ['patch', '/api/v1/ai/conversations/{id}', 'auth', 'AI'],
+  ['delete', '/api/v1/ai/conversations/{id}', 'auth', 'AI'],
+  ['post', '/api/v1/ai/conversations/{id}/messages', 'auth', 'AI'],
+  ['post', '/api/v1/ai/conversations/{id}/save-as-note', 'auth', 'AI'],
+  ['get', '/api/v1/ai/requests/{id}', 'auth', 'AI'],
+  ['get', '/api/v1/ai/requests/{id}/events', 'auth', 'AI'],
+  ['post', '/api/v1/ai/requests/{id}/cancel', 'auth', 'AI'],
+  ['post', '/api/v1/ai/search', 'auth', 'AI'],
+  ['post', '/api/v1/ai/search/preview', 'auth', 'AI'],
+  ['post', '/api/v1/ai/search/approve', 'auth', 'AI'],
+  ['post', '/api/v1/ai/current-note/grant', 'auth', 'AI'],
+  ['post', '/api/v1/ai/current-note/revoke', 'auth', 'AI'],
+  ['patch', '/api/v1/ai/memos/{id}/privacy', 'auth', 'AI'],
+  ['put', '/api/v1/ai/memos/{id}/protected-sections', 'auth', 'AI'],
+  ['get', '/api/v1/ai/memos/{id}/protected-sections', 'auth', 'AI'],
+  ['get', '/api/v1/ai/proposals/{id}', 'auth', 'AI'],
+  ['post', '/api/v1/ai/proposals/{id}/approve', 'auth', 'AI'],
+  ['post', '/api/v1/ai/proposals/{id}/reject', 'auth', 'AI'],
 ];
 
 // ---------------------------------------------------------------------------

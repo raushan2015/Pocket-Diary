@@ -11,6 +11,7 @@ import { notificationRoutes } from './notifications.js';
 import { pushRoutes } from './push.js';
 import { inviteRoutes } from './invites.js';
 import { systemInfoRoutes, systemRoutes } from './system.js';
+import { aiRoutes } from './ai.js';
 import { jsonResponse, errorResponses, PUBLIC_SECURITY } from '../openapi.js';
 
 const healthMeta = (direct: boolean) => ({
@@ -79,6 +80,9 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
 
   // Self-hosted system status (backup snapshots) — authenticated, admin-only
   await fastify.register(systemRoutes, { prefix: '/system' });
+
+  // AI assistant (providers, chat, search, privacy) — authenticated only
+  await fastify.register(aiRoutes, { prefix: '/ai' });
 
   // Public server identity/capabilities for first-launch mobile clients
   // (registered separately: it must be reachable without a session).

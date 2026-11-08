@@ -7,6 +7,7 @@ import { api } from './api.js';
 import { state } from './state.js';
 import { escapeHtml } from './markdown.js';
 import { showToast } from './utils.js';
+import { t } from './i18n.js';
 import { setFilter, closeMobileSidebar } from './search-filter.js';
 import { refreshWorkspaceMemos } from './workspace-data.js';
 
@@ -278,3 +279,13 @@ export function updateSidebarBadges() {
       .catch(() => {});
   }
 }
+
+
+// Re-render on language change so dynamically-built labels update (i18n).
+window.addEventListener('language:changed', () => {
+  try {
+    renderWorkspacesList(state.get('workspaces') || []);
+  } catch {
+    /* state not ready during bootstrap — ignore */
+  }
+});

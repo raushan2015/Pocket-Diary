@@ -20,6 +20,8 @@ import { setupSearchInput, setFilter, filterAndRenderMemos } from './search-filt
 import { renderWorkspacesList } from './sidebar.js';
 import { setupEventListeners } from './app-events.js';
 import { navigateTo } from './navigation.js';
+import { initI18n, t, setupLanguageSwitcher } from './i18n.js';
+import { initAiChat } from './ai-chat.js';
 
 // Re-export key orchestrators for module consumers and backward compatibility
 export { navigateTo } from './navigation.js';
@@ -60,14 +62,16 @@ function bindStateToUI() {
       if (emailEl) emailEl.textContent = user.email;
       if (greetingTitle) {
         const hour = new Date().getHours();
-        let greeting = 'Good Morning';
+        let greetingKey = 'dashboard.greetingMorning';
         let emoji = '☀️';
-        if (hour < 5) { greeting = 'Good Night'; emoji = '🌙'; }
-        else if (hour < 12) { greeting = 'Good Morning'; emoji = '☀️'; }
-        else if (hour < 17) { greeting = 'Good Afternoon'; emoji = '🌤️'; }
-        else if (hour < 21) { greeting = 'Good Evening'; emoji = '🌆'; }
-        else { greeting = 'Good Night'; emoji = '🌙'; }
-        greetingTitle.textContent = `${greeting}, ${name}! ${emoji}`;
+        if (hour < 5) { greetingKey = 'dashboard.greetingNight'; emoji = '🌙'; }
+        else if (hour < 12) { greetingKey = 'dashboard.greetingMorning'; emoji = '☀️'; }
+        else if (hour < 17) { greetingKey = 'dashboard.greetingAfternoon'; emoji = '🌤️'; }
+        else if (hour < 21) { greetingKey = 'dashboard.greetingEvening'; emoji = '🌆'; }
+        else { greetingKey = 'dashboard.greetingNight'; emoji = '🌙'; }
+        // The period word and the name suffix are separate i18n entries
+        // ("Good Morning" + ", {name}!") so word order can differ per locale.
+        greetingTitle.textContent = `${t(greetingKey)}${t('dashboard.greetingSuffix', { name })} ${emoji}`;
       }
     }
   });
@@ -120,12 +124,16 @@ async function handleIncomingInvite() {
 // Application Bootstrap
 // ==========================================================================
 async function initApp() {
+  // i18n FIRST: every subsequent render reads the chosen language.
+  initI18n();
   initTheme();
   bindStateToUI();
   setupEventListeners();
   setupSearchInput();
   setupAuthFormEnhancements();
   initMigrationModal({ onRefresh: refreshWorkspaceMemos });
+  setupLanguageSwitcher();
+  initAiChat();
 
   renderInteractiveCalendar(currentCalYear, currentCalMonth, (range) => {
     setFilter('dueDate', range);

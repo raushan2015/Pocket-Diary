@@ -3245,3 +3245,85 @@ button.calendar-day-num {
 .settings-import-preview strong {
   color: var(--text-primary);
 }
+
+/* ==========================================================================
+   Language Switcher (i18n) — globe button + dropdown in the top navbar.
+   Mirrors the notifications panel pattern (position, radius, shadow, motion)
+   so the two dropdowns feel identical. See frontend/js/i18n.js.
+   ========================================================================== */
+.language-switcher {
+  position: relative;
+}
+
+.language-switcher-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.language-switcher-panel {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  min-width: 200px;
+  background: var(--bg-surface-elevated, var(--bg-surface));
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
+  z-index: calc(var(--z-modal, 1000) + 30);
+  overflow: hidden;
+  animation: dropdownIn 150ms ease-out;
+}
+
+.language-panel-header {
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.language-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.language-option:hover {
+  background: var(--bg-hover);
+}
+
+.language-option.active {
+  background: var(--bg-subtle);
+  font-weight: 600;
+}
+
+.language-option-flag {
+  font-size: 1.05rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.language-option-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.language-option-check {
+  color: var(--primary-color, #2563eb);
+  font-weight: 700;
+  flex-shrink: 0;
+  min-width: 1rem;
+  text-align: right;
+}

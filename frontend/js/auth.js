@@ -9,6 +9,7 @@ import { state } from './state.js';
 import { showToast } from './utils.js';
 import { navigateTo } from './navigation.js';
 import { fetchWorkspaceData, resetStorageWidget } from './workspace-data.js';
+import { t } from './i18n.js';
 
 // Active workspace invitation token captured from the URL (#invite=<token>)
 let pendingInviteToken = null;
@@ -160,8 +161,8 @@ export function setAuthMode(mode) {
   if (mode === 'reset') {
     // Password recovery completion (MOCK-03): the one-time token arrived via
     // #reset=<token>; the user only chooses and confirms a new password.
-    if (titleEl) titleEl.textContent = 'Choose a New Password';
-    if (subtitleEl) subtitleEl.textContent = 'Enter and confirm your new password to finish the recovery';
+    if (titleEl) titleEl.textContent = t('auth.newPasswordTitle');
+    if (subtitleEl) subtitleEl.textContent = t('auth.newPasswordSubtitle');
     if (nameGroup) nameGroup.style.display = 'none';
     if (emailGroup) emailGroup.style.display = 'none';
     if (passwordGroup) passwordGroup.style.display = 'block';
@@ -169,12 +170,12 @@ export function setAuthMode(mode) {
     if (strengthMeter) strengthMeter.style.display = passwordStrength(document.getElementById('auth-password-input')?.value || '') ? 'flex' : 'none';
     if (requirements) requirements.style.display = 'flex';
     if (optionsRow) optionsRow.style.display = 'none';
-    if (submitBtn) submitBtn.querySelector('.auth-btn-text').textContent = 'Update Password';
-    if (switchPrompt) switchPrompt.textContent = 'Remembered your password?';
-    if (switchBtn) switchBtn.textContent = 'Sign in';
+    if (submitBtn) submitBtn.querySelector('.auth-btn-text').textContent = t('auth.updatePassword');
+    if (switchPrompt) switchPrompt.textContent = t('auth.rememberedPrompt');
+    if (switchBtn) switchBtn.textContent = t('auth.signIn');
   } else if (mode === 'forgot') {
-    if (titleEl) titleEl.textContent = 'Reset Password';
-    if (subtitleEl) subtitleEl.textContent = 'Enter your email address to receive password recovery instructions';
+    if (titleEl) titleEl.textContent = t('auth.resetTitle');
+    if (subtitleEl) subtitleEl.textContent = t('auth.resetSubtitle');
     if (nameGroup) nameGroup.style.display = 'none';
     if (emailGroup) emailGroup.style.display = 'block';
     if (passwordGroup) passwordGroup.style.display = 'none';
@@ -182,12 +183,12 @@ export function setAuthMode(mode) {
     if (strengthMeter) strengthMeter.style.display = 'none';
     if (requirements) requirements.style.display = 'none';
     if (optionsRow) optionsRow.style.display = 'none';
-    if (submitBtn) submitBtn.querySelector('.auth-btn-text').textContent = 'Send Recovery Link';
-    if (switchPrompt) switchPrompt.textContent = 'Remembered your password?';
-    if (switchBtn) switchBtn.textContent = 'Sign in';
+    if (submitBtn) submitBtn.querySelector('.auth-btn-text').textContent = t('auth.sendRecoveryLink');
+    if (switchPrompt) switchPrompt.textContent = t('auth.rememberedPrompt');
+    if (switchBtn) switchBtn.textContent = t('auth.signIn');
   } else if (mode === 'register') {
-    if (titleEl) titleEl.textContent = 'Create Account';
-    if (subtitleEl) subtitleEl.textContent = 'Get started with your free Pocket Diary workspace';
+    if (titleEl) titleEl.textContent = t('auth.createAccount');
+    if (subtitleEl) subtitleEl.textContent = t('auth.registerSubtitle');
     if (nameGroup) nameGroup.style.display = 'flex';
     if (emailGroup) emailGroup.style.display = 'block';
     if (passwordGroup) passwordGroup.style.display = 'block';
@@ -195,12 +196,12 @@ export function setAuthMode(mode) {
     if (strengthMeter) strengthMeter.style.display = passwordStrength(document.getElementById('auth-password-input')?.value || '') ? 'flex' : 'none';
     if (requirements) requirements.style.display = 'flex';
     if (optionsRow) optionsRow.style.display = 'none';
-    if (submitBtn) submitBtn.querySelector('.auth-btn-text').textContent = 'Create Account';
-    if (switchPrompt) switchPrompt.textContent = 'Already have an account?';
-    if (switchBtn) switchBtn.textContent = 'Sign in';
+    if (submitBtn) submitBtn.querySelector('.auth-btn-text').textContent = t('auth.createAccount');
+    if (switchPrompt) switchPrompt.textContent = t('auth.signUpPrompt');
+    if (switchBtn) switchBtn.textContent = t('auth.signIn');
   } else {
-    if (titleEl) titleEl.textContent = 'Welcome Back';
-    if (subtitleEl) subtitleEl.textContent = 'Sign in to your Pocket Diary account';
+    if (titleEl) titleEl.textContent = t('auth.welcomeBack');
+    if (subtitleEl) subtitleEl.textContent = t('auth.signInSubtitle');
     if (nameGroup) nameGroup.style.display = 'none';
     if (emailGroup) emailGroup.style.display = 'block';
     if (passwordGroup) passwordGroup.style.display = 'block';
@@ -208,9 +209,9 @@ export function setAuthMode(mode) {
     if (strengthMeter) strengthMeter.style.display = 'none';
     if (requirements) requirements.style.display = 'none';
     if (optionsRow) optionsRow.style.display = 'flex';
-    if (submitBtn) submitBtn.querySelector('.auth-btn-text').textContent = 'Sign In';
-    if (switchPrompt) switchPrompt.textContent = "Don't have an account?";
-    if (switchBtn) switchBtn.textContent = 'Sign up';
+    if (submitBtn) submitBtn.querySelector('.auth-btn-text').textContent = t('auth.signIn');
+    if (switchPrompt) switchPrompt.textContent = t('auth.signInPrompt');
+    if (switchBtn) switchBtn.textContent = t('auth.signUp');
   }
 }
 
@@ -384,11 +385,11 @@ export async function handleAuthSubmit(e) {
         message += ' (Email delivery is not configured on this server — contact your instance administrator to complete the recovery.)';
       }
       showAuthAlert(message, 'success');
-      showToast('Password recovery sent!', 'success');
+      showToast(t('auth.recoverySent'), 'success');
     } else if (mode === 'reset') {
       const response = await api.resetPassword(pendingResetToken, password);
       pendingResetToken = null;
-      showToast(response.message || 'Password updated successfully', 'success');
+      showToast(response.message || t('auth.passwordUpdated'), 'success');
       resetAuthForm();
       setAuthMode('login');
       showAuthAlert('Password updated successfully. Sign in with your new password.', 'success');
@@ -406,7 +407,7 @@ export async function handleAuthSubmit(e) {
         showToast(response.inviteWarning, 'warning', 4000);
       }
       if (response.joinedWorkspace) {
-        showToast(`Welcome! You joined “${response.joinedWorkspace.name}”`, 'success', 3500);
+        showToast(t('auth.joinedWorkspaceToast', { workspace: response.joinedWorkspace.name }), 'success', 3500);
       }
 
       clearPendingInvite();
@@ -415,7 +416,7 @@ export async function handleAuthSubmit(e) {
       renderInviteBanner();
 
       state.setUser(user, [workspace], workspace);
-      showToast(`Welcome to Pocket Diary, ${user.name}!`, 'success');
+      showToast(t('auth.welcomeNew', { name: user.name }), 'success');
       resetAuthForm();
       await fetchWorkspaceData();
       navigateTo('dashboard');
@@ -436,7 +437,7 @@ export async function handleAuthSubmit(e) {
       }
 
       state.setUser(user, workspaces, activeWorkspace);
-      showToast(`Welcome back, ${user.name}!`, 'success');
+      showToast(t('auth.welcomeBack', { name: user.name }), 'success');
       resetAuthForm();
       await fetchWorkspaceData();
       navigateTo('dashboard');
@@ -447,12 +448,12 @@ export async function handleAuthSubmit(e) {
         clearPendingInvite();
         try {
           const res = await api.acceptInvite(token);
-          showToast(`You joined “${res.workspace.name}” as ${res.workspace.role}`, 'success', 3500);
+          showToast(t('auth.joinedWorkspace', { workspace: res.workspace.name, role: res.workspace.role }), 'success', 3500);
           const meData = await api.getMe();
           state.set('workspaces', meData.workspaces || []);
           await fetchWorkspaceData();
         } catch (err) {
-          showToast(err.message || 'Invitation could not be accepted', 'warning', 4000);
+          showToast(err.message || t('auth.inviteFailed'), 'warning', 4000);
         }
       }
     }
@@ -541,7 +542,7 @@ export async function handleLogout() {
     await api.logout();
     state.clearUser();
     resetStorageWidget();
-    showToast('Signed out successfully', 'info');
+    showToast(t('auth.signedOut'), 'info');
     closeUserDropdown();
     navigateTo('landing');
   } catch (err) {

@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="css/auth.css">
   <link rel="stylesheet" href="css/editor.css">
   <link rel="stylesheet" href="css/attachments.css">
+  <link rel="stylesheet" href="css/ai-chat.css">
 
   <!-- No inline <script>: the strict CSP (script-src 'self') requires all
        scripts to be same-origin files. js/api.js defaults the API base to ''
@@ -86,15 +87,27 @@
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
         </span>
-        <input type="text" class="navbar-search-input" id="global-search-input" placeholder="Search memos, tags, or content..." aria-label="Search memos">
-        <button type="button" class="navbar-filter-toggle" id="navbar-filter-toggle" aria-expanded="false" aria-controls="navbar-filter-panel" title="Show filters">Filters <span aria-hidden="true">⌄</span></button>
+        <input type="text" class="navbar-search-input" id="global-search-input" placeholder="Search memos, tags, or content..." data-i18n-placeholder="nav.searchPlaceholder" aria-label="Search memos" data-i18n-aria-label="nav.searchAria">
+        <button type="button" class="navbar-filter-toggle" id="navbar-filter-toggle" aria-expanded="false" aria-controls="navbar-filter-panel" title="Show filters" data-i18n-title="nav.showFilters"><span data-i18n="nav.filters">Filters</span> <span aria-hidden="true">⌄</span></button>
         <div class="navbar-filter-panel" id="navbar-filter-panel" hidden></div>
       </div>
 
-      <!-- Right: Action Buttons (Theme Switcher, Auth State, User Menu) -->
+      <!-- Right: Action Buttons (Language Switcher, Theme Switcher, Auth State, User Menu) -->
       <div class="navbar-actions">
+        <!-- Language Switcher (visible signed-in and signed-out) -->
+        <div class="language-switcher">
+          <button class="btn btn-ghost btn-icon-only language-switcher-btn" id="language-switcher-btn" aria-label="Change language" data-i18n-aria-label="nav.switcherAria" title="Language" data-i18n-title="common.language" aria-haspopup="true" aria-expanded="false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </button>
+          <div class="language-switcher-panel" id="language-switcher-panel" role="menu" style="display: none;"></div>
+        </div>
+
         <!-- Theme Toggle Button -->
-        <button class="btn btn-ghost btn-icon-only" id="theme-toggle-btn" aria-label="Toggle dark/light theme" title="Toggle theme">
+        <button class="btn btn-ghost btn-icon-only" id="theme-toggle-btn" aria-label="Toggle dark/light theme" data-i18n-aria-label="nav.toggleTheme" title="Toggle theme" data-i18n-title="nav.toggleTheme">
           <!-- Sun Icon (shown in dark mode) -->
           <svg class="theme-icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
             <circle cx="12" cy="12" r="5"></circle>
@@ -115,14 +128,22 @@
 
         <!-- Unauthenticated Actions -->
         <div class="nav-unauth-actions" id="nav-unauth-actions" style="display: flex; align-items: center; gap: 0.5rem;">
-          <button class="btn btn-ghost btn-sm nav-login-link" id="nav-login-btn">Login</button>
-          <button class="btn btn-primary btn-sm nav-get-started-btn" id="nav-register-btn">Get Started</button>
+          <button class="btn btn-ghost btn-sm nav-login-link" id="nav-login-btn" data-i18n="nav.login">Login</button>
+          <button class="btn btn-primary btn-sm nav-get-started-btn" id="nav-register-btn" data-i18n="nav.getStarted">Get Started</button>
         </div>
 
         <!-- Authenticated Actions -->
         <div class="nav-auth-actions" id="nav-auth-actions" style="display: none; align-items: center; gap: 0.75rem;">
+          <!-- Pocket Diary AI assistant (persistent chat drawer) -->
+          <button class="btn btn-ghost btn-icon-only" id="nav-ai-btn" aria-label="Pocket Diary AI" data-i18n-aria-label="nav.ai" title="Pocket Diary AI" data-i18n-title="nav.ai" aria-haspopup="dialog" aria-expanded="false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path>
+              <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"></path>
+            </svg>
+          </button>
+
           <!-- Notification Bell -->
-          <button class="btn btn-ghost btn-icon-only" id="nav-notifications-btn" aria-label="Notifications" title="Notifications" aria-haspopup="true" aria-expanded="false" style="position: relative;">
+          <button class="btn btn-ghost btn-icon-only" id="nav-notifications-btn" aria-label="Notifications" data-i18n-aria-label="nav.notifications" title="Notifications" data-i18n-title="nav.notifications" aria-haspopup="true" aria-expanded="false" style="position: relative;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
@@ -134,14 +155,14 @@
           <!-- Notifications dropdown panel -->
           <div class="notifications-panel" id="notifications-panel" style="display: none;">
             <div class="notifications-panel-header">
-              <strong>Notifications</strong>
-              <button type="button" class="btn btn-ghost btn-xs" id="notifications-read-all-btn" title="Mark all as read">Mark all read</button>
+              <strong data-i18n="nav.notifications">Notifications</strong>
+              <button type="button" class="btn btn-ghost btn-xs" id="notifications-read-all-btn" title="Mark all as read" data-i18n-title="nav.markAllRead" data-i18n="nav.markAllRead">Mark all read</button>
             </div>
             <div class="notifications-panel-list" id="notifications-panel-list">
-              <div class="notifications-empty">No notifications yet. Reminders you set on notes will appear here.</div>
+              <div class="notifications-empty" data-i18n="nav.notificationsEmpty">No notifications yet. Reminders you set on notes will appear here.</div>
             </div>
             <div class="notifications-panel-footer">
-              <button type="button" class="btn btn-outline btn-sm btn-full" id="notifications-enable-push-btn" style="display:none;">🔔 Enable push notifications</button>
+              <button type="button" class="btn btn-outline btn-sm btn-full" id="notifications-enable-push-btn" style="display:none;" data-i18n="nav.enablePush">🔔 Enable push notifications</button>
             </div>
           </div>
 
@@ -160,21 +181,21 @@
                 <div class="dropdown-user-email" id="dropdown-user-email">alex@example.com</div>
               </div>
               <button class="dropdown-menu-item" id="dropdown-dashboard-btn">
-                <span>Dashboard</span>
-                <span class="badge badge-personal">Active</span>
+                <span data-i18n="nav.dashboard">Dashboard</span>
+                <span class="badge badge-personal" data-i18n="nav.active">Active</span>
               </button>
               <button class="dropdown-menu-item" id="dropdown-profile-btn">
-                <span>Account Settings</span>
+                <span data-i18n="nav.accountSettings">Account Settings</span>
               </button>
               <button class="dropdown-menu-item" id="dropdown-members-btn">
-                <span>Team & Members</span>
+                <span data-i18n="nav.teamMembers">Team & Members</span>
               </button>
               <button class="dropdown-menu-item" id="dropdown-theme-btn">
-                <span>Toggle Dark Mode</span>
+                <span data-i18n="nav.toggleDarkMode">Toggle Dark Mode</span>
                 <span id="dropdown-theme-label" style="font-size: 0.75rem; color: var(--text-muted);">Dark</span>
               </button>
               <button class="dropdown-menu-item logout" id="dropdown-logout-btn">
-                <span>Sign Out</span>
+                <span data-i18n="nav.signOut">Sign Out</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                   <polyline points="16 17 21 12 16 7"></polyline>
@@ -200,19 +221,19 @@
         <section class="hero-section">
           <div class="hero-copy">
             <h1 class="hero-headline">
-              <span class="hero-line">Your Ideas,</span> <span class="hero-line">Notes and Tasks</span> <span class="hero-line">All in <span class="hero-gradient-text">One Place</span></span>
+              <span class="hero-line" data-i18n="landing.headline1">Your Ideas,</span> <span class="hero-line" data-i18n="landing.headline2">Notes and Tasks</span> <span class="hero-line" data-i18n-html="landing.headline3">All in <span class="hero-gradient-text">One Place</span></span>
             </h1>
-            <p class="hero-subhead">
+            <p class="hero-subhead" data-i18n="landing.subhead">
               A modern, secure and easy-to-use memo application to capture ideas, organize your work, and stay productive anywhere. Available on web, mobile and desktop.
             </p>
 
             <!-- Call to Actions -->
             <div class="hero-cta-group">
               <button class="btn btn-primary btn-lg hero-cta-primary" id="hero-get-started-btn">
-                Get Started Free
+                <span data-i18n="landing.getStartedFree">Get Started Free</span>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
               </button>
-              <button class="btn btn-lg hero-cta-secondary" id="hero-live-demo-btn">
+              <button class="btn btn-lg hero-cta-secondary" id="hero-live-demo-btn" data-i18n="landing.liveDemo">
                 Live Demo
               </button>
             </div>
@@ -223,19 +244,19 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                   <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
-                <span>Free Plan Available</span>
+                <span data-i18n="landing.trustFree">Free Plan Available</span>
               </div>
               <div class="trust-badge-item">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                   <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
-                <span>Works on All Devices</span>
+                <span data-i18n="landing.trustDevices">Works on All Devices</span>
               </div>
               <div class="trust-badge-item">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                   <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
-                <span>Your Data is Private</span>
+                <span data-i18n="landing.trustPrivate">Your Data is Private</span>
               </div>
             </div>
           </div>
@@ -628,8 +649,8 @@
           <!-- Left Column: Form Container -->
           <div class="auth-form-column">
             <div class="auth-form-header">
-              <h2 class="auth-title" id="auth-title">Welcome Back</h2>
-              <p class="auth-subtitle" id="auth-subtitle">Sign in to your Pocket Diary account</p>
+              <h2 class="auth-title" id="auth-title" data-i18n="auth.welcomeBack">Welcome Back</h2>
+              <p class="auth-subtitle" id="auth-subtitle" data-i18n="auth.signInSubtitle">Sign in to your Pocket Diary account</p>
             </div>
 
             <!-- Alert Notification Banner inside Form -->
@@ -641,20 +662,20 @@
             <form class="auth-form" id="auth-form" novalidate>
               <!-- Full Name (Only for Registration Mode) -->
               <div class="form-group" id="auth-name-group" style="display: none;">
-                <label class="form-label" for="auth-name-input">Full Name</label>
+                <label class="form-label" for="auth-name-input" data-i18n="auth.fullName">Full Name</label>
                 <div class="input-icon-wrapper">
                   <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                     <circle cx="12" cy="7" r="4"></circle>
                   </svg>
-                  <input type="text" class="form-input" id="auth-name-input" placeholder="Alex Morgan" autocomplete="name" maxlength="120">
+                  <input type="text" class="form-input" id="auth-name-input" placeholder="Alex Morgan" data-i18n-placeholder="auth.fullNamePh" autocomplete="name" maxlength="120">
                 </div>
-                <div class="form-error-msg" id="auth-name-error">Please enter your full name</div>
+                <div class="form-error-msg" id="auth-name-error" data-i18n="auth.fullNameError">Please enter your full name</div>
               </div>
 
               <!-- Email Address -->
               <div class="form-group" id="auth-email-group">
-                <label class="form-label" for="auth-email-input">Email Address</label>
+                <label class="form-label" for="auth-email-input" data-i18n="auth.email">Email Address</label>
                 <div class="input-icon-wrapper">
                   <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
@@ -662,19 +683,19 @@
                   </svg>
                   <input type="email" class="form-input" id="auth-email-input" placeholder="alex@example.com" autocomplete="email" required>
                 </div>
-                <div class="form-error-msg" id="auth-email-error">Please enter a valid email address</div>
+                <div class="form-error-msg" id="auth-email-error" data-i18n="auth.emailError">Please enter a valid email address</div>
               </div>
 
               <!-- Password -->
               <div class="form-group" id="auth-password-group">
-                <label class="form-label" for="auth-password-input">Password</label>
+                <label class="form-label" for="auth-password-input" data-i18n="auth.password">Password</label>
                 <div class="input-icon-wrapper">
                   <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                   </svg>
                   <input type="password" class="form-input" id="auth-password-input" placeholder="••••••••" autocomplete="current-password" required maxlength="200">
-                  <button type="button" class="password-toggle-btn" id="password-toggle-btn" aria-label="Toggle password visibility">
+                  <button type="button" class="password-toggle-btn" id="password-toggle-btn" aria-label="Toggle password visibility" data-i18n-aria-label="auth.togglePasswordVisibility">
                     <!-- Eye Icon -->
                     <svg class="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -682,7 +703,7 @@
                     </svg>
                   </button>
                 </div>
-                <div class="form-error-msg" id="auth-password-error">Password must be at least 8 characters and contain a letter and a number</div>
+                <div class="form-error-msg" id="auth-password-error" data-i18n="auth.passwordError">Password must be at least 8 characters and contain a letter and a number</div>
                 <!-- Password strength meter (register / password-change modes) -->
                 <div class="password-strength-meter" id="password-strength-meter" style="display: none;">
                   <div class="password-strength-bars" id="password-strength-bars" aria-hidden="true">
@@ -691,16 +712,16 @@
                   <span class="password-strength-label" id="password-strength-label"></span>
                 </div>
                 <div class="password-requirements" id="password-requirements" style="display: none;">
-                  <span data-req="length"><span class="req-icon">◦</span> 8+ characters</span>
-                  <span data-req="letter"><span class="req-icon">◦</span> Letter</span>
-                  <span data-req="number"><span class="req-icon">◦</span> Number</span>
+                  <span data-req="length"><span class="req-icon">◦</span> <span data-i18n="auth.reqLength">8+ characters</span></span>
+                  <span data-req="letter"><span class="req-icon">◦</span> <span data-i18n="auth.reqLetter">Letter</span></span>
+                  <span data-req="number"><span class="req-icon">◦</span> <span data-i18n="auth.reqNumber">Number</span></span>
                 </div>
-                <div class="caps-lock-warning" id="caps-lock-warning" style="display: none;">⚠️ Caps Lock is on</div>
+                <div class="caps-lock-warning" id="caps-lock-warning" style="display: none;" data-i18n="auth.capsLock">⚠️ Caps Lock is on</div>
               </div>
 
               <!-- Confirm Password (Register mode only) -->
               <div class="form-group" id="auth-confirm-password-group" style="display: none;">
-                <label class="form-label" for="auth-confirm-password-input">Confirm Password</label>
+                <label class="form-label" for="auth-confirm-password-input" data-i18n="auth.confirmPassword">Confirm Password</label>
                 <div class="input-icon-wrapper">
                   <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -709,21 +730,21 @@
                   </svg>
                   <input type="password" class="form-input" id="auth-confirm-password-input" placeholder="••••••••" autocomplete="new-password" maxlength="200">
                 </div>
-                <div class="form-error-msg" id="auth-confirm-password-error">Passwords do not match</div>
+                <div class="form-error-msg" id="auth-confirm-password-error" data-i18n="auth.confirmError">Passwords do not match</div>
               </div>
 
               <!-- Remember Me & Forgot Password (Login Mode) -->
               <div class="auth-options-row" id="auth-options-row">
                 <label class="form-checkbox-wrapper">
                   <input type="checkbox" class="form-checkbox" id="remember-me-checkbox" checked>
-                  <span>Remember me</span>
+                  <span data-i18n="auth.rememberMe">Remember me</span>
                 </label>
-                <a href="#forgot" class="auth-forgot-link" id="auth-forgot-link">Forgot password?</a>
+                <a href="#forgot" class="auth-forgot-link" id="auth-forgot-link" data-i18n="auth.forgotPassword">Forgot password?</a>
               </div>
 
               <!-- Submit Button -->
               <button type="submit" class="btn btn-primary btn-full auth-submit-btn" id="auth-submit-btn">
-                <span class="auth-btn-text">Sign In</span>
+                <span class="auth-btn-text" data-i18n="auth.signIn">Sign In</span>
               </button>
             </form>
 
@@ -733,8 +754,8 @@
 
             <!-- Footer Toggle Prompt -->
             <div class="auth-switch-prompt">
-              <span id="auth-switch-question">Don't have an account?</span>
-              <a class="auth-switch-link" id="auth-switch-btn" role="button" tabindex="0">Sign up</a>
+              <span id="auth-switch-question" data-i18n="auth.signInPrompt">Don't have an account?</span>
+              <a class="auth-switch-link" id="auth-switch-btn" role="button" tabindex="0" data-i18n="auth.signUp">Sign up</a>
             </div>
           </div>
 
@@ -744,7 +765,7 @@
               <img src="icons/logo-96.png" alt="Pocket Diary" width="56" height="56" style="border-radius: 14px;">
             </div>
             <h3 class="auth-brand-title">Pocket Diary</h3>
-            <p class="auth-brand-tagline">
+            <p class="auth-brand-tagline" data-i18n="auth.brandTagline">
               Your personal space for better ideas and a more organized life.
             </p>
             <div class="auth-brand-features-list">
@@ -752,25 +773,25 @@
                 <div class="auth-feature-check-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
-                <span>Secure and private</span>
+                <span data-i18n="auth.brandFeature1">Secure and private</span>
               </div>
               <div class="auth-brand-feature-item">
                 <div class="auth-feature-check-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
-                <span>Access on all devices</span>
+                <span data-i18n="auth.brandFeature2">Access on all devices</span>
               </div>
               <div class="auth-brand-feature-item">
                 <div class="auth-feature-check-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
-                <span>Free and paid plans</span>
+                <span data-i18n="auth.brandFeature3">Free and paid plans</span>
               </div>
               <div class="auth-brand-feature-item">
                 <div class="auth-feature-check-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
-                <span>Easy to use</span>
+                <span data-i18n="auth.brandFeature4">Easy to use</span>
               </div>
             </div>
           </div>
@@ -796,7 +817,7 @@
                   <rect x="14" y="14" width="7" height="7"></rect>
                   <rect x="3" y="14" width="7" height="7"></rect>
                 </svg>
-                <span>Dashboard</span>
+                <span data-i18n="sidebar.dashboard">Dashboard</span>
               </a>
               <a href="#all" class="sidebar-nav-item" id="side-nav-all">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -805,7 +826,7 @@
                   <line x1="16" y1="13" x2="8" y2="13"></line>
                   <line x1="16" y1="17" x2="8" y2="17"></line>
                 </svg>
-                <span>Notes</span>
+                <span data-i18n="sidebar.notes">Notes</span>
                 <span class="badge badge-personal badge-sm" id="sidebar-count-all" style="margin-left: auto; font-size: 0.7rem;">0</span>
               </a>
               <a href="#reminders" class="sidebar-nav-item" id="side-nav-reminders">
@@ -813,7 +834,7 @@
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                   <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
                 </svg>
-                <span>Reminders</span>
+                <span data-i18n="sidebar.reminders">Reminders</span>
                 <span class="badge badge-sm" id="sidebar-count-reminders" style="margin-left: auto; font-size: 0.7rem;">0</span>
               </a>
               <a href="#archive" class="sidebar-nav-item" id="side-nav-archive">
@@ -822,14 +843,14 @@
                   <rect x="1" y="3" width="22" height="5"></rect>
                   <line x1="10" y1="12" x2="14" y2="12"></line>
                 </svg>
-                <span>Archive</span>
+                <span data-i18n="sidebar.archive">Archive</span>
                 <span class="badge badge-sm" id="sidebar-count-archive" style="margin-left: auto; font-size: 0.7rem;">0</span>
               </a>
               <a href="#favorites" class="sidebar-nav-item" id="side-nav-favorites">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
                 </svg>
-                <span>Favorites</span>
+                <span data-i18n="sidebar.favorites">Favorites</span>
                 <span class="badge badge-sm" id="sidebar-count-fav" style="margin-left: auto; font-size: 0.7rem;">0</span>
               </a>
               <a href="#pinned" class="sidebar-nav-item" id="side-nav-pinned">
@@ -837,7 +858,7 @@
                   <line x1="12" y1="17" x2="12" y2="22"></line>
                   <path d="M5 17h14v-2l-3-3V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v7l-3 3v2z"></path>
                 </svg>
-                <span>Pinned</span>
+                <span data-i18n="sidebar.pinned">Pinned</span>
                 <span class="badge badge-sm" id="sidebar-count-pinned" style="margin-left: auto; font-size: 0.7rem;">0</span>
               </a>
               <a href="#due-soon" class="sidebar-nav-item" id="side-nav-due-soon">
@@ -845,7 +866,7 @@
                   <circle cx="12" cy="12" r="10"></circle>
                   <polyline points="12 6 12 12 16 14"></polyline>
                 </svg>
-                <span>Due Soon</span>
+                <span data-i18n="sidebar.dueSoon">Due Soon</span>
                 <span class="badge badge-sm" id="sidebar-count-due" style="margin-left: auto; font-size: 0.7rem;">0</span>
               </a>
               <a href="#calendar" class="sidebar-nav-item" id="side-nav-calendar">
@@ -855,14 +876,14 @@
                   <line x1="8" y1="2" x2="8" y2="6"></line>
                   <line x1="3" y1="10" x2="21" y2="10"></line>
                 </svg>
-                <span>Calendar</span>
+                <span data-i18n="sidebar.calendar">Calendar</span>
               </a>
               <a href="#trash" class="sidebar-nav-item" id="side-nav-trash">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"></polyline>
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                 </svg>
-                <span>Trash</span>
+                <span data-i18n="sidebar.trash">Trash</span>
                 <span class="badge badge-sm" id="sidebar-count-trash" style="margin-left: auto; font-size: 0.7rem;">0</span>
               </a>
             </nav>
@@ -870,8 +891,8 @@
             <!-- Categories Section -->
             <div class="sidebar-workspace-group" id="sidebar-categories-group">
               <div class="sidebar-group-header">
-                <span>Categories</span>
-                <button class="btn btn-ghost btn-icon-only btn-sm" id="add-category-btn" title="Add Category" style="width: 22px; height: 22px; padding: 0;">
+                <span data-i18n="sidebar.categories">Categories</span>
+                <button class="btn btn-ghost btn-icon-only btn-sm" id="add-category-btn" title="Add Category" data-i18n-title="sidebar.addCategory" style="width: 22px; height: 22px; padding: 0;">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 </button>
               </div>
@@ -883,12 +904,12 @@
             <!-- Tags Section -->
             <div class="sidebar-workspace-group" id="sidebar-tags-group">
               <div class="sidebar-group-header">
-                <span>Labels</span>
+                <span data-i18n="sidebar.labels">Labels</span>
                 <div style="display: flex; gap: 4px;">
-                  <button class="btn btn-ghost btn-icon-only btn-sm" id="sidebar-edit-labels-btn" title="Edit labels" style="width: 22px; height: 22px; padding: 0;">
+                  <button class="btn btn-ghost btn-icon-only btn-sm" id="sidebar-edit-labels-btn" title="Edit labels" data-i18n-title="sidebar.editLabels" style="width: 22px; height: 22px; padding: 0;">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                   </button>
-                  <button class="btn btn-ghost btn-icon-only btn-sm" id="add-tag-btn" title="Create Label" style="width: 22px; height: 22px; padding: 0;">
+                  <button class="btn btn-ghost btn-icon-only btn-sm" id="add-tag-btn" title="Create Label" data-i18n-title="sidebar.createLabel" style="width: 22px; height: 22px; padding: 0;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                   </button>
                 </div>
@@ -901,20 +922,20 @@
             <!-- Folders Section -->
             <div class="sidebar-workspace-group" id="sidebar-folders-group">
               <div class="sidebar-group-header">
-                <span>Folders</span>
-                <button class="btn btn-ghost btn-icon-only btn-sm" id="add-folder-btn" title="Add Folder" style="width: 22px; height: 22px; padding: 0;">
+                <span data-i18n="sidebar.folders">Folders</span>
+                <button class="btn btn-ghost btn-icon-only btn-sm" id="add-folder-btn" title="Add Folder" data-i18n-title="sidebar.addFolder" style="width: 22px; height: 22px; padding: 0;">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><line x1="12" y1="10" x2="12" y2="16"></line><line x1="9" y1="13" x2="15" y2="13"></line></svg>
                 </button>
               </div>
               <div class="workspace-list" id="sidebar-folders-list">
-                <span style="font-size: 0.75rem; color: var(--text-muted); padding: 0.25rem 0.5rem;">No folders yet</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted); padding: 0.25rem 0.5rem;" data-i18n="sidebar.noFolders">No folders yet</span>
               </div>
             </div>
 
             <!-- Workspace Switcher Section -->
             <div class="sidebar-workspace-group">
               <div class="sidebar-group-header">
-                <span>Workspace</span>
+                <span data-i18n="sidebar.workspace">Workspace</span>
               </div>
               <div class="workspace-list" id="sidebar-workspace-list">
                 <div class="workspace-item active" data-workspace-id="personal" id="ws-personal-item">
@@ -1334,6 +1355,8 @@
           </div>
           <div class="editor-header-actions">
             <button class="btn btn-outline btn-sm" id="editor-history-btn-top" type="button">History</button>
+            <!-- AI privacy control for this note -->
+            <button class="btn btn-outline btn-sm" id="editor-ai-privacy-btn" type="button" title="AI privacy" aria-label="AI privacy" data-i18n-title="ai.privacyTitle" data-i18n-aria-label="ai.privacyTitle">🔒 AI</button>
             <!-- Pin Button -->
             <button class="btn btn-ghost btn-icon-only" id="editor-pin-btn" title="Toggle Pin" aria-label="Pin Memo">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-2l-3-3V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v7l-3 3v2z"></path></svg>
@@ -2299,6 +2322,153 @@
 
     <!-- Global Toasts Container -->
     <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+    <!-- ==========================================================================
+         Pocket Diary AI — persistent chat drawer (singleton, outside route view
+         containers so navigation never recreates it). Closing hides the drawer;
+         server-side generation continues and reopening reconnects.
+         ========================================================================== -->
+    <div class="ai-drawer-backdrop" id="ai-drawer-backdrop"></div>
+    <aside class="ai-drawer" id="ai-chat-drawer" role="dialog" aria-modal="true" aria-label="Pocket Diary AI">
+      <div class="ai-drawer-header">
+        <div class="ai-drawer-title" style="position: relative;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path></svg>
+          <span data-i18n="ai.title">Pocket Diary AI</span>
+          <div class="ai-history-panel" id="ai-history-panel" role="menu"></div>
+        </div>
+        <div class="ai-drawer-header-actions">
+          <select class="ai-provider-select" id="ai-provider-select" aria-label="AI provider" data-i18n-aria-label="ai.providerSelect"></select>
+          <button class="btn btn-ghost btn-icon-only" id="ai-new-chat-btn" aria-label="New chat" data-i18n-aria-label="ai.newChat" title="New chat" data-i18n-title="ai.newChat">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          </button>
+          <button class="btn btn-ghost btn-icon-only" id="ai-history-btn" aria-label="Chat history" data-i18n-aria-label="ai.history" title="Chat history" data-i18n-title="ai.history" aria-haspopup="menu" aria-expanded="false">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </button>
+          <button class="btn btn-ghost btn-icon-only" id="ai-settings-btn" aria-label="AI settings" data-i18n-aria-label="ai.settings" title="AI settings" data-i18n-title="ai.settings">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          </button>
+          <button class="btn btn-ghost btn-icon-only" id="ai-drawer-close-btn" aria-label="Close AI chat" data-i18n-aria-label="ai.close" title="Close" data-i18n-title="ai.close">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <div class="ai-scope-indicator" id="ai-scope-indicator" role="status" aria-live="polite" data-i18n="ai.scopeGeneral">General chat — no notes shared</div>
+      </div>
+      <div class="ai-drawer-messages" id="ai-drawer-messages" aria-live="polite" aria-label="AI conversation" data-i18n-aria-label="ai.conversation"></div>
+      <div class="ai-drawer-composer">
+        <div class="ai-privacy-warning" id="ai-privacy-warning" role="alert" data-i18n="ai.secretWarning">This looks like a credential. Chat messages are sent to the selected AI provider — remove it unless you intend to share it.</div>
+        <div class="ai-composer-row">
+          <textarea class="ai-composer-input" id="ai-composer-input" rows="2" data-i18n-placeholder="ai.composerPlaceholder" placeholder="Ask, brainstorm, plan… (Enter to send, Shift+Enter for a new line)"></textarea>
+          <button class="btn btn-primary btn-icon-only" id="ai-send-btn" aria-label="Send message" data-i18n-aria-label="ai.send" title="Send" data-i18n-title="ai.send">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
+          <button class="btn btn-secondary btn-icon-only" id="ai-cancel-btn" aria-label="Cancel generation" data-i18n-aria-label="ai.cancel" title="Cancel" data-i18n-title="ai.cancel" style="display:none;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
+          </button>
+        </div>
+      </div>
+      <div class="ai-drawer-footer">
+        <button type="button" class="btn btn-ghost btn-xs" id="ai-search-mode-btn" data-i18n="ai.findNote">🔍 Find a note / AI Search</button>
+        <button type="button" class="btn btn-ghost btn-xs" id="ai-summarize-note-btn" data-i18n="ai.summarizeNote">Summarize this note</button>
+        <button type="button" class="btn btn-ghost btn-xs" id="ai-improve-note-btn" data-i18n="ai.improveNote">Improve writing</button>
+        <button type="button" class="btn btn-ghost btn-xs" id="ai-save-transcript-btn" data-i18n="ai.saveTranscript">Save conversation as note</button>
+      </div>
+    </aside>
+
+    <!-- Pocket Diary AI — provider settings (separate dialog: #modal-profile
+         already contains a <form>, so nothing is nested inside it). -->
+    <div class="modal-backdrop" id="modal-ai-settings" role="dialog" aria-modal="true" aria-labelledby="modal-ai-settings-title">
+      <div class="modal-content" style="max-width: 560px; max-height: 85vh; overflow-y: auto;">
+        <div class="modal-header">
+          <h3 class="modal-title" id="modal-ai-settings-title" data-i18n="ai.settingsTitle">AI Settings</h3>
+          <button type="button" class="modal-close-btn" id="modal-ai-settings-close-btn" aria-label="Close" data-i18n-aria-label="common.close">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="ai.settingsIntro">Bring your own key. Keys are encrypted with AES-256-GCM on the server and are never displayed again. All provider requests run from the Pocket Diary backend — never from your browser.</p>
+          <div id="ai-vault-warning" style="display: none; font-size: 0.78rem; color: #b45309; border: 1px solid rgba(245,158,11,.4); background: rgba(245,158,11,.08); border-radius: 8px; padding: 0.5rem 0.6rem; margin-bottom: 0.6rem;" data-i18n="ai.vaultWarning">AI credentials are disabled on this server (missing AI_CREDENTIAL_ENCRYPTION_KEY). Ask the operator to configure it.</div>
+          <div id="ai-config-list"></div>
+          <hr style="border: none; border-top: 1px solid var(--border-color); margin: 0.8rem 0;">
+          <div id="ai-config-form">
+            <h4 style="margin: 0 0 0.5rem; font-size: 0.9rem;" data-i18n="ai.addProvider">Add or update a provider</h4>
+            <div id="ai-config-editing-banner" style="display: none; font-size: 0.76rem; color: var(--color-blue, #2563eb); border: 1px dashed var(--border-color); border-radius: 8px; padding: 0.35rem 0.55rem; margin-bottom: 0.5rem;">
+            ✏️ <span data-i18n="ai.editingBanner">Editing a saved configuration — pressing save updates it (key optional)</span>
+          </div>
+          <div class="ai-config-form-grid">
+              <label><span data-i18n="ai.provider">Provider</span>
+                <select id="ai-config-provider">
+                  <option value="openai">OpenAI</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="nvidia_nim">NVIDIA NIM</option>
+                </select>
+              </label>
+              <label><span data-i18n="ai.label">Label</span>
+                <input type="text" id="ai-config-label" maxlength="80" data-i18n-placeholder="ai.labelPlaceholder" placeholder="Work key">
+              </label>
+              <label style="grid-column: 1 / -1;"><span data-i18n="ai.model">Model</span>
+                <select id="ai-config-model-select" style="display: none;"></select>
+                <input type="text" id="ai-config-model" maxlength="160" list="ai-config-model-list" placeholder="Enter a model ID" autocomplete="off">
+                <datalist id="ai-config-model-list"></datalist>
+              </label>
+              <label style="grid-column: 1 / -1;"><span data-i18n="ai.apiKey">API key</span>
+                <input type="password" id="ai-config-key" autocomplete="off" spellcheck="false" data-i18n-placeholder="ai.keyPlaceholder" placeholder="sk-… (typed once, stored encrypted)">
+              </label>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; align-items: center;">
+              <button type="button" class="btn btn-primary btn-sm" id="ai-config-submit" data-i18n="ai.addConfig">Add configuration</button>
+              <button type="button" class="btn btn-outline btn-sm" id="ai-config-fetch-models" data-i18n="ai.fetchModels">Fetch model list</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="ai-config-model-manual" style="display: none;" data-i18n="ai.enterModelManually">Enter model manually</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="ai-config-cancel-edit" style="display: none;" data-i18n="ai.cancelEdit">Cancel edit</button>
+            </div>
+            <p id="ai-config-model-status" class="ai-model-fetch-status" role="status" aria-live="polite" data-i18n="ai.enterKeyFirst">Type your API key to load the model list automatically.</p>
+            <p style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.4rem;" data-i18n="ai.autoModelsHint">Models load from your provider using your API key; you can enter a model ID manually if listing is unavailable.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="modal-ai-settings-done-btn" data-i18n="ai.done">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pocket Diary AI — per-note privacy (opened from the editor / card menus). -->
+    <div class="modal-backdrop" id="modal-ai-privacy" role="dialog" aria-modal="true" aria-labelledby="modal-ai-privacy-title">
+      <div class="modal-content" style="max-width: 520px; max-height: 85vh; overflow-y: auto;">
+        <div class="modal-header">
+          <h3 class="modal-title" id="modal-ai-privacy-title" data-i18n="ai.privacyTitle">AI Privacy for this note</h3>
+          <button type="button" class="modal-close-btn" id="modal-ai-privacy-close-btn" aria-label="Close" data-i18n-aria-label="common.close">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size: 0.78rem; color: var(--text-muted);" data-i18n="ai.privacyIntro">These controls govern third-party AI disclosure only — ordinary authorized search and workspace access are unchanged.</p>
+          <div class="ai-privacy-options" id="ai-privacy-options">
+            <label class="ai-privacy-option">
+              <input type="radio" name="ai-access" value="blocked">
+              <span><span class="opt-title" data-i18n="ai.privacyBlocked">Never share with AI (blocked)</span><br><span class="opt-desc" data-i18n="ai.privacyBlockedDesc">The note's content and even its identity are never sent to any external AI, even when the note is open.</span></span>
+            </label>
+            <label class="ai-privacy-option">
+              <input type="radio" name="ai-access" value="current_only">
+              <span><span class="opt-title" data-i18n="ai.privacyCurrentOnly">Only when I ask (default)</span><br><span class="opt-desc" data-i18n="ai.privacyCurrentOnlyDesc">Content is shared only when you explicitly ask the assistant to work on this open note, for a limited time.</span></span>
+            </label>
+            <label class="ai-privacy-option">
+              <input type="radio" name="ai-access" value="search_allowed">
+              <span><span class="opt-title" data-i18n="ai.privacySearchAllowed">May be used in AI Search</span><br><span class="opt-desc" data-i18n="ai.privacySearchAllowedDesc">The note can be offered for AI search analysis — but only after you preview and approve exactly what is shared, every time.</span></span>
+            </label>
+          </div>
+          <h4 style="margin: 0.8rem 0 0.3rem; font-size: 0.85rem;" data-i18n="ai.protectedHeading">Protected passages — never share with AI</h4>
+          <p style="font-size: 0.74rem; color: var(--text-muted);" data-i18n="ai.protectedIntro">Paste a passage to protect. It is replaced with [REDACTED] before anything is sent to an AI provider. The passage itself is never stored — only a salted fingerprint.</p>
+          <div class="ai-protected-list" id="ai-protected-list"></div>
+          <textarea class="ai-protected-textarea" id="ai-protected-input" data-i18n-placeholder="ai.protectedPlaceholder" placeholder="Paste the exact text to protect…"></textarea>
+          <div style="display:flex; gap: 0.5rem; margin-top: 0.4rem;">
+            <button type="button" class="btn btn-outline btn-sm" id="ai-protected-add-btn" data-i18n="ai.protectedAdd">Protect passage</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="modal-ai-privacy-cancel-btn" data-i18n="ai.done">Done</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Main JavaScript Application Bootstrap -->

@@ -277,7 +277,7 @@ describe('Migration from the pre-remediation (e804dcf) database', () => {
     dbCtx = createDatabase(dbPath);
     const sqlite = dbCtx.sqlite;
 
-    expect(sqlite.pragma('user_version', { simple: true })).toBe(4);
+    expect(sqlite.pragma('user_version', { simple: true })).toBe(5);
 
     // --- 3. The L-8 step added public_id and backfilled existing sessions.
     const sessionCols = sqlite.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
@@ -303,7 +303,7 @@ describe('Migration from the pre-remediation (e804dcf) database', () => {
     // --- 7. Idempotent: migrating an already-migrated database is a no-op.
     dbCtx.sqlite.close();
     dbCtx = createDatabase(dbPath);
-    expect(dbCtx.sqlite.pragma('user_version', { simple: true })).toBe(4);
+    expect(dbCtx.sqlite.pragma('user_version', { simple: true })).toBe(5);
   });
 
   it('boots the full app against a migrated legacy database and serves traffic', async () => {

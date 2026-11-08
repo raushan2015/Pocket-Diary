@@ -342,3 +342,162 @@ export async function deleteAttachment(api: ApiClient, id: string): Promise<void
 export function attachmentPath(id: string): string {
   return `/api/v1/attachments/${encodeURIComponent(id)}/file`;
 }
+
+// ---------------------------------------------------------------------------
+// Pocket Diary AI assistant (all server-enforced; no keys stored on device)
+// ---------------------------------------------------------------------------
+
+const {
+  aiProvidersResponseSchema,
+  aiModelListSchema,
+  aiProviderConfigResponseSchema,
+  aiConversationCreateResponseSchema,
+  aiRequestResponseSchema,
+  aiGrantResponseSchema,
+  aiProposalResponseSchema,
+  aiConversationsResponseSchema,
+  aiConversationDetailSchema,
+  aiSendMessageResponseSchema,
+  aiSearchResponseSchema,
+  aiPrivacySchema,
+} = S;
+
+export async function listAiProviders(api: ApiClient) {
+  const { data } = await api.requestJson('GET', '/api/v1/ai/providers');
+  return parseOrThrow(aiProvidersResponseSchema, data, 'AI providers');
+}
+
+/** Fetch available model IDs with a transient key; no API key is stored on device. */
+export async function previewAiModels(api: ApiClient, provider: string, apiKey: string) {
+  const { data } = await api.requestJson('POST', '/api/v1/ai/providers/models-preview', {
+    body: { provider, apiKey },
+    timeoutMs: 25_000,
+  });
+  return parseOrThrow(aiModelListSchema, data, 'AI model catalog');
+}
+
+export async function createAiProvider(
+  api: ApiClient,
+  input: { provider: string; label: string; modelId: string; apiKey: string },
+) {
+  const { data } = await api.requestJson('POST', '/api/v1/ai/providers', { body: input, timeoutMs: 20_000 });
+  return parseOrThrow(aiProviderConfigResponseSchema, data, 'AI provider create').config;
+}
+
+export async function testAiProvider(api: ApiClient, id: string): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
+  const { data } = await api.requestJson('POST', `/api/v1/ai/providers/${encodeURIComponent(id)}/test`, { timeoutMs: 25_000 });
+  return data as { ok: boolean; message: string; latencyMs?: number };
+}
+
+export async function deleteAiProvider(api: ApiClient, id: string): Promise<void> {
+  await api.requestJson('DELETE', `/api/v1/ai/providers/${encodeURIComponent(id)}`);
+}
+
+export async function listAiConversations(api: ApiClient, workspaceId: string, limit = 20) {
+  const { data } = await api.requestJson('GET', '/api/v1/ai/conversations', {
+    query: { workspaceId, limit },
+  });
+  return parseOrThrow(aiConversationsResponseSchema, data, 'AI conversations');
+}
+
+export async function createAiConversation(api: ApiClient, workspaceId: string) {
+  const { data } = await api.requestJson('POST', '/api/v1/ai/conversations', {
+    body: { workspaceId },
+    timeoutMs: 15_000,
+  });
+  const parsed = parseOrThrow(aiConversationCreateResponseSchema, data, 'AI conversation create');
+  return parsed.conversation;
+}
+
+export async function getAiConversation(api: ApiClient, conversationId: string, messageLimit = 100) {
+  const { data } = await api.requestJson('GET', `/api/v1/ai/conversations/${encodeURIComponent(conversationId)}`, {
+    query: { messageLimit },
+  });
+  return parseOrThrow(aiConversationDetailSchema, data, 'AI conversation detail');
+}
+
+export async function deleteAiConversation(api: ApiClient, conversationId: string): Promise<void> {
+  await api.requestJson('DELETE', `/api/v1/ai/conversations/${encodeURIComponent(conversationId)}`);
+}
+
+export async function sendAiMessage(
+  api: ApiClient,
+  conversationId: string,
+  input: {
+    content: string;
+    clientMessageId: string;
+    mode?: 'general' | 'note_task' | 'search' | 'search_read';
+    currentNoteGrantId?: string | null;
+    providerConfigId?: string | null;
+  },
+) {
+  const { data } = await api.requestJson('POST', `/api/v1/ai/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    body: input,
+    timeoutMs: 20_000,
+  });
+  return parseOrThrow(aiSendMessageResponseSchema, data, 'AI send message');
+}
+
+export async function getAiRequest(api: ApiClient, requestId: string) {
+  const { data } = await api.requestJson('GET', `/api/v1/ai/requests/${encodeURIComponent(requestId)}`, {
+    timeoutMs: 10_000,
+  });
+  return parseOrThrow(aiRequestResponseSchema, data, 'AI request status').request;
+}
+
+export async function cancelAiRequest(api: ApiClient, requestId: string): Promise<void> {
+  await api.requestJson('POST', `/api/v1/ai/requests/${encodeURIComponent(requestId)}/cancel`, { timeoutMs: 10_000 });
+}
+
+export async function grantCurrentNoteToConversation(
+  api: ApiClient,
+  input: { workspaceId: string; memoId: string; conversationId: string; purpose?: string },
+) {
+  const { data } = await api.requestJson('POST', '/api/v1/ai/current-note/grant', { body: input, timeoutMs: 15_000 });
+  return parseOrThrow(aiGrantResponseSchema, data, 'AI current-note grant').grant;
+}
+
+export async function getAiProposal(api: ApiClient, proposalId: string) {
+  const { data } = await api.requestJson('GET', `/api/v1/ai/proposals/${encodeURIComponent(proposalId)}`);
+  return parseOrThrow(aiProposalResponseSchema, data, 'AI proposal').proposal;
+}
+
+export async function approveAiProposal(api: ApiClient, proposalId: string): Promise<{ memoId: string | null }> {
+  const { data } = await api.requestJson('POST', `/api/v1/ai/proposals/${encodeURIComponent(proposalId)}/approve`, { timeoutMs: 20_000 });
+  const memo = (data as { memo?: { id?: string } }).memo;
+  return { memoId: memo?.id ?? null };
+}
+
+export async function rejectAiProposal(api: ApiClient, proposalId: string): Promise<void> {
+  await api.requestJson('POST', `/api/v1/ai/proposals/${encodeURIComponent(proposalId)}/reject`);
+}
+
+export async function aiSearchLocal(
+  api: ApiClient,
+  input: { workspaceId: string; query: string; limit?: number },
+) {
+  const { data } = await api.requestJson('POST', '/api/v1/ai/search', {
+    body: { workspaceId: input.workspaceId, query: input.query, limit: input.limit ?? 25 },
+    timeoutMs: 20_000,
+  });
+  return parseOrThrow(aiSearchResponseSchema, data, 'AI local search');
+}
+
+export async function getAiNotePrivacy(api: ApiClient, memoId: string, workspaceId: string) {
+  const { data } = await api.requestJson('GET', `/api/v1/ai/memos/${encodeURIComponent(memoId)}/protected-sections`, {
+    query: { workspaceId },
+  });
+  return parseOrThrow(aiPrivacySchema, data, 'AI note privacy');
+}
+
+export async function setAiNotePrivacy(
+  api: ApiClient,
+  memoId: string,
+  workspaceId: string,
+  aiAccess: 'blocked' | 'current_only' | 'search_allowed',
+) {
+  const { data } = await api.requestJson('PATCH', `/api/v1/ai/memos/${encodeURIComponent(memoId)}/privacy`, {
+    body: { workspaceId, aiAccess },
+  });
+  return data as { memoId: string; aiAccess: string };
+}

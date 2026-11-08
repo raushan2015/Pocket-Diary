@@ -288,6 +288,62 @@ export default function NoteEditorScreen() {
     saveChanges({ reminderTime: time });
   };
 
+  // --- Pocket Diary AI (explicit, per-note; server-validated grants) ---
+  const handleAskAi = () => {
+    const idToUse = noteIdRef.current;
+    if (!idToUse) return;
+    router.push({ pathname: '/(tabs)/ai', params: { noteId: idToUse } });
+  };
+
+  const handleAiPrivacy = async () => {
+    const idToUse = noteIdRef.current;
+    const wsId = session?.activeWorkspaceId;
+    if (!idToUse || !wsId || !apiClient) return;
+    let current: 'blocked' | 'current_only' | 'search_allowed' = 'current_only';
+    try {
+      const { getAiNotePrivacy } = await import('@/services/api/endpoints');
+      const privacy = await getAiNotePrivacy(apiClient, idToUse, wsId);
+      current = privacy.aiAccess;
+    } catch {
+      // Offline or unconfigured: still allow changing the policy — the
+      // server is the source of truth and will re-validate on next send.
+    }
+    Alert.alert(
+      'AI Privacy for this note',
+      'Governs third-party AI disclosure only. Search and workspace access are unchanged.',
+      [
+        {
+          text: current === 'blocked' ? '✓ Never share with AI' : 'Never share with AI',
+          onPress: () => void applyAiPrivacy(idToUse, wsId, 'blocked'),
+        },
+        {
+          text: current === 'current_only' ? '✓ Only when I ask (default)' : 'Only when I ask (default)',
+          onPress: () => void applyAiPrivacy(idToUse, wsId, 'current_only'),
+        },
+        {
+          text: current === 'search_allowed' ? '✓ May be used in AI Search' : 'May be used in AI Search',
+          onPress: () => void applyAiPrivacy(idToUse, wsId, 'search_allowed'),
+        },
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+    );
+  };
+
+  const applyAiPrivacy = async (
+    memoId: string,
+    workspaceId: string,
+    aiAccess: 'blocked' | 'current_only' | 'search_allowed',
+  ) => {
+    if (!apiClient) return;
+    try {
+      const { setAiNotePrivacy } = await import('@/services/api/endpoints');
+      await setAiNotePrivacy(apiClient, memoId, workspaceId, aiAccess);
+      Alert.alert('AI privacy updated');
+    } catch (err) {
+      Alert.alert('Failed to update AI privacy', err instanceof Error ? err.message : 'unknown error');
+    }
+  };
+
   const handleToggleNoteType = () => {
     const nextType = noteType === 'text' ? 'checklist' : 'text';
     setNoteType(nextType);
@@ -481,6 +537,24 @@ export default function NoteEditorScreen() {
                     style={styles.actionBtn}
                   >
                     <Ionicons name={noteType === 'text' ? 'checkbox-outline' : 'document-text-outline'} size={22} color={ink} />
+                  </Pressable>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={handleAskAi}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ask AI about this note"
+                    style={styles.actionBtn}
+                  >
+                    <Ionicons name="sparkles-outline" size={22} color={ink} />
+                  </Pressable>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => void handleAiPrivacy()}
+                    accessibilityRole="button"
+                    accessibilityLabel="AI privacy for this note"
+                    style={styles.actionBtn}
+                  >
+                    <Ionicons name="shield-checkmark-outline" size={22} color={ink} />
                   </Pressable>
                   <Pressable
                     hitSlop={10}

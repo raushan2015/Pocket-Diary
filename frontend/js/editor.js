@@ -7,6 +7,7 @@ import { api } from './api.js';
 import { state } from './state.js';
 import { renderMarkdown, toggleChecklistItem, escapeHtml } from './markdown.js';
 import { showToast, openModal, closeModal, extractImageFilesFromEvent } from './utils.js';
+import { openAiPrivacyModal } from './ai-privacy.js';
 import { openLightbox } from './keep-lightbox.js';
 
 let editorAutosaveTimer = null;
@@ -474,6 +475,10 @@ export function setupEditorEnhancements() {
   document.getElementById('editor-pin-btn')?.addEventListener('click', markDirty);
   document.getElementById('editor-history-btn-top')?.addEventListener('click', showMemoHistory);
   document.getElementById('editor-history-btn-side')?.addEventListener('click', showMemoHistory);
+  document.getElementById('editor-ai-privacy-btn')?.addEventListener('click', () => {
+    const memo = state.get('activeMemo');
+    if (memo?.id) void openAiPrivacyModal(memo.id);
+  });
   document.getElementById('editor-whiteboard-btn')?.addEventListener('click', toggleWhiteboard);
   document.getElementById('whiteboard-close-btn')?.addEventListener('click', toggleWhiteboard);
   document.getElementById('whiteboard-clear-btn')?.addEventListener('click', clearWhiteboard);

@@ -1,0 +1,96 @@
+erDiagram
+    users {
+        id: text PK
+        email: text 
+        passwordHash: text 
+        name: text 
+        avatarUrl: text 
+        timezone: text 
+        status: text 
+        isInstanceAdmin: integer 
+        createdAt: integer 
+        updatedAt: integer 
+    }
+    sessions {
+        id: text PK
+        publicId: text 
+        userId: text 
+    }
+    workspaces {
+        id: text PK
+        name: text 
+        slug: text 
+        ownerId: text 
+        createdAt: integer 
+        updatedAt: integer 
+    }
+    workspaceMembers {
+        id: text PK
+        workspaceId: text 
+    }
+    folders {
+        id: text PK
+        workspaceId: text 
+    }
+    categories {
+        id: text PK
+        workspaceId: text 
+    }
+    tags {
+        id: text PK
+        workspaceId: text 
+    }
+    memos {
+        id: text PK
+        workspaceId: text 
+    }
+    memoTags {
+        memoId: text 
+    }
+    memoVersions {
+        id: text PK
+        memoId: text 
+    }
+    attachments {
+        id: text PK
+        memoId: text 
+    }
+    notifications {
+        id: text PK
+        userId: text 
+    }
+    pushSubscriptions {
+        id: text PK
+        userId: text 
+    }
+    workspaceInvites {
+        id: text PK
+        workspaceId: text 
+    }
+    passwordResets {
+        id: text PK
+        userId: text 
+    }
+    users ||--o{ sessions : "userId"
+    users ||--o{ workspaces : "ownerId"
+    workspaces ||--o{ workspaceMembers : "workspaceId"
+    users ||--o{ workspaceMembers : "userId"
+    workspaces ||--o{ folders : "workspaceId"
+    folders ||--o{ folders : "parentId"
+    workspaces ||--o{ categories : "workspaceId"
+    workspaces ||--o{ tags : "workspaceId"
+    workspaces ||--o{ memos : "workspaceId"
+    folders ||--o{ memos : "folderId"
+    categories ||--o{ memos : "categoryId"
+    memos ||--o{ memoTags : "memoId"
+    tags ||--o{ memoTags : "tagId"
+    memos ||--o{ memoVersions : "memoId"
+    memos ||--o{ attachments : "memoId"
+    workspaces ||--o{ attachments : "workspaceId"
+    users ||--o{ notifications : "userId"
+    workspaces ||--o{ notifications : "workspaceId"
+    memos ||--o{ notifications : "memoId"
+    users ||--o{ pushSubscriptions : "userId"
+    workspaces ||--o{ workspaceInvites : "workspaceId"
+    users ||--o{ workspaceInvites : "invitedBy"
+    users ||--o{ passwordResets : "userId"

@@ -38,6 +38,12 @@ Repository: [github.com/raushan2015/Pocket-Diary](https://github.com/raushan2015
 | :---: | :---: | :---: |
 | ![Mobile Landing](docs/screenshots/mobile-landing.png) | ![Mobile Dashboard](docs/screenshots/mobile-dashboard.png) | ![Mobile Editor](docs/screenshots/mobile-editor.png) |
 
+### Internationalization (English / 日本語)
+
+| Language Switcher | Japanese Landing | Japanese Sign-in |
+| :---: | :---: | :---: |
+| ![Language Switcher](docs/screenshots/i18n-language-switcher.png) | ![Japanese Landing](docs/screenshots/i18n-landing-japanese.png) | ![Japanese Auth](docs/screenshots/i18n-auth-japanese.png) |
+
 ## Features
 
 ### Notes and organization
@@ -51,6 +57,7 @@ Repository: [github.com/raushan2015/Pocket-Diary](https://github.com/raushan2015
 - Choose a persistent note-card color.
 - Upload and manage supported image attachments.
 - Responsive, mobile-friendly interface with dark and light themes.
+- Interface languages: English and Japanese (日本語), switchable from the navbar; English is the base dictionary and the choice is stored locally — see the [i18n guide](docs/architecture/guides/i18n-guide.md) to add more languages.
 
 ### Accounts and workspaces
 
@@ -83,6 +90,28 @@ Repository: [github.com/raushan2015/Pocket-Diary](https://github.com/raushan2015
   unread badge and dropdown, so reminders fire even when the note list is not loaded.
 - Optional email delivery (SMTP) and Web Push (VAPID) so reminders reach users
   outside the app; both degrade gracefully to in-app notifications when unconfigured.
+
+### AI assistant (privacy-first, optional)
+
+- Bring-your-own keys for **OpenAI, Google Gemini, DeepSeek and NVIDIA NIM** — multiple
+  configurations per provider, connection tests, and model selection. Keys are
+  encrypted at rest with AES-256-GCM (`AI_CREDENTIAL_ENCRYPTION_KEY`) and are never
+  returned by the API or stored in the browser/mobile device.
+- Persistent AI chat in the top navbar (web) and a dedicated AI tab (mobile);
+  conversations are stored per user + workspace and survive closing the panel,
+  refreshing, or signing in from another device.
+- General brainstorming with **no notes shared**; "create a note from this
+  conversation" drafts a structured note that you review and approve before it is
+  saved (optional per-conversation auto-save for explicit requests only).
+- Per-note AI privacy: **Never share with AI (blocked)**, **Only when I ask
+  (default)**, and **May be used in AI Search** — plus protected passages that are
+  replaced with `[REDACTED]` before anything leaves the server.
+- Two-stage AI search: the model only helps refine your query; the search runs locally
+  on SQLite FTS (thousands of notes) and results stay in your browser until you
+  preview and approve specific AI-searchable notes for reading.
+- All authorization is enforced server-side; model output is never trusted. See
+  [the AI assistant guide](docs/ai-assistant/README.md) for the full security model,
+  API list and verification status.
 
 ### Operations
 
@@ -265,6 +294,7 @@ Create a local `.env` file from `.env.example`. Available Docker Compose setting
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `COOKIE_SECRET` | Yes | None | A unique, random secret used to sign session cookies. Use at least 32 characters and keep it private. |
+| `AI_CREDENTIAL_ENCRYPTION_KEY` | No (needed for the AI assistant) | None | Master secret encrypting user-supplied AI provider keys at rest. Generate with `openssl rand -hex 32`. Without it, note-taking works but AI credentials are disabled. |
 | `PORT` | No | `8080` | Host port published for the web interface. The application listens on port 8080 inside the container. |
 
 The Compose service configures `DATABASE_PATH=/app/data/memo_manager.db` and the internal backend port automatically. Do not expose the database file publicly.
@@ -297,14 +327,14 @@ Backups shows the last snapshot time and the replication state.
 2. Copy the newest snapshot out of the data volume to a working file:
 
    ```bash
-   docker run --rm -v memo_manager_data:/data -v "$PWD":/out alpine \
-     sh -c "cp /data/backups/$(ls -t /data/backups | head -1) /out/restored.db"
+   docker run --rm -v memo_manager_data:/data -v "$PWD":/out debian:bookworm-slim \
+     sh -c 'cp /data/backups/$(ls -t /data/backups | head -1) /out/restored.db'
    ```
 
 3. Replace the live database with the snapshot (keep the original aside):
 
    ```bash
-   docker run --rm -v memo_manager_data:/data -v "$PWD":/out alpine \
+   docker run --rm -v memo_manager_data:/data -v "$PWD":/out debian:bookworm-slim \
      sh -c "mv /data/memo_manager.db /data/memo_manager.db.pre-restore && cp /out/restored.db /data/memo_manager.db && rm -f /data/memo_manager.db-wal /data/memo_manager.db-shm"
    ```
 

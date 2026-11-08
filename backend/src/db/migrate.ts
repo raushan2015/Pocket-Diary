@@ -225,7 +225,7 @@ const FTS_SCHEMA_VERSION = 2;
  * ad-hoc approach. Steps stay idempotent (PRAGMA guards are kept as
  * belt-and-braces for databases that predate versioning).
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 export function runMigrations(sqlite: Database.Database): void {
   // Base schema (idempotent CREATE IF NOT EXISTS statements)
@@ -373,5 +373,148 @@ END;`);
       // so a duplicate-non-null conflict is impossible).
     }
     sqlite.pragma('user_version = 4');
+  }
+
+  // --- Step v5 -----------------------------------------------------------
+  // (AI assistant support): per-note AI privacy policy + AI provider
+  // configurations, conversations, messages, requests, action proposals,
+  // task-scoped note grants, protected passages and access audit. All tables
+  // are additive; the only change to an existing table is the new
+  // memos.ai_access column, backfilled with the safe default
+  // 'current_only' for every pre-existing note (they keep behaving exactly
+  // as before: AI may read a note only for an explicit, user-initiated
+  // current-note task).
+  if (dbVersion < 5) {
+    const memoColumnsV5 = sqlite.prepare('PRAGMA table_info(memos)').all() as Array<{ name: string }>;
+    if (!memoColumnsV5.some((col) => col.name === 'ai_access')) {
+      sqlite.exec("ALTER TABLE memos ADD COLUMN ai_access TEXT NOT NULL DEFAULT 'current_only'");
+    }
+    // Normalize any unexpected values written before validation existed.
+    sqlite.exec("UPDATE memos SET ai_access = 'current_only' WHERE ai_access NOT IN ('blocked', 'current_only', 'search_allowed')");
+
+    sqlite.exec(`
+CREATE TABLE IF NOT EXISTS ai_provider_configs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  label TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  key_ciphertext TEXT NOT NULL,
+  key_nonce TEXT NOT NULL,
+  key_auth_tag TEXT NOT NULL,
+  encryption_key_version INTEGER NOT NULL DEFAULT 1,
+  key_last4 TEXT NOT NULL DEFAULT '',
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_provider_configs_user_id ON ai_provider_configs(user_id);
+
+CREATE TABLE IF NOT EXISTS ai_conversations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT 'New chat',
+  last_provider_config_id TEXT,
+  auto_save_notes INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_ai_conversations_user_workspace ON ai_conversations(user_id, workspace_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS ai_messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'complete',
+  provider TEXT,
+  model TEXT,
+  client_message_id TEXT,
+  sources TEXT NOT NULL DEFAULT '[]',
+  meta TEXT NOT NULL DEFAULT '{}',
+  error_code TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation ON ai_messages(conversation_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_messages_client_idem ON ai_messages(conversation_id, client_message_id);
+
+CREATE TABLE IF NOT EXISTS ai_requests (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  message_id TEXT,
+  status TEXT NOT NULL DEFAULT 'queued',
+  error_code TEXT,
+  error_message TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  finished_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_ai_requests_conversation ON ai_requests(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_ai_requests_user_status ON ai_requests(user_id, status);
+
+CREATE TABLE IF NOT EXISTS ai_action_proposals (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  target_note_id TEXT,
+  expected_note_version INTEGER,
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  idempotency_key TEXT NOT NULL UNIQUE,
+  result_memo_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_proposals_conversation ON ai_action_proposals(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_ai_proposals_status ON ai_action_proposals(status, expires_at);
+
+CREATE TABLE IF NOT EXISTS ai_note_grants (
+  id TEXT PRIMARY KEY,
+  user_id NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  conversation_id TEXT,
+  memo_id TEXT NOT NULL REFERENCES memos(id) ON DELETE CASCADE,
+  note_version INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  purpose TEXT NOT NULL DEFAULT '',
+  expires_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_note_grants_user_memo ON ai_note_grants(user_id, memo_id);
+CREATE INDEX IF NOT EXISTS idx_ai_note_grants_expires ON ai_note_grants(expires_at);
+
+CREATE TABLE IF NOT EXISTS ai_note_protected_sections (
+  id TEXT PRIMARY KEY,
+  memo_id TEXT NOT NULL REFERENCES memos(id) ON DELETE CASCADE,
+  note_version INTEGER NOT NULL,
+  passage_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  passage_length INTEGER NOT NULL,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_protected_sections_memo ON ai_note_protected_sections(memo_id);
+
+CREATE TABLE IF NOT EXISTS ai_access_audit (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  event TEXT NOT NULL,
+  memo_id TEXT,
+  provider TEXT,
+  redacted_bytes INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_access_audit_user ON ai_access_audit(user_id, created_at);
+`);
+
+    sqlite.pragma('user_version = 5');
   }
 }

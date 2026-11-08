@@ -1,0 +1,4942 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Pocket Diary SaaS API",
+    "version": "1.0.0",
+    "description": "Pocket Diary SaaS API - Self-hosted notes application with workspaces, reminders, and offline sync.",
+    "contact": {
+      "name": "TECHSHAN AI Office",
+      "url": "https://github.com/raushan2015/Pocket-Diary"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "memo_session",
+        "description": "Session cookie for authenticated requests. Set via POST /api/v1/auth/login."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "description": "Error envelope used by every non-2xx response.",
+        "required": [
+          "error",
+          "message"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Short, stable error class (e.g. \"Bad Request\")."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable explanation; safe to show to end users."
+          }
+        }
+      },
+      "SimpleSuccess": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Always `true`."
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "description": "The signed-in user. `timezone` is returned by profile updates; `isInstanceAdmin` only by GET /auth/me.",
+        "required": [
+          "id",
+          "email",
+          "name",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA timezone, e.g. `Asia/Tokyo` (audit M-16)."
+          },
+          "isInstanceAdmin": {
+            "type": "boolean",
+            "description": "Instance-admin flag (first registered account on an instance)."
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          }
+        }
+      },
+      "Workspace": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL-safe identifier; omitted by login responses."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "editor",
+              "viewer"
+            ],
+            "description": "Your role in this workspace; present on list/create responses."
+          }
+        }
+      },
+      "Member": {
+        "type": "object",
+        "description": "A workspace member.",
+        "required": [
+          "id",
+          "userId",
+          "name",
+          "email",
+          "role",
+          "joinedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Membership row id (not the user id)."
+          },
+          "userId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "editor",
+              "viewer"
+            ]
+          },
+          "joinedAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          }
+        }
+      },
+      "Invite": {
+        "type": "object",
+        "description": "Workspace invitation. `token` (raw, single-use) is returned only at creation; `emailSentAt` on list responses.",
+        "required": [
+          "id",
+          "email",
+          "role",
+          "status",
+          "expiresAt",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "editor",
+              "viewer"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "revoked",
+              "expired"
+            ]
+          },
+          "token": {
+            "type": "string",
+            "description": "Raw invite token — shown exactly once at creation; only a hash is stored."
+          },
+          "expiresAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "emailSent": {
+            "type": "boolean",
+            "description": "Whether the invite email was delivered (creation response)."
+          },
+          "emailSentAt": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Unix epoch milliseconds, or null if never sent (list response)."
+          }
+        }
+      },
+      "Memo": {
+        "type": "object",
+        "description": "A note. All list/create/update/get/restore endpoints return this fully hydrated shape.",
+        "required": [
+          "id",
+          "workspaceId",
+          "folderId",
+          "title",
+          "content",
+          "color",
+          "theme",
+          "priority",
+          "status",
+          "isFavorite",
+          "isPinned",
+          "isArchived",
+          "noteType",
+          "sortOrder",
+          "dueDate",
+          "reminderTime",
+          "reminderLocation",
+          "collaborators",
+          "checklistData",
+          "linkPreviews",
+          "attachments",
+          "categoryId",
+          "category",
+          "tags",
+          "version",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "deletedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "folderId": {
+            "type": "string",
+            "description": "Containing folder, or null.",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string",
+            "description": "Plain text or Markdown; data-URI images allowed for imports."
+          },
+          "color": {
+            "type": "string",
+            "description": "Palette color id (e.g. `default`, `blue`)."
+          },
+          "theme": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "urgent"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "pending",
+              "in_progress",
+              "completed",
+              "archived"
+            ]
+          },
+          "isFavorite": {
+            "type": "boolean"
+          },
+          "isPinned": {
+            "type": "boolean"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "noteType": {
+            "type": "string",
+            "enum": [
+              "text",
+              "checklist"
+            ]
+          },
+          "sortOrder": {
+            "type": "integer",
+            "description": "Manual card order (drag & drop)."
+          },
+          "dueDate": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds, or null.",
+            "nullable": true
+          },
+          "reminderTime": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds, or null.",
+            "nullable": true
+          },
+          "reminderLocation": {
+            "type": "string",
+            "nullable": true
+          },
+          "collaborators": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Legacy collaborator entries kept for imports."
+          },
+          "checklistData": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "checked": {
+                  "type": "boolean"
+                },
+                "completed": {
+                  "type": "boolean"
+                },
+                "sortOrder": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "linkPreviews": {
+            "type": "array",
+            "description": "OpenGraph previews attached to links in the note (sanitized server-side, audit L-5).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "imageUrl": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "faviconUrl": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attachment"
+            }
+          },
+          "categoryId": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string",
+                "nullable": true
+              },
+              "icon": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "nullable": true
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tag names, case-insensitively unique (audit M-3)."
+          },
+          "clientId": {
+            "type": "string",
+            "description": "Idempotency key supplied at create time by offline-first clients (mobile-apps); null otherwise. Not editable via PATCH.",
+            "nullable": true
+          },
+          "version": {
+            "type": "integer",
+            "description": "Optimistic-concurrency counter. PATCH may send it; a stale value yields 409."
+          },
+          "createdBy": {
+            "type": "string",
+            "description": "User id of the author (reassigned if the author deletes their account)."
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "updatedAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "deletedAt": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Set when the note is in the trash, else null."
+          }
+        }
+      },
+      "MemoVersion": {
+        "type": "object",
+        "required": [
+          "id",
+          "memoId",
+          "versionNumber",
+          "title",
+          "content",
+          "changedBy",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memoId": {
+            "type": "string"
+          },
+          "versionNumber": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "changedBy": {
+            "type": "string",
+            "description": "User id of the author of this revision."
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          }
+        }
+      },
+      "Folder": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "parentId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent folder, or null for a root. Cycles are rejected (audit M-4).",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "updatedAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          }
+        }
+      },
+      "Category": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "color",
+          "icon",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          }
+        }
+      },
+      "Tag": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "memoId",
+          "type",
+          "title",
+          "body",
+          "reminderTime",
+          "readAt",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "memoId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "reminder"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string",
+            "nullable": true
+          },
+          "reminderTime": {
+            "type": "integer",
+            "nullable": true,
+            "description": "The reminder instant this notification was generated from."
+          },
+          "readAt": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Read timestamp, or null while unread."
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "description": "An active signed-in device. `id` is an opaque per-device identifier (audit L-8) — never the token or its hash.",
+        "required": [
+          "id",
+          "current",
+          "ipAddress",
+          "userAgent",
+          "createdAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean",
+            "description": "Whether this is the device making the request."
+          },
+          "ipAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "userAgent": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "expiresAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds. Slides forward while the session stays active (audit L-7)."
+          }
+        }
+      },
+      "Attachment": {
+        "type": "object",
+        "description": "Metadata about an uploaded note attachment (files are served from `url`).",
+        "required": [
+          "id",
+          "memoId",
+          "fileName",
+          "fileSize",
+          "mimeType",
+          "createdAt",
+          "url"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "memoId": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "fileSize": {
+            "type": "integer",
+            "description": "Bytes on disk."
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "url": {
+            "type": "string",
+            "description": "Download/inline URL (same origin, session required)."
+          }
+        }
+      },
+      "StorageUsage": {
+        "type": "object",
+        "description": "Byte-accurate workspace storage usage (audit L-10).",
+        "required": [
+          "totalBytes",
+          "usedFormatted",
+          "maxBytes",
+          "maxFormatted",
+          "percentUsed"
+        ],
+        "properties": {
+          "totalBytes": {
+            "type": "integer"
+          },
+          "usedFormatted": {
+            "type": "string",
+            "description": "Human-readable usage, e.g. \"12.34 MB\"."
+          },
+          "maxBytes": {
+            "type": "integer",
+            "description": "Quota — configurable via the STORAGE_QUOTA_GB environment variable."
+          },
+          "maxFormatted": {
+            "type": "string"
+          },
+          "percentUsed": {
+            "type": "number",
+            "description": "0–100 (fractional percent, minimum 0.1 when non-empty)."
+          }
+        }
+      },
+      "Activity": {
+        "type": "object",
+        "description": "Workspace activity feed entry.",
+        "required": [
+          "id",
+          "type",
+          "detail",
+          "timestamp",
+          "userName",
+          "userEmail",
+          "targetId"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "note_edited",
+              "note_created",
+              "member_joined"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "description": "Note title for note events; the role for member events."
+          },
+          "timestamp": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "userName": {
+            "type": "string"
+          },
+          "userEmail": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string",
+            "description": "Id of the note or membership row the event refers to."
+          }
+        }
+      },
+      "LinkPreview": {
+        "type": "object",
+        "description": "OpenGraph preview for a URL (fetched with SSRF protection; audit M-11).",
+        "required": [
+          "url",
+          "title",
+          "faviconUrl"
+        ],
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "faviconUrl": {
+            "type": "string"
+          }
+        }
+      },
+      "BackupStatus": {
+        "type": "object",
+        "description": "Local and off-host backup snapshot status (instance admin only).",
+        "required": [
+          "localConfigured",
+          "localDirectory",
+          "localSnapshots",
+          "lastBackupAt",
+          "replicationConfigured",
+          "replicationDirectory",
+          "replicationSnapshots",
+          "lastReplicatedAt"
+        ],
+        "properties": {
+          "localConfigured": {
+            "type": "boolean"
+          },
+          "localDirectory": {
+            "type": "string",
+            "description": "Server-side directory holding local snapshots."
+          },
+          "localSnapshots": {
+            "type": "integer"
+          },
+          "lastBackupAt": {
+            "type": "number",
+            "nullable": true,
+            "description": "mtime of the newest snapshot, or null."
+          },
+          "replicationConfigured": {
+            "type": "boolean"
+          },
+          "replicationDirectory": {
+            "type": "string",
+            "nullable": true
+          },
+          "replicationSnapshots": {
+            "type": "integer"
+          },
+          "lastReplicatedAt": {
+            "type": "number",
+            "nullable": true
+          }
+        }
+      },
+      "ExportedWorkspace": {
+        "type": "object",
+        "description": "Full workspace export (import-compatible with POST /migration/import-local; includes trashed notes).",
+        "required": [
+          "workspaceId",
+          "exportedAt",
+          "categories",
+          "tags",
+          "folders",
+          "memos"
+        ],
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          },
+          "exportedAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Category"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tag"
+            }
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Folder"
+            }
+          },
+          "memos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Memo"
+            },
+            "description": "Fully hydrated memos, including trashed ones."
+          }
+        }
+      },
+      "ImportResult": {
+        "type": "object",
+        "description": "Result of a legacy/Keep import.",
+        "required": [
+          "success",
+          "importedMemos",
+          "importedCategories",
+          "importedTags"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "importedMemos": {
+            "type": "integer"
+          },
+          "importedCategories": {
+            "type": "integer"
+          },
+          "importedTags": {
+            "type": "integer"
+          }
+        }
+      },
+      "AccountDeletion": {
+        "type": "object",
+        "required": [
+          "success",
+          "deletedWorkspaces",
+          "reassignedMemos"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "deletedWorkspaces": {
+            "type": "integer",
+            "description": "Solo workspaces removed with the account."
+          },
+          "reassignedMemos": {
+            "type": "integer",
+            "description": "Notes you authored in other people's workspaces, reassigned to their owners."
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "summary": "Liveness check",
+        "tags": [
+          "System"
+        ],
+        "description": "Liveness probe under the API prefix. Returns `{\"status\":\"ok\"}` with the server time.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "summary": "Create an account (and first workspace)",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Registers a user, hashes the password (argon2), creates their personal workspace, and signs them in by setting the `memo_session` cookie. Passwords must be at least 8 characters and contain a letter and a digit (audit L-9). An optional `inviteToken` (from a workspace invitation) joins that workspace immediately; if the invite cannot be used, the account is still created and `inviteWarning` explains why.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password",
+                  "name"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 254
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "inviteToken": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 128
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "summary": "Sign in",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Verifies the password, sets the `memo_session` cookie, and returns the user with their active workspace. `rememberMe: false` creates a session cookie without a max-age (expires when the browser closes). A configurable per-account lockout applies after repeated failures (audit H-1).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email",
+                  "password"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 254
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "rememberMe": {
+                    "type": "boolean"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/forgot-password": {
+      "post": {
+        "summary": "Request a password-reset link",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Generates a single-use, time-limited reset token and emails a recovery link (when SMTP is configured). The response is identical whether or not the address has an account — it never reveals account existence. Reset links are built from the configured APP_URL (audit C-3).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 254
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/reset-password": {
+      "post": {
+        "summary": "Complete a password reset",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Verifies the one-time token, updates the password hash (8+ characters with a letter and a digit) and revokes every existing session for the account.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token",
+                  "newPassword"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 128
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/profile": {
+      "patch": {
+        "summary": "Update name, timezone, or password",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Partial update of the signed-in user. Changing the password requires `currentPassword` and revokes every OTHER session (audit H-6); the new password must satisfy the account policy (8+ chars, letter + digit). `timezone` is an IANA name used when formatting reminder emails (audit M-16); invalid values normalize to UTC.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "currentPassword": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "summary": "Sign out",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Deletes the current session server-side and clears the cookie. Safe to call when not signed in.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "summary": "Current user and workspaces",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Returns the signed-in user (including the instance-admin flag) and every workspace they belong to, with their role in each.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "summary": "List active sessions (devices)",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Every currently valid session for the account, newest first, including the current one. Session ids are opaque per-device identifiers — never the token or its hash (audit L-8).",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "summary": "Revoke one other session",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Signs out exactly one other device, identified by the opaque `id` from GET /auth/sessions (audit L-8). The current session cannot be revoked this way — use POST /auth/logout.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions/revoke": {
+      "post": {
+        "summary": "Sign out all other devices",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Revokes every session for the account except the one making the request.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/account": {
+      "delete": {
+        "summary": "Permanently delete the account",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Requires the current password. Solo workspaces (and their notes and attachments) are deleted; notes authored in other people's workspaces are reassigned to those workspaces' owners; invitations are re-attributed. Workspaces you own that have other members must be transferred or deleted first (409). Clears the session cookie (audit L-8).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "currentPassword"
+                ],
+                "properties": {
+                  "currentPassword": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/": {
+      "get": {
+        "summary": "List your workspaces",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Every workspace the signed-in user belongs to, with their role in each.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a workspace",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Creates a workspace with the caller as owner. `slug` is optional (generated when omitted); duplicate names or slugs yield 409.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}/storage": {
+      "get": {
+        "summary": "Workspace storage usage",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Byte-accurate storage meter for note text plus attachment files, against the configured quota (audit L-10). Any member may read it.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}": {
+      "patch": {
+        "summary": "Rename a workspace",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Updates the workspace name. Restricted to owner and admin.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}/members": {
+      "get": {
+        "summary": "List members",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "All members of the workspace with name, email, role and join time.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}/activities": {
+      "get": {
+        "summary": "Workspace activity feed",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Recent note edits, note creations and member joins (latest 40 events). Any member may read it.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}/members/{userId}": {
+      "delete": {
+        "summary": "Remove a member",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Removes a member from the workspace and clears their workspace notifications (audit L-13). The owner cannot be removed; only the owner (or an admin for non-admin targets) may remove members.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "userId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Change a member role",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Changes a member's role (admin/editor/viewer). Only the owner may grant or change admin roles (audit H-8); the owner's own role cannot be changed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "role"
+                ],
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "editor",
+                      "viewer"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "userId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}/leave": {
+      "post": {
+        "summary": "Leave a workspace",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "The signed-in member leaves the workspace; their workspace notifications are cleared (audit L-13). Owners must transfer ownership first (403).",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}/transfer": {
+      "post": {
+        "summary": "Transfer ownership",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Owner-only: promotes the named member to owner and demotes the caller to admin (audit L-8).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userId"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}/invites": {
+      "post": {
+        "summary": "Invite someone to the workspace",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Creates (or refreshes — audit M-1) a single-use invitation and emails it when SMTP is configured. The response contains the raw token and ready-made `inviteUrl` exactly once; the server persists only a hash (audit H-7). Responds identically whether or not the address already has an account (audit H-3). Restricted to owner/admin.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 254
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "editor",
+                      "viewer"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "get": {
+        "summary": "List invitations",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Pending and past invitations for the workspace (no raw tokens). Any member may read it.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}/invites/{inviteId}": {
+      "delete": {
+        "summary": "Revoke an invitation",
+        "tags": [
+          "Workspaces"
+        ],
+        "description": "Revokes a pending invitation so its link stops working. Restricted to owner/admin.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "inviteId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/": {
+      "get": {
+        "summary": "List and search notes",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Paginated workspace listing with filters (status, priority, category, tag, folder, flags), full-text search and sorting. Strictly tenant-scoped: a `workspaceId` you are not a member of yields 403. Defaults: `page` 1, `limit` 50.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "in": "query",
+            "name": "priority",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "categoryId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "tagId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "in": "query",
+            "name": "tagName",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "folderId",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "isFavorite",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "isPinned",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "isArchived",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "hasReminder",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "includeDeleted",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "deletedOnly",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "in": "query",
+            "name": "sortBy",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "in": "query",
+            "name": "sortOrder",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a note",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Creates a note in the workspace. Viewers are rejected (403). `version` must not be sent on create. Tags are deduplicated case-insensitively (audit M-3); unknown colors are normalized into the palette (audit M-2). Optional `clientId` (8-64 chars) makes offline-create replays idempotent: a duplicate submission returns the memo the first attempt created.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "folderId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "nullable": true
+                  },
+                  "categoryId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "nullable": true
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "content": {
+                    "type": "string",
+                    "maxLength": 2000000
+                  },
+                  "color": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "theme": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "urgent"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "pending",
+                      "in_progress",
+                      "completed",
+                      "archived"
+                    ]
+                  },
+                  "isFavorite": {
+                    "type": "boolean"
+                  },
+                  "isPinned": {
+                    "type": "boolean"
+                  },
+                  "isArchived": {
+                    "type": "boolean"
+                  },
+                  "noteType": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "checklist"
+                    ],
+                    "maxLength": 32
+                  },
+                  "sortOrder": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "dueDate": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "reminderTime": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "reminderLocation": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "nullable": true
+                  },
+                  "collaborators": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "checklistData": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 5000
+                        },
+                        "checked": {
+                          "type": "boolean"
+                        },
+                        "completed": {
+                          "type": "boolean"
+                        },
+                        "sortOrder": {
+                          "type": "integer"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "nullable": true
+                  },
+                  "linkPreviews": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "imageUrl": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "image": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "faviconUrl": {
+                          "type": "string",
+                          "maxLength": 2048
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "nullable": true
+                  },
+                  "tags": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 64
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "workspaceId"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/{id}": {
+      "get": {
+        "summary": "Get one note",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Fetches a fully hydrated memo. Notes in workspaces you are not a member of return 404 (existence is never leaked).",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a note (optimistic concurrency)",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Partial update. Send only the changed fields. Include the memo's `version` to guard against clobbering: if the stored version moved on, the server answers 409 with the current version (audit H-5). Viewers are rejected.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "folderId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "nullable": true
+                  },
+                  "categoryId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "nullable": true
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "content": {
+                    "type": "string",
+                    "maxLength": 2000000
+                  },
+                  "color": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "theme": {
+                    "type": "string",
+                    "maxLength": 32
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "urgent"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "pending",
+                      "in_progress",
+                      "completed",
+                      "archived"
+                    ]
+                  },
+                  "isFavorite": {
+                    "type": "boolean"
+                  },
+                  "isPinned": {
+                    "type": "boolean"
+                  },
+                  "isArchived": {
+                    "type": "boolean"
+                  },
+                  "noteType": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "checklist"
+                    ],
+                    "maxLength": 32
+                  },
+                  "sortOrder": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "dueDate": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "reminderTime": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "nullable": true
+                  },
+                  "reminderLocation": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "nullable": true
+                  },
+                  "collaborators": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "checklistData": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 5000
+                        },
+                        "checked": {
+                          "type": "boolean"
+                        },
+                        "completed": {
+                          "type": "boolean"
+                        },
+                        "sortOrder": {
+                          "type": "integer"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "nullable": true
+                  },
+                  "linkPreviews": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 300
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 1000
+                        },
+                        "imageUrl": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "image": {
+                          "type": "string",
+                          "maxLength": 2048
+                        },
+                        "faviconUrl": {
+                          "type": "string",
+                          "maxLength": 2048
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "nullable": true
+                  },
+                  "tags": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 64
+                  },
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Trash a note (or delete permanently)",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Soft-deletes the note into the trash. With `permanent=true` it is hard-deleted immediately, together with its attachment files. Viewers are rejected.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/{id}/restore": {
+      "post": {
+        "summary": "Restore a note from the trash",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Undoes a soft delete. Viewers are rejected.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/{id}/versions": {
+      "get": {
+        "summary": "List revision history",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Coalesced revisions of the note (5-minute edit window, audit M-7), oldest first.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/reorder": {
+      "post": {
+        "summary": "Reorder notes (drag & drop)",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Sets the manual card order for the workspace. Shared state: restricted to owner/admin/editor (audit H-4). `memoIds` is the full desired order (max 500).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "memoIds"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "memoIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/trash": {
+      "delete": {
+        "summary": "Empty the trash",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Permanently deletes every soft-deleted note in the workspace and removes its attachment files. Restricted to owner/admin/editor.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/memos/link-preview": {
+      "post": {
+        "summary": "Fetch a link preview (OpenGraph)",
+        "tags": [
+          "Memos"
+        ],
+        "description": "Scrapes OpenGraph/title metadata for a URL to attach to a note. SSRF-hardened (audit M-11): the target and every redirect hop must resolve to a public address; unreachable or unparseable pages degrade to a hostname-only preview instead of failing.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 2048
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/categories/": {
+      "get": {
+        "summary": "List categories",
+        "tags": [
+          "Categories"
+        ],
+        "description": "All note categories in the workspace. Any member may read them.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a category",
+        "tags": [
+          "Categories"
+        ],
+        "description": "Creates a category (label with optional color and icon). Restricted to owner/admin/editor.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "name"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "color": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "nullable": true
+                  },
+                  "icon": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "nullable": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/categories/{id}": {
+      "patch": {
+        "summary": "Update a category",
+        "tags": [
+          "Categories"
+        ],
+        "description": "Partial update. When `workspaceId` is omitted, the category's own workspace is used. Restricted to owner/admin/editor.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "color": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "nullable": true
+                  },
+                  "icon": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "nullable": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a category",
+        "tags": [
+          "Categories"
+        ],
+        "description": "Deletes the category. When `workspaceId` is omitted, the category's own workspace is used. Restricted to owner/admin/editor.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/tags/": {
+      "get": {
+        "summary": "List tags",
+        "tags": [
+          "Tags"
+        ],
+        "description": "All tags in the workspace registry. Any member may read them.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a tag",
+        "tags": [
+          "Tags"
+        ],
+        "description": "Creates a tag in the workspace registry (names unique per workspace, case-insensitive — audit M-3). Restricted to owner/admin/editor.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "name"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/tags/{id}": {
+      "patch": {
+        "summary": "Rename a tag",
+        "tags": [
+          "Tags"
+        ],
+        "description": "Renames the tag. When `workspaceId` is omitted, the tag's own workspace is used. Restricted to owner/admin/editor.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a tag",
+        "tags": [
+          "Tags"
+        ],
+        "description": "Deletes the tag and its note associations. When `workspaceId` is omitted, the tag's own workspace is used. Restricted to owner/admin/editor.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/folders/": {
+      "get": {
+        "summary": "List folders",
+        "tags": [
+          "Folders"
+        ],
+        "description": "All folders in the workspace (flat list; the client assembles the tree). Any member may read them.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a folder",
+        "tags": [
+          "Folders"
+        ],
+        "description": "Creates a folder, optionally nested under `parentId`. Hierarchy is validated: no self-parents, cycles or foreign-workspace parents (audit M-4); subfolders detach rather than cascade on parent delete (audit M-5).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "name"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "parentId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "nullable": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/folders/{id}": {
+      "patch": {
+        "summary": "Update a folder",
+        "tags": [
+          "Folders"
+        ],
+        "description": "Rename and/or move the folder. When `workspaceId` is omitted, the folder's own workspace is used. Move validation as on create. Restricted to owner/admin/editor.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "parentId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "nullable": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a folder",
+        "tags": [
+          "Folders"
+        ],
+        "description": "Deletes the folder. Notes stay put; subfolders are detached to the root. When `workspaceId` is omitted, the folder's own workspace is used. Restricted to owner/admin/editor.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/migration/import-local": {
+      "post": {
+        "summary": "Bulk-import notes (legacy or Google Keep)",
+        "tags": [
+          "Migration"
+        ],
+        "description": "Imports memos, categories and tags into the workspace in one transaction. Used by the browser for legacy localStorage data and for parsed Google Keep Takeout exports (colors, pinned and archived state are honored; trashed notes are skipped — audit M-17). Restricted to owner/admin/editor.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "memos"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "memos": {
+                    "type": "array",
+                    "maxItems": 10000,
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "categories": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "tags": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/migration/export": {
+      "get": {
+        "summary": "Export the workspace",
+        "tags": [
+          "Migration"
+        ],
+        "description": "Full export of the workspace's memos (raw rows), categories, tags and folders. Any member may export; the payload is compatible with POST /migration/import-local.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/memo/{memoId}": {
+      "get": {
+        "summary": "List a note's attachments",
+        "tags": [
+          "Attachments"
+        ],
+        "description": "Metadata for every attachment on the note (including trashed notes, so Trash view thumbnails render). Any workspace member may read them.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memoId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Upload an attachment",
+        "tags": [
+          "Attachments"
+        ],
+        "description": "Multipart upload of a single image or document to the note (max 5 MB). The file's magic bytes must match the declared type (audit L-6); the workspace storage quota applies (413). Viewers are rejected; trashed notes reject uploads.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memoId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/{id}/file": {
+      "get": {
+        "summary": "Download an attachment",
+        "tags": [
+          "Attachments"
+        ],
+        "description": "Streams the stored file. Images render `inline`; PDFs and text download with `Content-Disposition: attachment` (audit L-6). Membership-checked: other tenants get 404.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/{id}": {
+      "delete": {
+        "summary": "Delete an attachment",
+        "tags": [
+          "Attachments"
+        ],
+        "description": "Removes the attachment row and its file on disk. Viewers are rejected.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/": {
+      "get": {
+        "summary": "List your notifications",
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Reminder notifications for the signed-in user only (audit H-2), unread first, newest first within each group. `limit` defaults to 25 (max 100); `includeRead=false` returns only unread ones.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "includeRead",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{id}/read": {
+      "post": {
+        "summary": "Mark one notification read",
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Marks the notification as read for the signed-in user.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "summary": "Mark all notifications read",
+        "tags": [
+          "Notifications"
+        ],
+        "description": "Marks every notification of the signed-in user as read.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/push/public-key": {
+      "get": {
+        "summary": "VAPID public key",
+        "tags": [
+          "Push"
+        ],
+        "description": "The VAPID public key for subscribing this browser to Web Push, or `enabled: false` when push is not configured on the instance.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/push/subscribe": {
+      "post": {
+        "summary": "Subscribe this browser",
+        "tags": [
+          "Push"
+        ],
+        "description": "Registers (or re-registers) the browser's Web Push subscription for the signed-in user. The endpoint must be an https URL resolving to a public address (audit M-10); the stored keys are the standard PushSubscription keys.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "endpoint",
+                  "keys"
+                ],
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  },
+                  "keys": {
+                    "type": "object",
+                    "required": [
+                      "p256dh",
+                      "auth"
+                    ],
+                    "properties": {
+                      "p256dh": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      "auth": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/push/unsubscribe": {
+      "post": {
+        "summary": "Unsubscribe",
+        "tags": [
+          "Push"
+        ],
+        "description": "Removes the browser's subscription (used on `pushsubscriptionchange` and sign-out).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "endpoint"
+                ],
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/invites/{token}": {
+      "get": {
+        "summary": "Look up an invitation (public)",
+        "tags": [
+          "Invites"
+        ],
+        "description": "Context for the sign-in/register screen when following an invite link: workspace name, invited email, role and whether the invite is still usable. Exposes no secrets; unknown or revoked tokens yield 404.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "token",
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/invites/{token}/accept": {
+      "post": {
+        "summary": "Accept an invitation",
+        "tags": [
+          "Invites"
+        ],
+        "description": "Joins the signed-in user to the workspace with the invited role. The invite must be pending, unexpired, and addressed to this account's email address.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "token",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/system/backup-status": {
+      "get": {
+        "summary": "Backup snapshot status (instance admin)",
+        "tags": [
+          "System"
+        ],
+        "description": "Local and off-host backup snapshot counts and recency. **Instance administrator only** — the first registered account on the instance (403 otherwise); the response includes server-side directory paths.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/providers": {
+      "get": {
+        "summary": "List AI provider configurations",
+        "tags": [
+          "AI"
+        ],
+        "description": "Returns only the signed-in user's configurations. API keys are encrypted at rest and are NEVER included — only a masked last-4 fragment.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create an AI provider configuration",
+        "tags": [
+          "AI"
+        ],
+        "description": "Stores a user-supplied provider API key encrypted with AES-256-GCM. The key is never returned again — only its masked last-4. Responds 503 while the server has no AI_CREDENTIAL_ENCRYPTION_KEY configured.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "modelId",
+                  "apiKey"
+                ],
+                "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "gemini",
+                      "deepseek",
+                      "nvidia_nim"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "modelId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "apiKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 4096
+                  },
+                  "isDefault": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/providers/{id}": {
+      "patch": {
+        "summary": "Update an AI provider configuration",
+        "tags": [
+          "AI"
+        ],
+        "description": "Owner-only. Updates label/model, optionally replaces the API key (re-encrypted at rest), or moves the default flag.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "modelId": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "apiKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 4096
+                  },
+                  "isDefault": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an AI provider configuration",
+        "tags": [
+          "AI"
+        ],
+        "description": "Owner-only. Removes the config and its encrypted key; conversations fall back to another configured provider at send time.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/providers/{id}/test": {
+      "post": {
+        "summary": "Test an AI provider connection",
+        "tags": [
+          "AI"
+        ],
+        "description": "Server-side minimal round trip to the provider. Error messages are scrubbed of key material; the API key is never exposed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/providers/{id}/models": {
+      "get": {
+        "summary": "List models for a provider configuration",
+        "tags": [
+          "AI"
+        ],
+        "description": "Provider model capability choices fetched server-side with the stored key; safe fallback to manual entry when the provider does not support listing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/conversations": {
+      "post": {
+        "summary": "Create an AI conversation",
+        "tags": [
+          "AI"
+        ],
+        "description": "Creates a server-persisted conversation in the given workspace (any member may chat; note writes still require write roles at approval time).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "get": {
+        "summary": "List AI conversations",
+        "tags": [
+          "AI"
+        ],
+        "description": "Paginated conversation history for the signed-in user in one workspace. Strictly user-scoped and workspace-membership checked.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/conversations/{id}": {
+      "get": {
+        "summary": "Get an AI conversation with messages",
+        "tags": [
+          "AI"
+        ],
+        "description": "Owner-only metadata plus paginated messages.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "in": "query",
+            "name": "messagePage",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "in": "query",
+            "name": "messageLimit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Rename an AI conversation / set auto-save preference",
+        "tags": [
+          "AI"
+        ],
+        "description": "Owner-only. Optionally toggles the auto-save-new-notes preference for this conversation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "autoSaveNotes": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an AI conversation",
+        "tags": [
+          "AI"
+        ],
+        "description": "Owner-only. Soft-deletes the conversation and cascades messages/requests; pending proposals are rejected.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/conversations/{id}/messages": {
+      "post": {
+        "summary": "Send a chat message (starts a durable generation job)",
+        "tags": [
+          "AI"
+        ],
+        "description": "Persists the user message and returns 202 immediately with a request id; generation continues server-side even if the chat panel is closed. Idempotent on clientMessageId. Modes: general (no notes), note_task (requires a live current-note grant), search (phrase suggestions only), search_read (requires approved excerpt grants).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32000
+                  },
+                  "clientMessageId": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "general",
+                      "note_task",
+                      "search",
+                      "search_read"
+                    ]
+                  },
+                  "currentNoteGrantId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "nullable": true
+                  },
+                  "searchGrantIds": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 64
+                    }
+                  },
+                  "providerConfigId": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "nullable": true
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/conversations/{id}/save-as-note": {
+      "post": {
+        "summary": "Save a conversation as a note",
+        "tags": [
+          "AI"
+        ],
+        "description": "Explicit user action (no model involvement): writes the transcript as a structured note through the ordinary note service. Workspace write roles apply; viewers are rejected.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/requests/{id}": {
+      "get": {
+        "summary": "Get AI request status",
+        "tags": [
+          "AI"
+        ],
+        "description": "Recovery/reconciliation endpoint: poll a durable generation job. Returns an accurate status — queued, running, complete, failed, interrupted or canceled — never a fabricated completion.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/requests/{id}/events": {
+      "get": {
+        "summary": "Stream AI request events (SSE)",
+        "tags": [
+          "AI"
+        ],
+        "description": "Authenticated server-sent events for a generation job: status, delta, tool, proposal, message, error, done. Reconnect with Last-Event-ID; finished requests replay their final state. Closing the chat panel never cancels the job.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/requests/{id}/cancel": {
+      "post": {
+        "summary": "Cancel an AI request",
+        "tags": [
+          "AI"
+        ],
+        "description": "Owner-only cooperative cancellation: aborts the provider stream at the next step and marks the job canceled.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/search": {
+      "post": {
+        "summary": "AI search — stage A (private local search)",
+        "tags": [
+          "AI"
+        ],
+        "description": "Runs a bounded local SQLite FTS search across the workspace and returns results ONLY to the authorized browser. Results are never placed into any LLM-visible structure; blocked/current_only hits are flagged llmEligible=false.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "query"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "phrases": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 120
+                    }
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/search/preview": {
+      "post": {
+        "summary": "AI search — stage B step 1 (redacted reading previews)",
+        "tags": [
+          "AI"
+        ],
+        "description": "Builds bounded, redacted previews for the user-selected notes. Only search_allowed notes are previewable; everything else is rejected with a reason shown to the user.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "memoIds"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "memoIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/search/approve": {
+      "post": {
+        "summary": "AI search — stage B step 2 (consent grants)",
+        "tags": [
+          "AI"
+        ],
+        "description": "Creates short-lived, selected-notes-only AI reading grants after the user reviewed the preview. The approved set must exactly match the reviewed set; policy changes after preview cause a 409.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "conversationId",
+                  "previewToken",
+                  "memoIds"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "conversationId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "previewToken": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 128
+                  },
+                  "memoIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/current-note/grant": {
+      "post": {
+        "summary": "Issue a current-note AI grant",
+        "tags": [
+          "AI"
+        ],
+        "description": "Explicit user-initiated, short-lived (15 min), task-scoped authorization to read ONE note for one conversation. Blocked notes are refused; membership and conversation ownership are validated server-side.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "memoId",
+                  "conversationId"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "memoId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "conversationId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/memos/{id}/privacy": {
+      "patch": {
+        "summary": "Set a note AI privacy policy",
+        "tags": [
+          "AI"
+        ],
+        "description": "Edit-roles-only (viewers rejected). blocked = never shared (also revokes live grants); current_only = default explicit-task sharing; search_allowed = opt-in to cross-note AI search previews.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId",
+                  "aiAccess"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "aiAccess": {
+                    "type": "string",
+                    "enum": [
+                      "blocked",
+                      "current_only",
+                      "search_allowed"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/memos/{id}/protected-sections": {
+      "put": {
+        "summary": "Manage protected passages of a note",
+        "tags": [
+          "AI"
+        ],
+        "description": "Edit-roles-only. Adds \"never share with AI\" passages (stored as salted hashes bound to the note version — the text itself is never persisted) or removes existing ones.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "workspaceId"
+                ],
+                "properties": {
+                  "workspaceId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "add": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 20000
+                    }
+                  },
+                  "removeSectionIds": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "get": {
+        "summary": "List protected passages and AI policy of a note",
+        "tags": [
+          "AI"
+        ],
+        "description": "Workspace-membership checked. Returns protection metadata (no passage text) and the current AI access policy.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "query",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/proposals/{id}": {
+      "get": {
+        "summary": "Get an AI action proposal",
+        "tags": [
+          "AI"
+        ],
+        "description": "Owner-only view of a drafted note create/update with its validation status and remaining TTL.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/proposals/{id}/approve": {
+      "post": {
+        "summary": "Approve and execute an AI action proposal (exactly once)",
+        "tags": [
+          "AI"
+        ],
+        "description": "Transactional one-time execution through the existing note service with workspace write-role and optimistic-version checks. Replay returns the original result; a version conflict marks the proposal conflict and writes nothing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/proposals/{id}/reject": {
+      "post": {
+        "summary": "Reject an AI action proposal",
+        "tags": [
+          "AI"
+        ],
+        "description": "Owner-only. Marks the proposal rejected; no note write ever happens.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/system/info": {
+      "get": {
+        "summary": "Server identity and capabilities (public)",
+        "tags": [
+          "System"
+        ],
+        "description": "Product name, API version and capability flags, used by first-launch mobile clients to validate a self-hosted server before signing in. Older instances without this endpoint can still be detected through `GET /health`, with reduced capabilities. Exposes no operational data.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Liveness check (root)",
+        "tags": [
+          "System"
+        ],
+        "description": "Liveness probe used by the bundled reverse proxy and container orchestration.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development server"
+    }
+  ],
+  "security": [
+    {
+      "sessionCookie": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "System",
+      "description": "Liveness and instance status."
+    },
+    {
+      "name": "Auth",
+      "description": "Registration, sign-in, sessions, profile and account lifecycle. Sessions are cookie-based (`memo_session`)."
+    },
+    {
+      "name": "Workspaces",
+      "description": "Workspace CRUD, members, roles, invitations and storage usage."
+    },
+    {
+      "name": "Memos",
+      "description": "Notes: create, list, search, update (optimistic concurrency), trash, versions, reordering and link previews."
+    },
+    {
+      "name": "Categories",
+      "description": "Note categories (labels with color/icon)."
+    },
+    {
+      "name": "Tags",
+      "description": "Workspace tag registry; notes reference tags by name."
+    },
+    {
+      "name": "Folders",
+      "description": "Hierarchical note folders (nesting, no cycles)."
+    },
+    {
+      "name": "Attachments",
+      "description": "Server-backed note attachments (images and documents)."
+    },
+    {
+      "name": "Notifications",
+      "description": "In-app reminder notifications for the signed-in user."
+    },
+    {
+      "name": "Push",
+      "description": "Web Push (VAPID) subscription management."
+    },
+    {
+      "name": "Invites",
+      "description": "Public invitation lookup and authenticated acceptance."
+    },
+    {
+      "name": "Migration",
+      "description": "Legacy import and full workspace export."
+    },
+    {
+      "name": "AI",
+      "description": "Privacy-first AI assistant: BYOK provider keys (encrypted at rest), persistent chat, note proposals, task-scoped grants, per-note AI privacy and two-stage private search. All authorization is enforced server-side."
+    }
+  ]
+}

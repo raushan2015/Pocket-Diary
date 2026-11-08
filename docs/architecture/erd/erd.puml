@@ -1,0 +1,114 @@
+@startuml
+skinparam linetype ortho
+
+entity "users" as users {
+  id: text <<PK>>
+  email: text
+  passwordHash: text
+  name: text
+  avatarUrl: text
+  timezone: text
+  status: text
+  isInstanceAdmin: integer
+  createdAt: integer
+  updatedAt: integer
+}
+
+entity "sessions" as sessions {
+  id: text <<PK>>
+  publicId: text
+  userId: text
+}
+
+entity "workspaces" as workspaces {
+  id: text <<PK>>
+  name: text
+  slug: text
+  ownerId: text
+  createdAt: integer
+  updatedAt: integer
+}
+
+entity "workspace_members" as workspaceMembers {
+  id: text <<PK>>
+  workspaceId: text
+}
+
+entity "folders" as folders {
+  id: text <<PK>>
+  workspaceId: text
+}
+
+entity "categories" as categories {
+  id: text <<PK>>
+  workspaceId: text
+}
+
+entity "tags" as tags {
+  id: text <<PK>>
+  workspaceId: text
+}
+
+entity "memos" as memos {
+  id: text <<PK>>
+  workspaceId: text
+}
+
+entity "memo_tags" as memoTags {
+  memoId: text
+}
+
+entity "memo_versions" as memoVersions {
+  id: text <<PK>>
+  memoId: text
+}
+
+entity "attachments" as attachments {
+  id: text <<PK>>
+  memoId: text
+}
+
+entity "notifications" as notifications {
+  id: text <<PK>>
+  userId: text
+}
+
+entity "push_subscriptions" as pushSubscriptions {
+  id: text <<PK>>
+  userId: text
+}
+
+entity "workspace_invites" as workspaceInvites {
+  id: text <<PK>>
+  workspaceId: text
+}
+
+entity "password_resets" as passwordResets {
+  id: text <<PK>>
+  userId: text
+}
+
+users ||--o{ sessions : userId
+users ||--o{ workspaces : ownerId
+workspaces ||--o{ workspaceMembers : workspaceId
+users ||--o{ workspaceMembers : userId
+workspaces ||--o{ folders : workspaceId
+folders ||--o{ folders : parentId
+workspaces ||--o{ categories : workspaceId
+workspaces ||--o{ tags : workspaceId
+workspaces ||--o{ memos : workspaceId
+folders ||--o{ memos : folderId
+categories ||--o{ memos : categoryId
+memos ||--o{ memoTags : memoId
+tags ||--o{ memoTags : tagId
+memos ||--o{ memoVersions : memoId
+memos ||--o{ attachments : memoId
+workspaces ||--o{ attachments : workspaceId
+users ||--o{ notifications : userId
+workspaces ||--o{ notifications : workspaceId
+memos ||--o{ notifications : memoId
+users ||--o{ pushSubscriptions : userId
+workspaces ||--o{ workspaceInvites : workspaceId
+users ||--o{ workspaceInvites : invitedBy
+users ||--o{ passwordResets : userId
+@enduml

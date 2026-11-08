@@ -4,7 +4,7 @@
 # ----------------------------------------------------
 # Stage 1: Build backend TypeScript
 # ----------------------------------------------------
-FROM node:22-bookworm-slim AS backend-builder
+FROM node:24.22.1-bookworm-slim AS backend-builder
 WORKDIR /build/backend
 
 # Install build dependencies for native better-sqlite3 compilation
@@ -25,7 +25,7 @@ RUN npm prune --omit=dev
 # ----------------------------------------------------
 # Stage 2: Final runtime container
 # ----------------------------------------------------
-FROM node:22-bookworm-slim AS runner
+FROM node:24.22.1-bookworm-slim AS runner
 
 LABEL maintainer="TECHSHAN AI Office"
 LABEL application="Pocket Diary SaaS"
