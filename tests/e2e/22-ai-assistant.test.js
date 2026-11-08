@@ -88,11 +88,13 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   await page.selectOption('#ai-config-provider', 'openai');
   assert.equal(await page.inputValue('#ai-config-key'), '', 'cross-provider key must be cleared');
   await page.fill('#ai-config-label', 'E2E key');
-  await page.fill('#ai-config-model', 'mock-model-a');
   await page.fill('#ai-config-key', 'sk-e2e-mock-key-00000001');
   // User does not have to press Fetch Models. The key auto-populates the
   // catalog with account-scoped results, replacing the manual text field.
-  await page.waitForSelector('#ai-config-model-select', { state: 'visible', timeout: 15_000 });
+  await page.waitForFunction(() =>
+    document.querySelector('#ai-config-model-status')?.textContent.includes('2 available models'),
+  { timeout: 15_000 });
+  await page.waitForSelector('#ai-config-model-select', { state: 'visible' });
   assert.equal(await page.inputValue('#ai-config-model-select'), 'mock-model-a');
   const modelStatus = await page.locator('#ai-config-model-status').textContent();
   assert.ok(modelStatus.includes('2'), 'two models were pulled automatically');
@@ -103,6 +105,15 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   await page.waitForSelector('.ai-config-card', { timeout: 10_000 });
   const keyShown = await page.textContent('.ai-config-card .ai-config-key');
   assert.ok(keyShown.includes('••••'), 'key is masked in settings');
+  await page.click('.ai-config-card button:has-text("Edit")');
+  await page.waitForSelector('#ai-config-model-select', { state: 'visible' });
+  assert.equal(await page.inputValue('#ai-config-model-select'), 'mock-model-a',
+    'Edit re-fetches the model list using the stored encrypted key');
+  await page.click('#ai-config-fetch-models');
+  await page.waitForFunction(() =>
+    document.querySelector('#ai-config-model-status')?.textContent.includes('2 available models'), { timeout: 15_000 });
+  assert.equal(await page.inputValue('#ai-config-key'), '', 'saved API key stays hidden in the form');
+  await page.click('#ai-config-cancel-edit');
   assert.ok(!keyShown.includes('sk-e2e-mock-key'), 'plaintext key never displayed');
   // Connection test succeeds against the mock.
   await page.click('.ai-config-card .btn:has-text("Test connection"), .ai-config-card button:has-text("接続")');
@@ -312,6 +323,28 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   const afterRefresh = await page.locator('.ai-msg').count();
   assert.ok(afterRefresh >= 2, 'conversation restored from the server after a full page refresh');
   console.log('[Journey 22] Conversation persisted across refresh.');
+
+  // ---------- Explicit chat-history deletion with confirmation ----------
+  await page.click('#ai-history-btn');
+  await page.waitForSelector('#ai-history-panel.open .ai-history-item', { timeout: 10_000 });
+  const beforeHistory = await page.locator('#ai-history-panel .ai-history-item').count();
+  const activeHistoryRow = page.locator('#ai-history-panel .ai-history-item.active').first();
+  assert.ok(await activeHistoryRow.count(), 'active conversation listed in chat history');
+  await activeHistoryRow.locator('.ai-history-delete').click();
+  await page.waitForSelector('#modal-confirm.active', { timeout: 10_000 });
+  await page.click('#modal-confirm-cancel-btn');
+  assert.equal(await page.locator('#ai-history-panel .ai-history-item').count(),
+    beforeHistory, 'cancel keeps history intact');
+  await page.locator('#ai-history-panel .ai-history-item.active .ai-history-delete').click();
+  await page.waitForSelector('#modal-confirm.active', { timeout: 10_000 });
+  await page.click('#modal-confirm-ok-btn');
+  await page.waitForFunction((before) =>
+    document.querySelectorAll('#ai-history-panel .ai-history-item').length === before - 1, beforeHistory,
+    { timeout: 15_000 });
+  assert.equal(await page.locator('#ai-drawer-messages .ai-msg').count(), 0,
+    'deleting active chat clears its visible messages');
+  await page.click('#ai-history-btn');
+  console.log('[Journey 22] Chat history Delete confirms, cancels, and removes the selected chat.');
 
   // ---------- CSP / console hygiene ----------
   const cspViolations = consoleErrors.filter((e) => e.includes('Content Security Policy') || e.includes(' Refused to '));

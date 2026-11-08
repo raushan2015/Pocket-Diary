@@ -7,7 +7,7 @@
  * outlive the assets it references.
  */
 
-const CACHE_NAME = 'notes-v8';
+const CACHE_NAME = 'notes-v9-ai-models';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -62,7 +62,7 @@ const PRECACHE_ASSETS = [
   '/js/ai-settings.js',
   '/js/ai-privacy.js',
   '/css/ai-chat.css'
-];
+].map((asset) => (/^\/(js|css)\//.test(asset) ? `/assets/v20261108-ai-models${asset}` : asset));
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

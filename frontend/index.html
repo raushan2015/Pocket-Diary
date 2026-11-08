@@ -17,14 +17,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- Application Stylesheets -->
-  <link rel="stylesheet" href="css/tokens.css">
-  <link rel="stylesheet" href="css/layout.css">
-  <link rel="stylesheet" href="css/components.css">
-  <link rel="stylesheet" href="css/landing.css">
-  <link rel="stylesheet" href="css/auth.css">
-  <link rel="stylesheet" href="css/editor.css">
-  <link rel="stylesheet" href="css/attachments.css">
-  <link rel="stylesheet" href="css/ai-chat.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-models/css/tokens.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-models/css/layout.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-models/css/components.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-models/css/landing.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-models/css/auth.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-models/css/editor.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-models/css/attachments.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-models/css/ai-chat.css">
 
   <!-- No inline <script>: the strict CSP (script-src 'self') requires all
        scripts to be same-origin files. js/api.js defaults the API base to ''
@@ -2407,8 +2407,10 @@
                 <input type="text" id="ai-config-label" maxlength="80" data-i18n-placeholder="ai.labelPlaceholder" placeholder="Work key">
               </label>
               <label style="grid-column: 1 / -1;"><span data-i18n="ai.model">Model</span>
-                <select id="ai-config-model-select" style="display: none;"></select>
-                <input type="text" id="ai-config-model" maxlength="160" list="ai-config-model-list" placeholder="Enter a model ID" autocomplete="off">
+                <select id="ai-config-model-select" aria-describedby="ai-config-model-status" aria-label="Choose an AI model">
+                  <option value="" disabled selected>Enter an API key to load models</option>
+                </select>
+                <input type="text" id="ai-config-model" maxlength="160" list="ai-config-model-list" style="display: none;" data-i18n-placeholder="ai.modelIdPlaceholder" placeholder="Enter model ID manually" autocomplete="off">
                 <datalist id="ai-config-model-list"></datalist>
               </label>
               <label style="grid-column: 1 / -1;"><span data-i18n="ai.apiKey">API key</span>
@@ -2418,7 +2420,7 @@
             <div style="display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; align-items: center;">
               <button type="button" class="btn btn-primary btn-sm" id="ai-config-submit" data-i18n="ai.addConfig">Add configuration</button>
               <button type="button" class="btn btn-outline btn-sm" id="ai-config-fetch-models" data-i18n="ai.fetchModels">Fetch model list</button>
-              <button type="button" class="btn btn-ghost btn-sm" id="ai-config-model-manual" style="display: none;" data-i18n="ai.enterModelManually">Enter model manually</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="ai-config-model-manual" data-i18n="ai.enterModelManually">Enter model manually</button>
               <button type="button" class="btn btn-ghost btn-sm" id="ai-config-cancel-edit" style="display: none;" data-i18n="ai.cancelEdit">Cancel edit</button>
             </div>
             <p id="ai-config-model-status" class="ai-model-fetch-status" role="status" aria-live="polite" data-i18n="ai.enterKeyFirst">Type your API key to load the model list automatically.</p>
@@ -2472,6 +2474,6 @@
   </div>
 
   <!-- Main JavaScript Application Bootstrap -->
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="assets/v20261108-ai-models/js/app.js"></script>
 </body>
 </html>

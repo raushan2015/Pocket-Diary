@@ -117,10 +117,10 @@ async function loadConfigs() {
     const def = configs.find((c) => c.isDefault) ?? configs[0];
     qs('ai-config-provider').value = def.provider;
     updateModelSuggestions();
-    showModelManual(def.modelId);
+    showModelWaiting(def.modelId, t('ai.modelsLoading'));
     void fetchModelsForForm({ silent: true, savedConfigId: def.id });
   } else if (!editingConfigId && !formDirty && configs.length === 0) {
-    setModelStatus(t('ai.enterKeyFirst'));
+    showModelWaiting();
   }
 }
 
@@ -245,8 +245,9 @@ function showModelDropdown(models, preferred) {
   }
   if (preferred && sorted.some((m) => m.id === preferred)) {
     select.value = preferred;
-  } else if (preferred && editingConfigId) {
-    // Preserve saved IDs even when their provider stops listing them.
+  } else if (preferred) {
+    // Even on initial loading, never silently replace the saved model with
+    // the alphabetically first model in an external catalog.
     const existing = document.createElement('option');
     existing.value = preferred;
     existing.textContent = `${preferred} (${t('ai.currentModelNotListed')})`;
@@ -259,6 +260,26 @@ function showModelDropdown(models, preferred) {
   select.style.display = '';
   input.style.display = 'none';
   qs('ai-config-model-manual')?.style.setProperty('display', '');
+}
+
+/** Keep the dropdown visible while loading and on errors. Existing saved
+ * models remain selectable until the user chooses a replacement. */
+function showModelWaiting(preferred = '', message = t('ai.enterKeyFirst')) {
+  const select = qs('ai-config-model-select');
+  const input = qs('ai-config-model');
+  if (!select || !input) return;
+  select.replaceChildren();
+  const option = document.createElement('option');
+  option.value = preferred || '';
+  option.textContent = preferred || message;
+  if (!preferred) option.disabled = true;
+  select.appendChild(option);
+  select.value = option.value;
+  select.style.display = '';
+  input.style.display = 'none';
+  input.value = preferred;
+  qs('ai-config-model-manual')?.style.setProperty('display', '');
+  setModelStatus(message);
 }
 
 function showModelManual(preferred) {
@@ -319,16 +340,20 @@ async function fetchModelsForForm({ silent = false, savedConfigId = null } = {})
       .filter((model) => model && typeof model.id === 'string' && model.id.trim())
       .filter((model, i, all) => all.findIndex((item) => item.id === model.id) === i);
     if (!models.length) {
-      showModelManual(preferred);
+      showModelWaiting(preferred, t('ai.noModelsFound'));
       setModelStatus(t('ai.noModelsFound'), 'error');
       return;
     }
     showModelDropdown(models, preferred);
-    setModelStatus(t('ai.modelsLoaded', { count: models.length }), 'success');
+    const chosenIsListed = !preferred || models.some((m) => m.id === preferred);
+    setModelStatus(chosenIsListed
+      ? t('ai.modelsLoaded', { count: models.length })
+      : `${t('ai.modelsLoaded', { count: models.length })} ${t('ai.savedModelUnavailable')}`,
+    chosenIsListed ? 'success' : 'error');
     if (!silent) showToast(t('ai.modelsFetched'), 'success');
   } catch (err) {
     if (generation !== modelFetchGeneration) return;
-    showModelManual(preferred);
+    showModelWaiting(preferred, t('ai.modelsAutoFailed'));
     setModelStatus(`${t('ai.modelsAutoFailed')} ${err?.message || ''}`, 'error');
     if (!silent) showToast(t('ai.modelsAutoFailed'), 'error');
   }
@@ -353,8 +378,8 @@ function startEdit(config) {
   qs('ai-config-submit').textContent = t('ai.updateConfig');
   qs('ai-config-cancel-edit').style.display = '';
   qs('ai-config-editing-banner')?.style.setProperty('display', 'block');
-  // Load this config's model list into the dropdown immediately.
-  showModelManual(config.modelId);
+  // Keep the saved model in a visible dropdown while its catalog loads.
+  showModelWaiting(config.modelId, t('ai.modelsLoading'));
   void fetchModelsForForm({ silent: true, savedConfigId: config.id });
   form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -364,7 +389,6 @@ function resetForm() {
   ++modelFetchGeneration;
   editingConfigId = null;
   formDirty = false;
-  setModelStatus(t('ai.enterKeyFirst'));
   const form = qs('ai-config-form');
   if (!form) return;
   qs('ai-config-provider').value = 'openai';
@@ -375,7 +399,7 @@ function resetForm() {
   qs('ai-config-submit').textContent = t('ai.addConfig');
   qs('ai-config-cancel-edit').style.display = 'none';
   qs('ai-config-editing-banner')?.style.setProperty('display', 'none');
-  showModelManual('');
+  showModelWaiting();
   updateModelSuggestions();
 }
 
@@ -416,7 +440,7 @@ async function submitConfig() {
     // config-list refresh from switching the form back to another default.
     formDirty = true;
     if (savedProvider) qs('ai-config-provider').value = savedProvider;
-    showModelManual(modelId);
+    showModelWaiting(modelId, t('ai.modelsLoading'));
     updateModelSuggestions();
     void loadConfigs();
     document.dispatchEvent(new CustomEvent('pd:ai-configs-changed'));

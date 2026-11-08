@@ -131,8 +131,13 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Static file serving
-  let normalizedPath = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, '');
+  // Revisioned asset URLs keep ALL relative ES module imports on the same
+  // release. Without this mapping, a newly served HTML file can import stale
+  // 4-hour CDN-cached JS/i18n/CSS from the previous release. The version
+  // changes in index.html on each frontend release.
+  const revisionedAsset = /^\/assets\/v[0-9a-z-]+(?=\/(?:js|css)\/)/;
+  const sourcePathname = pathname.replace(revisionedAsset, '');
+  let normalizedPath = path.normalize(sourcePathname).replace(/^(\.\.[\/\\])+/, '');
   let filePath = path.join(__dirname, normalizedPath === '/' || normalizedPath === '\\' ? 'index.html' : normalizedPath);
 
   // Prevent directory traversal attacks

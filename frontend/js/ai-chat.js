@@ -24,7 +24,7 @@
 import { state } from './state.js';
 import { api } from './api.js';
 import { t, tEsc } from './i18n.js';
-import { showToast, openModal, closeModal } from './utils.js';
+import { showToast, openModal, closeModal, showConfirmDialog } from './utils.js';
 import { renderMarkdown } from './markdown.js';
 import { initAiSettings, openAiSettingsDialog } from './ai-settings.js';
 
@@ -205,11 +205,53 @@ async function loadHistory() {
   for (const conversation of conversations) {
     const item = document.createElement('div');
     item.className = 'ai-history-item' + (conversation.id === currentConversationId ? ' active' : '');
-    item.textContent = conversation.title || t('ai.newChat');
-    item.addEventListener('click', () => {
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'ai-history-open';
+    openBtn.textContent = conversation.title || t('ai.newChat');
+    openBtn.title = openBtn.textContent;
+    openBtn.setAttribute('role', 'menuitem');
+    openBtn.addEventListener('click', () => {
       void switchConversation(conversation.id);
       toggleHistory(false);
     });
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'ai-history-delete';
+    deleteBtn.title = t('ai.deleteChat');
+    deleteBtn.setAttribute('aria-label', `${t('ai.deleteChat')}: ${conversation.title || t('ai.newChat')}`);
+    deleteBtn.textContent = '×';
+    deleteBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      showConfirmDialog(t('ai.deleteChatConfirmTitle'), t('ai.deleteChatConfirmBody'), async () => {
+        deleteBtn.disabled = true;
+        const res = await apiCall(`/api/v1/ai/conversations/${encodeURIComponent(conversation.id)}`, { method: 'DELETE' });
+        if (!res.ok) {
+          deleteBtn.disabled = false;
+          showToast(res.data?.message || t('ai.errorDeleteChat'), 'error');
+          return;
+        }
+        if (conversation.id === currentConversationId) {
+          stopEventStream();
+          activeRequestId = null;
+          setGenerating(false);
+          currentConversationId = null;
+          persistConversationId();
+          clearMessages();
+          discardCurrentNoteGrant();
+          toggleSearchMode(false);
+          // New messages start in a fresh conversation; deleting chat history
+          // never deletes any Pocket Diary notes that were created from it.
+        }
+        showToast(t('ai.chatDeleted'), 'success');
+        void loadHistory();
+      });
+      // Confirm dialogs use the generic modal stack (below the AI drawer);
+      // raise only this confirmation above the chat, without changing other
+      // dialogs or letting it appear hidden behind the drawer.
+      qs('modal-confirm')?.style.setProperty('z-index', '1100');
+    });
+    item.append(openBtn, deleteBtn);
     panel.appendChild(item);
   }
 }

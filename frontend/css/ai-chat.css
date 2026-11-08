@@ -347,13 +347,41 @@
 }
 .ai-history-panel.open { display: block; }
 .ai-history-item {
-  padding: 0.5rem 0.7rem;
-  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.3rem;
   font-size: 0.82rem;
   border-bottom: 1px solid var(--border-color, #f0f1f3);
 }
-.ai-history-item:hover { background: var(--bg-hover, #f1f3f5); }
-.ai-history-item.active { font-weight: 600; }
+.ai-history-item:hover, .ai-history-item:focus-within { background: var(--bg-hover, #f1f3f5); }
+.ai-history-item.active .ai-history-open { font-weight: 600; }
+.ai-history-open, .ai-history-delete {
+  font: inherit;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary, #17202a);
+  cursor: pointer;
+  border-radius: 7px;
+}
+.ai-history-open {
+  text-align: left;
+  padding: 0.45rem 0.4rem;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ai-history-delete {
+  color: var(--color-red, #dc2626);
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  width: 34px;
+  min-height: 34px;
+}
+.ai-history-delete:hover { background: rgba(220, 38, 38, 0.1); }
+.ai-history-open:focus-visible, .ai-history-delete:focus-visible { outline: 2px solid var(--color-primary-500, #6366f1); outline-offset: 1px; }
 .ai-history-empty { padding: 0.7rem; color: var(--text-muted, #6b7280); font-size: 0.8rem; }
 
 /* ============================== Settings modal ============================== */
