@@ -166,7 +166,7 @@ async function initApp() {
   // Register PWA Service Worker for offline capability + Web Push
   if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js?v=20261108-ai-models').catch((err) => {
+      navigator.serviceWorker.register('/sw.js?v=20261108-ai-autonotes').catch((err) => {
         console.debug('ServiceWorker registration skipped:', err);
       });
     });

@@ -30,10 +30,13 @@ import { initAiSettings, openAiSettingsDialog } from './ai-settings.js';
 
 const DRAFT_KEY = 'pd_ai_draft';
 const CONV_KEY = 'pd_ai_conversation';
+const THINKING_KEY = 'pd_ai_thinking_effort';
 
 let initialized = false;
 let drawerOpen = false;
 let currentConversationId = null;
+let conversationLoadVersion = 0;
+let ensureConversationPromise = null;
 let activeRequestId = null; // request currently being streamed (if any)
 let eventSourceAbort = null; // AbortController for the SSE fetch
 let lastEventId = -1;
@@ -155,25 +158,60 @@ function renderProviderSelector() {
 // Conversations
 // ---------------------------------------------------------------------------
 
-async function ensureConversation() {
-  if (currentConversationId) {
-    const res = await apiCall(`/api/v1/ai/conversations/${currentConversationId}?messageLimit=100`);
-    if (res.ok) return res.data.conversation;
-    currentConversationId = null;
+async function ensureConversation({ forceNew = false } = {}) {
+  // Drawer opening and Send can happen together. Serialize recovery so they
+  // never create two chats or erase the active one in a response race.
+  if (ensureConversationPromise) {
+    await ensureConversationPromise;
+    if (!forceNew && currentConversationId) {
+      const res = await apiCall(`/api/v1/ai/conversations/${currentConversationId}?messageLimit=1`);
+      if (res.ok) return res.data.conversation;
+    }
   }
-  const workspace = state.get('activeWorkspace');
-  if (!workspace) return null;
-  const res = await apiCall('/api/v1/ai/conversations', {
-    method: 'POST',
-    body: JSON.stringify({ workspaceId: workspace.id }),
-  });
-  if (res.ok) {
-    currentConversationId = res.data.conversation.id;
-    persistConversationId();
-    return res.data.conversation;
-  }
-  showToast(res.data?.message || t('ai.errorCreateConversation'), 'error');
-  return null;
+  const operation = (async () => {
+    const workspace = state.get('activeWorkspace');
+    if (!workspace) return null;
+    if (!forceNew && currentConversationId) {
+      const res = await apiCall(`/api/v1/ai/conversations/${currentConversationId}?messageLimit=1`);
+      if (res.ok && res.data.conversation.workspaceId === workspace.id) return res.data.conversation;
+      // Temporary server/network failures must not silently clear a chat.
+      if (!res.ok && res.status !== 404 && res.status !== 403) {
+        showToast(res.data?.message || t('ai.errorLoadHistory'), 'error');
+        return null;
+      }
+      currentConversationId = null;
+      persistConversationId();
+    }
+    if (!forceNew) {
+      // Recover recent chat even when iPad/Safari lost sessionStorage, or the
+      // user opens a new tab/device. The server remains the source of truth.
+      const latest = await apiCall(`/api/v1/ai/conversations?workspaceId=${encodeURIComponent(workspace.id)}&limit=1`);
+      if (!latest.ok) {
+        showToast(latest.data?.message || t('ai.errorLoadHistory'), 'error');
+        return null;
+      }
+      const recent = latest.data.conversations?.[0];
+      if (recent?.id) {
+        currentConversationId = recent.id;
+        persistConversationId();
+        return recent;
+      }
+    }
+    const res = await apiCall('/api/v1/ai/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ workspaceId: workspace.id }),
+    });
+    if (res.ok) {
+      currentConversationId = res.data.conversation.id;
+      persistConversationId();
+      return res.data.conversation;
+    }
+    showToast(res.data?.message || t('ai.errorCreateConversation'), 'error');
+    return null;
+  })();
+  ensureConversationPromise = operation;
+  try { return await operation; }
+  finally { if (ensureConversationPromise === operation) ensureConversationPromise = null; }
 }
 
 function persistConversationId() {
@@ -264,37 +302,63 @@ function toggleHistory(open) {
 }
 
 async function switchConversation(conversationId) {
-  // Hide any in-flight streaming UI for the previous conversation; the job
-  // keeps running server-side and its messages will show when we come back.
+  // Switching is explicit. The previous job continues on the server.
+  ++conversationLoadVersion;
   stopEventStream();
+  activeRequestId = null;
+  setGenerating(false);
   currentConversationId = conversationId;
   persistConversationId();
   clearMessages();
-  await loadConversation();
+  await loadConversation({ force: true });
 }
 
-async function loadConversation() {
-  if (!currentConversationId) return;
-  const res = await apiCall(`/api/v1/ai/conversations/${currentConversationId}?messageLimit=200`);
+async function loadConversation({ force = false, reconnect = true } = {}) {
+  const id = currentConversationId;
+  if (!id) return;
+  const version = ++conversationLoadVersion;
+  const res = await apiCall(`/api/v1/ai/conversations/${id}?messageLimit=200`);
+  // Never clear chat when a stale, out-of-order request returns.
+  if (id !== currentConversationId || version !== conversationLoadVersion) return;
   if (!res.ok) {
-    currentConversationId = null;
-    persistConversationId();
+    // Transient network/provider errors are NOT conversation deletion.
+    if (res.status === 404) {
+      currentConversationId = null;
+      persistConversationId();
+    } else {
+      showToast(res.data?.message || t('ai.errorLoadHistory'), 'error');
+    }
     return;
   }
+  // A live stream owns the message area. Re-rendering from a partial server
+  // snapshot mid-stream used to erase user bubbles and streamed text.
+  if (generating && activeRequestId && !force) return;
+  const container = messagesContainer();
+  const hadMessages = Boolean(container?.children.length);
+  const previousScroll = container ? container.scrollTop : 0;
+  const wasNearBottom = !container || container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+  // Local search results are intentionally NEVER stored in chat messages
+  // because their titles/snippets are private. Preserve the live DOM nodes
+  // (including checkbox listeners) when refreshing durable chat history.
+  const localSearchPanels = container ? Array.from(container.querySelectorAll('.ai-search-results')) : [];
   clearMessages();
-  for (const message of res.data.messages ?? []) {
-    appendMessage(message);
-  }
+  for (const message of res.data.messages ?? []) appendMessage(message);
   for (const message of res.data.messages ?? []) {
     if (message.role === 'assistant' && message.meta?.proposalIds) {
       await attachProposals(message);
+      if (id !== currentConversationId || version !== conversationLoadVersion) return;
     }
   }
-  scrollToBottom();
-  await reconnectIfGenerating();
+  if (id === currentConversationId && version === conversationLoadVersion && container) {
+    for (const panel of localSearchPanels) container.appendChild(panel);
+  }
+  if (hadMessages && !wasNearBottom && container) container.scrollTop = previousScroll;
+  else scrollToBottom();
+  if (reconnect) await reconnectIfGenerating(res.data.activeRequestId ?? null);
 }
 
-async function reconnectIfGenerating() {
+async function reconnectIfGenerating(serverActiveRequestId = null) {
+  if (!activeRequestId && serverActiveRequestId) activeRequestId = serverActiveRequestId;
   // If the drawer hid while generating in THIS tab, activeRequestId is set.
   if (activeRequestId) {
     const res = await apiCall(`/api/v1/ai/requests/${activeRequestId}`);
@@ -327,6 +391,16 @@ function scrollToBottom() {
   if (container) container.scrollTop = container.scrollHeight;
 }
 
+function savedNoteButton(note, parent) {
+  if (!note?.id || !parent) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ai-saved-note-link';
+  button.textContent = `${t('ai.noteAutoSaved')} · ${note.title || t('ai.untitled')} · ${t('ai.openNote')}`;
+  button.addEventListener('click', () => void openNoteFromAssistant(note.id, false));
+  parent.appendChild(button);
+}
+
 function appendMessage(message) {
   const container = messagesContainer();
   if (!container) return null;
@@ -347,6 +421,9 @@ function appendMessage(message) {
       status.className = 'ai-msg-status';
       status.textContent = `⏸ ${t('ai.interruptedNotice')}`;
       wrap.appendChild(status);
+    }
+    for (const note of (Array.isArray(message.meta?.autoSavedNotes) ? message.meta.autoSavedNotes : [])) {
+      savedNoteButton(note, wrap);
     }
   } else {
     wrap.textContent = message.content; // user messages: plain text, no markdown
@@ -806,6 +883,7 @@ async function sendMessage(options = {}) {
     clientMessageId: `cm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     mode,
     providerConfigId: selectedProviderConfigId,
+    thinking: qs('ai-thinking-select')?.value || 'auto',
   };
   if (mode === 'note_task') {
     const grant = await grantCurrentNote(conversation.id);
@@ -823,7 +901,7 @@ async function sendMessage(options = {}) {
     maybeShowSecretWarning();
   }
 
-  appendMessage({ id: `local-${Date.now()}`, role: 'user', content, status: 'complete' });
+  const pendingBubble = appendMessage({ id: `local-${Date.now()}`, role: 'user', content, status: 'complete' });
   scrollToBottom();
 
   const res = await apiCall(`/api/v1/ai/conversations/${conversation.id}/messages`, {
@@ -831,6 +909,7 @@ async function sendMessage(options = {}) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
+    pendingBubble?.remove();
     // A rejected request must not silently destroy the user's typed draft.
     if (options.content === undefined) {
       input.value = content;
@@ -839,6 +918,7 @@ async function sendMessage(options = {}) {
     showToast(res.data?.message || t('ai.errorSend'), 'error');
     return;
   }
+  if (pendingBubble && res.data.userMessage?.id) pendingBubble.dataset.messageId = res.data.userMessage.id;
   activeRequestId = res.data.request.id;
   lastEventId = -1;
   setGenerating(true);
@@ -851,6 +931,8 @@ function setGenerating(value) {
   const sendBtn = qs('ai-send-btn');
   const cancelBtn = qs('ai-cancel-btn');
   if (sendBtn) sendBtn.disabled = value;
+  const thinkingSelect = qs('ai-thinking-select');
+  if (thinkingSelect) thinkingSelect.disabled = value;
   if (cancelBtn) cancelBtn.style.display = value ? '' : 'none';
 }
 
@@ -928,6 +1010,14 @@ function handleSseEvent(rawEvent) {
       break;
     case 'note_saved':
       showToast(t('ai.noteAutoSaved'), 'success');
+      if (data.memoId) {
+        const container = messagesContainer();
+        const wrapper = document.createElement('div');
+        wrapper.className = 'ai-saved-note-confirmation';
+        savedNoteButton({ id: data.memoId, title: data.title }, wrapper);
+        container?.appendChild(wrapper);
+        scrollToBottom();
+      }
       void broadcastMemosChanged();
       break;
     case 'message':
@@ -945,8 +1035,10 @@ function handleSseEvent(rawEvent) {
       removeTyping();
       setGenerating(false);
       stopEventStream();
-      // Reload the authoritative conversation state (covers interrupted/partial).
-      if (['failed', 'interrupted', 'canceled'].includes(data.status)) void loadConversation();
+      // The complete authoritative message (including saved-note links and
+      // failure notices) must replace the temporary streaming bubble.
+      activeRequestId = null;
+      void loadConversation({ force: true, reconnect: false });
       break;
     default:
       break;
@@ -964,7 +1056,8 @@ async function pollToCompletion(requestId) {
       finishStreamingBubble();
       removeTyping();
       setGenerating(false);
-      await loadConversation();
+      activeRequestId = null;
+      await loadConversation({ force: true, reconnect: false });
       if (['failed', 'interrupted'].includes(status)) {
         showToast(res.data.request.errorMessage || t('ai.errorSend'), 'error');
       }
@@ -1046,6 +1139,18 @@ export function initAiChat() {
   if (initialized) return;
   initialized = true;
   restoreConversationId();
+  const thinkingSelect = qs('ai-thinking-select');
+  if (thinkingSelect) {
+    try {
+      const old = sessionStorage.getItem(THINKING_KEY);
+      if (['auto', 'low', 'medium', 'high'].includes(old)) thinkingSelect.value = old;
+    } catch { /* private browser mode */ }
+    thinkingSelect.addEventListener('change', () => {
+      try { sessionStorage.setItem(THINKING_KEY, thinkingSelect.value); } catch { /* ignore */ }
+      const hint = qs('ai-thinking-hint');
+      if (hint) hint.textContent = t('ai.thinkingHint');
+    });
+  }
 
   qs('nav-ai-btn')?.addEventListener('click', () => setDrawerOpen(!drawerOpen));
   qs('ai-drawer-backdrop')?.addEventListener('click', () => setDrawerOpen(false));
@@ -1059,8 +1164,9 @@ export function initAiChat() {
     noteGrant = null;
     noteGrantMemoId = null;
     toggleSearchMode(false);
+    ++conversationLoadVersion;
     clearMessages();
-    await ensureConversation();
+    await ensureConversation({ forceNew: true });
     updateScopeIndicator();
   });
   qs('ai-history-btn')?.addEventListener('click', () => toggleHistory());

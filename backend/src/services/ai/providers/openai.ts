@@ -49,6 +49,7 @@ function buildRequestBody(req: AdapterChatRequest, stream: boolean): string {
     stream,
     max_output_tokens: req.maxOutputTokens ?? 2048,
   };
+  if (req.thinkingEffort) body.reasoning = { effort: req.thinkingEffort };
   if (req.tools && req.tools.length > 0) {
     body.tools = req.tools.map((tool) => ({
       type: 'function',

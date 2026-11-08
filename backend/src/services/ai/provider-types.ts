@@ -55,6 +55,8 @@ export interface AdapterChatRequest {
   /** Wall-clock budget for the whole call (ms). */
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** Vendor-native reasoning control; null means leave the model default. */
+  thinkingEffort?: 'low' | 'medium' | 'high' | null;
   /** Soft cap on generated tokens for the assistant reply. */
   maxOutputTokens?: number;
 }

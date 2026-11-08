@@ -27,7 +27,7 @@ export const AI_TOOL_DEFINITIONS = [
   {
     name: 'draft_new_note',
     description:
-      'Draft a NEW structured note for the user to review. Use ONLY when the user explicitly asks to create/save a note from the conversation. The note is shown as a preview first; the user approves saving. Do not call this for ordinary brainstorming.',
+      'Create a NEW structured note from what the user discussed. Use ONLY when the user explicitly asks to create, save, or turn their ideas into a note. Pocket Diary saves this NEW note automatically; no separate confirmation is required. Include all relevant details, sections, and actionable checklists without inventing decisions. Never call this just for brainstorming.',
     parameters: {
       type: 'object',
       properties: {
@@ -196,8 +196,8 @@ export async function executeToolCall(
         modelResult: JSON.stringify({
           ok: true,
           proposalId: proposal.id,
-          status: 'pending_user_approval',
-          note: 'The drafted note is shown to the user as a preview. It is NOT saved yet.',
+          status: 'pending_server_save',
+          note: 'Pocket Diary will attempt to save this newly requested note automatically and provide the result.',
         }),
         meta: { proposalId: proposal.id, action: 'create' },
       };

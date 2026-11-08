@@ -49,6 +49,12 @@ function buildRequestBody(req: AdapterChatRequest): string {
     contents,
     generationConfig: { maxOutputTokens: req.maxOutputTokens ?? 2048 },
   };
+  if (req.thinkingEffort) {
+    const config = body.generationConfig as Record<string, unknown>;
+    config.thinkingConfig = /^gemini-2\.5(?:-|$)/i.test(req.config.modelId)
+      ? { thinkingBudget: { low: 1024, medium: 8192, high: 16384 }[req.thinkingEffort] }
+      : { thinkingLevel: req.thinkingEffort };
+  }
   if (req.tools && req.tools.length > 0) {
     body.tools = [
       {

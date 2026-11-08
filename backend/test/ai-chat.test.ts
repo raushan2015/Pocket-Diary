@@ -16,6 +16,7 @@ import { createDatabase } from '../src/db/index.js';
 import { createTestUser } from './helpers.js';
 import { MockProviderServer, TEST_ENCRYPTION_KEY } from './helpers/ai-mock-provider.js';
 import crypto from 'node:crypto';
+import { isExplicitNewNoteRequest } from '../src/services/ai/chat.service.js';
 import type { FastifyInstance } from 'fastify';
 
 async function waitForRequestCompletion(
@@ -254,21 +255,23 @@ describe('AI chat API', () => {
       const done = await waitForRequestCompletion(app, user.cookieHeader, request.id);
       expect(done.status).toBe('complete');
 
-      // No note yet — only a pending proposal.
+      // Explicit NEW note request saves immediately, with no approval click.
       const memosBefore = await app.inject({ method: 'GET', url: `/api/v1/memos?workspaceId=${user.workspace.id}`, headers: { cookie: user.cookieHeader } });
-      expect(memosBefore.json().total).toBe(0);
+      expect(memosBefore.json().total).toBe(1);
 
       const detail = await app.inject({ method: 'GET', url: `/api/v1/ai/conversations/${conversation.id}`, headers: { cookie: user.cookieHeader } });
       const assistant = detail.json().messages.find((m: any) => m.role === 'assistant');
-      expect(assistant.meta.proposalIds).toHaveLength(1);
-      const proposalId = assistant.meta.proposalIds[0];
+      expect(assistant.meta.proposalIds).toBeUndefined();
+      expect(assistant.meta.autoSavedNotes).toHaveLength(1);
+      const { id: memoId, title } = assistant.meta.autoSavedNotes[0];
+      expect(title).toBe('E-commerce Shop Plan');
+      expect(memoId).toBe(memosBefore.json().memos[0].id);
+      const savedContent = memosBefore.json().memos[0].content;
+      expect(savedContent).toContain('Next.js storefront');
+      expect(savedContent).toContain('Stripe checkout');
 
-      // Approve once.
-      const approved = await app.inject({ method: 'POST', url: `/api/v1/ai/proposals/${proposalId}/approve`, headers: { cookie: user.cookieHeader } });
-      expect(approved.statusCode).toBe(200);
-      const memoId = approved.json().memo.id;
-
-      // Replay is idempotent: same memo back, still one note.
+      // Replaying approval for the already-executed proposal is idempotent.
+      const proposalId = assistant.meta.autoApprovedProposalIds[0];
       const replay = await app.inject({ method: 'POST', url: `/api/v1/ai/proposals/${proposalId}/approve`, headers: { cookie: user.cookieHeader } });
       expect(replay.json().memo.id).toBe(memoId);
 
@@ -281,7 +284,7 @@ describe('AI chat API', () => {
     }
   });
 
-  it('rejecting a proposal creates no note', async () => {
+  it('never creates a note if a model attempts an unsolicited tool call', async () => {
     await setup();
     try {
       mock.behavior = { toolCall: { name: 'draft_new_note', args: { title: 'Should not exist', content: 'nope' } } };
@@ -290,23 +293,20 @@ describe('AI chat API', () => {
         method: 'POST',
         url: `/api/v1/ai/conversations/${conversation.id}/messages`,
         headers: { cookie: user.cookieHeader },
-        payload: { content: '__TOOL__ make a note' },
+        payload: { content: 'Let us just brainstorm website ideas for now' },
       });
       const { request } = res.json();
       await waitForRequestCompletion(app, user.cookieHeader, request.id);
-      const detail = await app.inject({ method: 'GET', url: `/api/v1/ai/conversations/${conversation.id}`, headers: { cookie: user.cookieHeader } });
-      const assistant = detail.json().messages.find((m: any) => m.role === 'assistant');
-      const proposalId = assistant.meta.proposalIds[0];
-      const rejected = await app.inject({ method: 'POST', url: `/api/v1/ai/proposals/${proposalId}/reject`, headers: { cookie: user.cookieHeader } });
-      expect(rejected.json().proposal.status).toBe('rejected');
       const memos = await app.inject({ method: 'GET', url: `/api/v1/memos?workspaceId=${user.workspace.id}`, headers: { cookie: user.cookieHeader } });
       expect(memos.json().total).toBe(0);
+      const proposals = dbCtx.sqlite.prepare('SELECT COUNT(*) n FROM ai_action_proposals').get() as { n: number };
+      expect(proposals.n).toBe(0);
     } finally {
       await teardown();
     }
   });
 
-  it('auto-save preference saves an explicitly requested note without extra confirmation', async () => {
+  it('existing chats also auto-save explicitly requested notes even with the old disabled preference', async () => {
     await setup();
     try {
       mock.behavior = { toolCall: { name: 'draft_new_note', args: { title: 'Auto saved', content: 'saved automatically' } } };
@@ -315,7 +315,7 @@ describe('AI chat API', () => {
         method: 'PATCH',
         url: `/api/v1/ai/conversations/${conversation.id}`,
         headers: { cookie: user.cookieHeader },
-        payload: { autoSaveNotes: true },
+        payload: { autoSaveNotes: false },
       });
       const res = await app.inject({
         method: 'POST',
@@ -331,6 +331,42 @@ describe('AI chat API', () => {
     } finally {
       await teardown();
     }
+  });
+
+  it('recognizes explicit note requests without writing during brainstorming', () => {
+    expect(isExplicitNewNoteRequest('Create a note from our ideas')).toBe(true);
+    expect(isExplicitNewNoteRequest('Write a project plan into a new note')).toBe(true);
+    expect(isExplicitNewNoteRequest('Save everything as a note')).toBe(true);
+    expect(isExplicitNewNoteRequest('Please make a notebook entry')).toBe(true);
+    expect(isExplicitNewNoteRequest('Let us brainstorm and talk about a project')).toBe(false);
+    expect(isExplicitNewNoteRequest('I want to build a website next year')).toBe(false);
+  });
+
+  it('failed provider requests leave a durable visible error message instead of disappearing', async () => {
+    await setup();
+    try {
+      mock.behavior = { status: 502 };
+      const conversation = await createConversation();
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/v1/ai/conversations/${conversation.id}/messages`,
+        headers: { cookie: user.cookieHeader },
+        payload: { content: 'Please help with my idea' },
+      });
+      expect(res.statusCode).toBe(202);
+      const job = await waitForRequestCompletion(app, user.cookieHeader, res.json().request.id);
+      expect(job.status).toBe('failed');
+      const detail = await app.inject({
+        method: 'GET', url: `/api/v1/ai/conversations/${conversation.id}`,
+        headers: { cookie: user.cookieHeader },
+      });
+      const messages = detail.json().messages;
+      expect(messages).toHaveLength(2);
+      expect(messages[0].role).toBe('user');
+      expect(messages[1].role).toBe('assistant');
+      expect(messages[1].status).toBe('failed');
+      expect(messages[1].content).toContain('conversation is saved');
+    } finally { await teardown(); }
   });
 
   it('messages without any provider configured fail with an actionable error', async () => {

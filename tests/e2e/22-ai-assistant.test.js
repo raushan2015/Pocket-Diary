@@ -121,6 +121,20 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   console.log('[Journey 22] Provider configured + connection test passed.');
   await page.click('#modal-ai-settings-done-btn');
 
+  // ---------- Thinking is an actual server-enforced control ----------
+  await page.selectOption('#ai-thinking-select', 'high');
+  await page.fill('#ai-composer-input', 'Check my reasoning effort');
+  await page.click('#ai-send-btn');
+  await page.waitForFunction(() =>
+    document.querySelector('#ai-composer-input')?.value === 'Check my reasoning effort',
+    { timeout: 12_000 });
+  assert.equal(await page.locator('.ai-msg.user:has-text("Check my reasoning effort")').count(), 0,
+    'unsupported reasoning request is not falsely shown as sent');
+  assert.equal(await page.locator('.ai-msg.assistant').count(), 0,
+    'unsupported reasoning never pretends to produce a reply');
+  await page.selectOption('#ai-thinking-select', 'auto');
+  console.log('[Journey 22] Thinking choice routes to server; unsupported model is explicitly rejected.');
+
   // ---------- General chat round trip (no note open) ----------
   await page.fill('#ai-composer-input', 'Help me plan an online electronics shop');
   await page.click('#ai-send-btn');
@@ -148,21 +162,27 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   const messagesStillThere = await page.locator('.ai-msg.assistant').count();
   assert.ok(messagesStillThere >= 1, 'conversation preserved across hide/reopen');
 
-  // ---------- Create a note from the conversation (mock emits a tool call) ----------
+  // ---------- Explicit request auto-saves NEW note without approval ----------
   await page.fill('#ai-composer-input', '__TOOL__ Create a project plan note from our discussion');
   await page.click('#ai-send-btn');
-  await page.waitForSelector('.ai-proposal-card', { timeout: 30_000 });
+  await page.waitForSelector('.ai-saved-note-link:has-text("E-commerce Shop Plan")', { timeout: 30_000 });
   await page.waitForFunction(
-    () => document.querySelector('.ai-proposal-card')?.textContent.includes('E-commerce Shop Plan'),
+    () => !document.querySelector('#ai-send-btn')?.disabled,
     { timeout: 20_000 },
   );
-  console.log('[Journey 22] Proposal preview shows the drafted title.');
-  // Approve → note created exactly once.
-  await page.click('.ai-proposal-card .btn:has-text("Create note"), .ai-proposal-card button:has-text("ノートを作成")');
-  await page.waitForSelector('.ai-proposal-card[data-proposal-done]', { timeout: 20_000 });
-  console.log('[Journey 22] Note proposal approved and saved.');
-  // The note exists in the workspace via the API-backed UI list.
-  await page.waitForTimeout(800);
+  assert.equal(await page.locator('.ai-proposal-card').count(), 0,
+    'new note requires no approval or proposal preview');
+  const savedNotes = await page.evaluate(async () => {
+    const me = await (await fetch('/api/v1/auth/me', { credentials: 'include' })).json();
+    const ws = me.workspaces?.[0] ?? me.workspace;
+    const res = await fetch('/api/v1/memos?workspaceId=' + encodeURIComponent(ws.id), { credentials: 'include' });
+    return (await res.json()).memos;
+  });
+  const saved = savedNotes.find((m) => m.title === 'E-commerce Shop Plan');
+  assert.ok(saved, 'AI automatically created the note');
+  assert.ok(saved.content.includes('Next.js') && saved.content.includes('Stripe'),
+    'AI wrote the plan details into the note');
+  console.log('[Journey 22] AI created and saved a fully written note without permission prompt.');
 
   // ---------- Stage A private discovery -> Stage B consented reading ----------
   // A new eligible note is saved in a synthetic test account, never in the
@@ -193,6 +213,8 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   await page.fill('#ai-composer-input', '__SEARCH__ webshop');
   await page.click('#ai-send-btn');
   await page.waitForSelector('.ai-search-hit-title:has-text("webshop architecture")', { timeout: 25_000 });
+  console.log('[Journey 22] Search hit diagnostics:', await page.locator('.ai-search-hit').allTextContents(),
+    'selectable=', await page.locator('.ai-search-hit input[type="checkbox"]').count());
   const beforeConsent = (await getRecorded()).slice(beforeSearch).map((r) => r.body).join('\n');
   assert.ok(!beforeConsent.includes('QASHOP-ONLY-AFTER-APPROVAL'),
     'local discovery does not send note content to the provider');
@@ -322,7 +344,20 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   await page.waitForTimeout(800);
   const afterRefresh = await page.locator('.ai-msg').count();
   assert.ok(afterRefresh >= 2, 'conversation restored from the server after a full page refresh');
-  console.log('[Journey 22] Conversation persisted across refresh.');
+  assert.ok(await page.locator('.ai-saved-note-link:has-text("E-commerce Shop Plan")').count(),
+    'the saved note link persists with the chat');
+  // Simulate Safari discarding sessionStorage: recover the last saved chat
+  // from server-side history instead of silently creating an empty one.
+  await page.evaluate(() => sessionStorage.removeItem('pd_ai_conversation'));
+  await page.reload();
+  await page.waitForSelector('#view-dashboard, #view-editor', { timeout: 20_000 });
+  await page.click('#nav-ai-btn');
+  await page.waitForSelector('#ai-chat-drawer.open');
+  await page.waitForFunction(() => document.querySelectorAll('#ai-drawer-messages .ai-msg').length >= 2,
+    { timeout: 15_000 });
+  assert.ok(await page.locator('.ai-saved-note-link:has-text("E-commerce Shop Plan")').count(),
+    'last conversation and saved note are restored even without sessionStorage');
+  console.log('[Journey 22] Chat recovered after refresh and lost browser session storage.');
 
   // ---------- Explicit chat-history deletion with confirmation ----------
   await page.click('#ai-history-btn');

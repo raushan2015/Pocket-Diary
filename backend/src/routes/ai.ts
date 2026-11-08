@@ -186,7 +186,8 @@ function mapServiceError(err: unknown): { statusCode: number; body: { error: str
   }
   if (err instanceof Error && (err as { statusCode?: number }).statusCode) {
     const statusCode = (err as { statusCode?: number }).statusCode ?? 400;
-    return { statusCode, body: { error: statusCode === 404 ? 'Not Found' : statusCode === 403 ? 'Forbidden' : 'Bad Request', message: err.message } };
+    const code = (err as { code?: unknown }).code;
+    return { statusCode, body: { error: statusCode === 404 ? 'Not Found' : statusCode === 403 ? 'Forbidden' : 'Bad Request', message: err.message, ...(typeof code === 'string' ? { code } : {}) } };
   }
   return { statusCode: 500, body: { error: 'Internal Server Error', message: 'The AI request failed.' } };
 }
@@ -480,7 +481,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
       ...aiMeta(
         'Get an AI conversation with messages',
         'Owner-only metadata plus paginated messages.',
-        { code: 200, schema: { type: 'object', required: ['conversation', 'messages', 'total'], properties: { conversation: conversationDtoSchema, messages: { type: 'array', items: messageDtoSchema }, total: { type: 'integer' } } }, description: 'Conversation with a message page.' }
+        { code: 200, schema: { type: 'object', required: ['conversation', 'messages', 'total'], properties: { conversation: conversationDtoSchema, messages: { type: 'array', items: messageDtoSchema }, total: { type: 'integer' }, activeRequestId: { type: ['string', 'null'] } } }, description: 'Conversation with a message page.' }
       ),
     },
   }, async (request, reply) => {
@@ -489,7 +490,10 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
       const query = request.query as { messagePage?: number; messageLimit?: number };
       const conversation = getConversation(fastify.dbCtx, id, request.user!.id);
       const messages = listMessages(fastify.dbCtx, id, request.user!.id, query.messagePage ?? 1, query.messageLimit ?? 100);
-      return { conversation, ...messages };
+      const activeRow = fastify.dbCtx.sqlite.prepare(
+        "SELECT id FROM ai_requests WHERE conversation_id = ? AND user_id = ? AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1"
+      ).get(id, request.user!.id) as { id: string } | undefined;
+      return { conversation, ...messages, activeRequestId: activeRow?.id ?? null };
     } catch (err) {
       const mapped = mapServiceError(err);
       return reply.status(mapped.statusCode).send(mapped.body);
@@ -559,6 +563,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
           currentNoteGrantId: { type: ['string', 'null'], maxLength: 64 },
           searchGrantIds: { type: 'array', maxItems: 10, items: { type: 'string', maxLength: 64 } },
           providerConfigId: { type: ['string', 'null'], maxLength: 64 },
+          thinking: { type: 'string', enum: ['auto', 'low', 'medium', 'high'] },
         },
         additionalProperties: false,
       },
@@ -582,6 +587,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
         currentNoteGrantId?: string | null;
         searchGrantIds?: string[];
         providerConfigId?: string | null;
+        thinking?: 'auto' | 'low' | 'medium' | 'high';
       };
       if (body.mode !== undefined && !CHAT_MODES.includes(body.mode)) {
         return reply.status(400).send({ error: 'Bad Request', message: 'Invalid mode' });
@@ -595,6 +601,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
         currentNoteGrantId: body.currentNoteGrantId ?? null,
         searchGrantIds: body.searchGrantIds ?? [],
         providerConfigId: body.providerConfigId ?? null,
+        thinking: body.thinking ?? 'auto',
       });
       return reply.status(202).send(result);
     } catch (err) {

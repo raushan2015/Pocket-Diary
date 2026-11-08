@@ -17,14 +17,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- Application Stylesheets -->
-  <link rel="stylesheet" href="assets/v20261108-ai-models/css/tokens.css">
-  <link rel="stylesheet" href="assets/v20261108-ai-models/css/layout.css">
-  <link rel="stylesheet" href="assets/v20261108-ai-models/css/components.css">
-  <link rel="stylesheet" href="assets/v20261108-ai-models/css/landing.css">
-  <link rel="stylesheet" href="assets/v20261108-ai-models/css/auth.css">
-  <link rel="stylesheet" href="assets/v20261108-ai-models/css/editor.css">
-  <link rel="stylesheet" href="assets/v20261108-ai-models/css/attachments.css">
-  <link rel="stylesheet" href="assets/v20261108-ai-models/css/ai-chat.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-autonotes/css/tokens.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-autonotes/css/layout.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-autonotes/css/components.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-autonotes/css/landing.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-autonotes/css/auth.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-autonotes/css/editor.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-autonotes/css/attachments.css">
+  <link rel="stylesheet" href="assets/v20261108-ai-autonotes/css/ai-chat.css">
 
   <!-- No inline <script>: the strict CSP (script-src 'self') requires all
        scripts to be same-origin files. js/api.js defaults the API base to ''
@@ -2355,6 +2355,16 @@
       </div>
       <div class="ai-drawer-messages" id="ai-drawer-messages" aria-live="polite" aria-label="AI conversation" data-i18n-aria-label="ai.conversation"></div>
       <div class="ai-drawer-composer">
+        <div class="ai-thinking-row">
+          <label class="ai-thinking-label" for="ai-thinking-select" data-i18n="ai.thinkingLabel">🧠 Thinking</label>
+          <select id="ai-thinking-select" class="ai-thinking-select" aria-describedby="ai-thinking-hint">
+            <option value="auto" data-i18n="ai.thinkingAuto">Auto</option>
+            <option value="low" data-i18n="ai.thinkingLow">Low</option>
+            <option value="medium" data-i18n="ai.thinkingMedium">Medium</option>
+            <option value="high" data-i18n="ai.thinkingHigh">High</option>
+          </select>
+          <span id="ai-thinking-hint" class="ai-thinking-hint" data-i18n="ai.thinkingHint">Reasoning-capable models only. Higher levels can be slower and use more tokens.</span>
+        </div>
         <div class="ai-privacy-warning" id="ai-privacy-warning" role="alert" data-i18n="ai.secretWarning">This looks like a credential. Chat messages are sent to the selected AI provider — remove it unless you intend to share it.</div>
         <div class="ai-composer-row">
           <textarea class="ai-composer-input" id="ai-composer-input" rows="2" data-i18n-placeholder="ai.composerPlaceholder" placeholder="Ask, brainstorm, plan… (Enter to send, Shift+Enter for a new line)"></textarea>
@@ -2474,6 +2484,6 @@
   </div>
 
   <!-- Main JavaScript Application Bootstrap -->
-  <script type="module" src="assets/v20261108-ai-models/js/app.js"></script>
+  <script type="module" src="assets/v20261108-ai-autonotes/js/app.js"></script>
 </body>
 </html>
