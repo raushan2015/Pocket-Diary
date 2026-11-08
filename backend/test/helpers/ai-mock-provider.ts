@@ -25,6 +25,8 @@ export interface RecordedRequest {
 export interface MockBehavior {
   /** Emit a function/tool call named `tool` with `args` instead of plain text. */
   toolCall?: { name: string; args: unknown } | null;
+  /** Simulate a model/endpoint that rejects function-call definitions. */
+  rejectToolRequests?: boolean;
   /** Plain text reply (default echo). */
   text?: string;
   status?: number;
@@ -93,6 +95,11 @@ export class MockProviderServer {
 
     let parsed: any = {};
     try { parsed = JSON.parse(body); } catch { /* leave empty */ }
+    if (behavior.rejectToolRequests && Array.isArray(parsed.tools) && parsed.tools.length > 0) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'tool calling is not supported' } }));
+      return;
+    }
 
     // Derive the last user text (all three shapes).
     let lastUser = '';

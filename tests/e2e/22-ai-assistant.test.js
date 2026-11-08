@@ -124,10 +124,17 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   // ---------- Thinking is an actual server-enforced control ----------
   await page.selectOption('#ai-thinking-select', 'high');
   await page.fill('#ai-composer-input', 'Check my reasoning effort');
+  const unsupportedRequest = page.waitForResponse((response) =>
+    response.request().method() === 'POST' &&
+    /\/api\/v1\/ai\/conversations\/[^/]+\/messages$/.test(response.url()) &&
+    response.status() === 400,
+    { timeout: 20_000 });
   await page.click('#ai-send-btn');
+  const rejected = await unsupportedRequest;
+  assert.equal((await rejected.json()).code, 'thinking_not_supported');
   await page.waitForFunction(() =>
-    document.querySelector('#ai-composer-input')?.value === 'Check my reasoning effort',
-    { timeout: 12_000 });
+    document.querySelector('#ai-composer-input')?.value === 'Check my reasoning effort' &&
+    !document.querySelector('#ai-send-btn')?.disabled, { timeout: 12_000 });
   assert.equal(await page.locator('.ai-msg.user:has-text("Check my reasoning effort")').count(), 0,
     'unsupported reasoning request is not falsely shown as sent');
   assert.equal(await page.locator('.ai-msg.assistant').count(), 0,
@@ -161,6 +168,30 @@ test('User Journey 22: Pocket Diary AI — providers, chat, note proposals, priv
   assert.equal(draftAfterReopen, 'draft text to keep', 'draft preserved across hide/reopen');
   const messagesStillThere = await page.locator('.ai-msg.assistant').count();
   assert.ok(messagesStillThere >= 1, 'conversation preserved across hide/reopen');
+
+  // ---------- Even a plain-text-only model must create a REAL note ----------
+  // No __TOOL__ token here; the mock emits text, just like the NVIDIA model
+  // that told the user to copy/paste instead of saving.
+  const beforePlainSave = await page.locator('.ai-saved-note-link').count();
+  await page.fill('#ai-composer-input', 'Save it');
+  await page.click('#ai-send-btn');
+  await page.waitForFunction((before) =>
+    document.querySelectorAll('.ai-saved-note-link').length > before, beforePlainSave,
+    { timeout: 30_000 });
+  await page.waitForFunction(() => !document.querySelector('#ai-send-btn')?.disabled,
+    { timeout: 20_000 });
+  const plainSavedNotes = await page.evaluate(async () => {
+    const me = await (await fetch('/api/v1/auth/me', { credentials: 'include' })).json();
+    const workspace = me.workspaces?.[0] ?? me.workspace;
+    const response = await fetch('/api/v1/memos?workspaceId=' + encodeURIComponent(workspace.id),
+      { credentials: 'include' });
+    return (await response.json()).memos;
+  });
+  assert.ok(plainSavedNotes.some((memo) => memo.content.includes('online electronics shop')),
+    'text-only model fallback saved the actual conversation into a Pocket Diary note');
+  const chatAfterPlainSave = await page.locator('.ai-msg.assistant').last().textContent();
+  assert.ok(chatAfterPlainSave.includes('Saved a new note in Pocket Diary'));
+  console.log('[Journey 22] A text-only model saved a real new note after “Save it”.');
 
   // ---------- Explicit request auto-saves NEW note without approval ----------
   await page.fill('#ai-composer-input', '__TOOL__ Create a project plan note from our discussion');

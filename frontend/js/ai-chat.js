@@ -43,6 +43,7 @@ let lastEventId = -1;
 let providerConfigs = [];
 let selectedProviderConfigId = null;
 let generating = false;
+let sendingInProgress = false;
 let historyOpen = false;
 let searchMode = false; // "Find a note / AI Search" explicit mode
 let lastSearchQuery = '';
@@ -332,7 +333,7 @@ async function loadConversation({ force = false, reconnect = true } = {}) {
   }
   // A live stream owns the message area. Re-rendering from a partial server
   // snapshot mid-stream used to erase user bubbles and streamed text.
-  if (generating && activeRequestId && !force) return;
+  if (((generating && activeRequestId) || sendingInProgress) && !force) return;
   const container = messagesContainer();
   const hadMessages = Boolean(container?.children.length);
   const previousScroll = container ? container.scrollTop : 0;
@@ -860,9 +861,18 @@ async function grantCurrentNote(conversationId) {
 
 async function sendMessage(options = {}) {
   const input = qs('ai-composer-input');
-  if (!input || generating) return;
+  if (!input || generating || sendingInProgress) return;
   const content = typeof options.content === 'string' ? options.content.trim() : input.value.trim();
   if (!content) return;
+  // Capture selections synchronously before ANY awaits, so a rapid change
+  // from High to Auto (or changing chat/provider) cannot alter a queued send.
+  const requestedThinking = qs('ai-thinking-select')?.value || 'auto';
+  const requestedProvider = selectedProviderConfigId;
+  const requestedMode = options.mode || (searchMode ? 'search' : scopeInfo().kind === 'note' ? 'note_task' : 'general');
+  sendingInProgress = true;
+  const sendButton = qs('ai-send-btn');
+  if (sendButton) sendButton.disabled = true;
+  try {
   if (providerConfigs.length === 0) {
     // The user may have just added the first key in settings — re-check once
     // before sending them to onboarding.
@@ -876,14 +886,14 @@ async function sendMessage(options = {}) {
   const conversation = await ensureConversation();
   if (!conversation) return;
 
-  const mode = options.mode || (searchMode ? 'search' : scopeInfo().kind === 'note' ? 'note_task' : 'general');
+  const mode = requestedMode;
   if (mode === 'search') lastSearchQuery = content;
   const body = {
     content,
     clientMessageId: `cm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     mode,
-    providerConfigId: selectedProviderConfigId,
-    thinking: qs('ai-thinking-select')?.value || 'auto',
+    providerConfigId: requestedProvider,
+    thinking: requestedThinking,
   };
   if (mode === 'note_task') {
     const grant = await grantCurrentNote(conversation.id);
@@ -924,6 +934,10 @@ async function sendMessage(options = {}) {
   setGenerating(true);
   startStreamingBubble();
   void subscribeToEvents(activeRequestId);
+  } finally {
+    sendingInProgress = false;
+    if (!generating && sendButton) sendButton.disabled = false;
+  }
 }
 
 function setGenerating(value) {

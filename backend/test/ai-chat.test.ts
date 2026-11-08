@@ -231,6 +231,135 @@ describe('AI chat API', () => {
     }
   });
 
+  it('understands short voice-style save commands but not explanations or refusals', () => {
+    const valid = [
+      'Save it', 'please save this', 'Write this down', 'okay, save our discussion',
+      'Create a note with everything we discussed', 'Save this as a note',
+      'I want you to save it', 'Can you save it?', 'save everything we talked about', 'Save my idea', 'Turn the plan into a note',
+      'これをノートに保存して',
+    ];
+    for (const phrase of valid) expect(isExplicitNewNoteRequest(phrase), phrase).toBe(true);
+    const invalid = [
+      'Let us brainstorm ideas', 'Do not save it', "Don't create a note",
+      'How can I save it?', 'What happens when I save a note?',
+      'Why can\'t you save the note?', 'Update the current note with this plan', 'Add this to my existing note',
+    ];
+    for (const phrase of invalid) expect(isExplicitNewNoteRequest(phrase), phrase).toBe(false);
+  });
+
+  it('saves a REAL note when the model claims the creation tool is not connected', async () => {
+    await setup();
+    try {
+      const conversation = await createConversation();
+      mock.behavior = { text: 'Our travel plan needs accommodation, transportation, sightseeing and a budget.' };
+      const idea = await app.inject({
+        method: 'POST', url: `/api/v1/ai/conversations/${conversation.id}/messages`,
+        headers: { cookie: user.cookieHeader },
+        payload: { content: 'I want to plan a three-day Kyoto trip with a tight budget and local food.' },
+      });
+      expect((await waitForRequestCompletion(app, user.cookieHeader, idea.json().request.id)).status).toBe('complete');
+      mock.behavior = {
+        text: 'To save it: copy the section above into a new note in Pocket Diary. I cannot write into your notes because the note-creation tool is not connected.',
+      };
+      const response = await app.inject({
+        method: 'POST', url: `/api/v1/ai/conversations/${conversation.id}/messages`,
+        headers: { cookie: user.cookieHeader },
+        payload: { content: 'Save it', clientMessageId: 'qa-voice-save-once' },
+      });
+      expect(response.statusCode).toBe(202);
+      const final = await waitForRequestCompletion(app, user.cookieHeader, response.json().request.id);
+      expect(final.status).toBe('complete');
+      const memos = await app.inject({
+        method: 'GET', url: `/api/v1/memos?workspaceId=${user.workspace.id}`,
+        headers: { cookie: user.cookieHeader },
+      });
+      expect(memos.json().total).toBe(1);
+      const memo = memos.json().memos[0];
+      expect(memo.content).toContain('Kyoto trip');
+      expect(memo.content).toContain('accommodation');
+      expect(memo.content).not.toContain('note-creation tool is not connected');
+
+      const history = await app.inject({
+        method: 'GET', url: `/api/v1/ai/conversations/${conversation.id}`,
+        headers: { cookie: user.cookieHeader },
+      });
+      const assistant = history.json().messages.at(-1);
+      expect(assistant.role).toBe('assistant');
+      expect(assistant.content).toContain('Saved a new note in Pocket Diary');
+      expect(assistant.content).not.toContain('copy the section above');
+      expect(assistant.meta.autoSavedNotes).toHaveLength(1);
+      expect(assistant.meta.autoSavedNotes[0].id).toBe(memo.id);
+      // A network retry must NOT create a second note.
+      const replay = await app.inject({
+        method: 'POST', url: `/api/v1/ai/conversations/${conversation.id}/messages`,
+        headers: { cookie: user.cookieHeader },
+        payload: { content: 'Save it', clientMessageId: 'qa-voice-save-once' },
+      });
+      expect(replay.json().request.id).toBe(response.json().request.id);
+      const afterReplay = await app.inject({
+        method: 'GET', url: `/api/v1/memos?workspaceId=${user.workspace.id}`,
+        headers: { cookie: user.cookieHeader },
+      });
+      expect(afterReplay.json().total).toBe(1);
+    } finally { await teardown(); }
+  });
+
+  it('creates a note even when the provider rejects the tool-calling API', async () => {
+    await setup();
+    try {
+      const conversation = await createConversation();
+      mock.behavior = {
+        rejectToolRequests: true,
+        text: JSON.stringify({
+          title: 'Garden Project Roadmap',
+          content: '# Garden project\n\n## Supplies\n- Soil and seedlings\n- Watering schedule\n\n## Next steps\n- Set budget\n',
+        }),
+      };
+      const response = await app.inject({
+        method: 'POST', url: `/api/v1/ai/conversations/${conversation.id}/messages`,
+        headers: { cookie: user.cookieHeader },
+        payload: { content: 'Create a note about my garden project roadmap' },
+      });
+      expect(response.statusCode).toBe(202);
+      const result = await waitForRequestCompletion(app, user.cookieHeader, response.json().request.id);
+      expect(result.status).toBe('complete');
+      const requests = (await mock.getRecorded()).map((r) => JSON.parse(r.body));
+      expect(requests.some((request) => request.tools?.length > 0)).toBe(true);
+      expect(requests.some((request) => !request.tools?.length)).toBe(true);
+      const memos = await app.inject({
+        method: 'GET', url: `/api/v1/memos?workspaceId=${user.workspace.id}`,
+        headers: { cookie: user.cookieHeader },
+      });
+      expect(memos.json().total).toBe(1);
+      expect(memos.json().memos[0].title).toBe('Garden Project Roadmap');
+      expect(memos.json().memos[0].content).toContain('Watering schedule');
+    } finally { await teardown(); }
+  });
+
+  it('saves a structured note from a model that returns JSON without function calls', async () => {
+    await setup();
+    try {
+      const conversation = await createConversation();
+      mock.behavior = { text: JSON.stringify({
+        title: 'My Bakery Business Plan',
+        content: '# Bakery business\n\n## Objectives\n- Build a morning menu\n- Track ingredients\n- Plan weekly promotion\n',
+      }) };
+      const response = await app.inject({
+        method: 'POST', url: `/api/v1/ai/conversations/${conversation.id}/messages`,
+        headers: { cookie: user.cookieHeader },
+        payload: { content: 'Create a new note for my bakery business plan' },
+      });
+      expect((await waitForRequestCompletion(app, user.cookieHeader, response.json().request.id)).status).toBe('complete');
+      const memos = await app.inject({
+        method: 'GET', url: `/api/v1/memos?workspaceId=${user.workspace.id}`,
+        headers: { cookie: user.cookieHeader },
+      });
+      expect(memos.json().total).toBe(1);
+      expect(memos.json().memos[0].title).toBe('My Bakery Business Plan');
+      expect(memos.json().memos[0].content).toContain('Track ingredients');
+    } finally { await teardown(); }
+  });
+
   it('a user message with an explicit "create note" request drafts a proposal; approval creates exactly one note', async () => {
     await setup();
     try {
@@ -461,15 +590,12 @@ describe('AI chat API', () => {
         headers: { cookie: stranger.cookieHeader },
         payload: { content: '__TOOL__ create a note' },
       });
-      const { request } = res.json();
-      if (!request) console.log('MESSAGE POST RESPONSE:', res.statusCode, res.body.slice(0, 300));
-      const done = request ? await waitForRequestCompletion(app, stranger.cookieHeader, request.id) : null;
-      expect(done.status).toBe('complete');
+      expect(res.statusCode).toBe(403);
+      expect(res.json().message).toContain('permissions');
       const detail = await app.inject({ method: 'GET', url: `/api/v1/ai/conversations/${convId}`, headers: { cookie: stranger.cookieHeader } });
-      const assistant = detail.json().messages.find((m: any) => m.role === 'assistant');
-      const proposalId = assistant.meta.proposalIds[0];
-      const denied = await app.inject({ method: 'POST', url: `/api/v1/ai/proposals/${proposalId}/approve`, headers: { cookie: stranger.cookieHeader } });
-      expect(denied.statusCode).toBe(403);
+      expect(detail.json().messages).toHaveLength(0); // no charged AI request
+      const proposalCount = dbCtx.sqlite.prepare('SELECT COUNT(*) n FROM ai_action_proposals').get() as { n: number };
+      expect(proposalCount.n).toBe(0);
       const memos = await app.inject({ method: 'GET', url: `/api/v1/memos?workspaceId=${user.workspace.id}`, headers: { cookie: user.cookieHeader } });
       expect(memos.json().total).toBe(0);
     } finally {

@@ -7,7 +7,7 @@
  * outlive the assets it references.
  */
 
-const CACHE_NAME = 'notes-v10-ai-autonotes';
+const CACHE_NAME = 'notes-v11-ai-directsave';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
@@ -62,7 +62,7 @@ const PRECACHE_ASSETS = [
   '/js/ai-settings.js',
   '/js/ai-privacy.js',
   '/css/ai-chat.css'
-].map((asset) => (/^\/(js|css)\//.test(asset) ? `/assets/v20261108-ai-autonotes${asset}` : asset));
+].map((asset) => (/^\/(js|css)\//.test(asset) ? `/assets/v20261108-ai-directsave${asset}` : asset));
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
