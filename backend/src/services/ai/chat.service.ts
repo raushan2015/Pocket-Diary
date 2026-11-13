@@ -1027,6 +1027,7 @@ async function runGenerationJob(
       // then persist the result ourselves using the normal memo service.
       const explicitNewNote = (job.mode === 'general' || job.mode === 'note_task') &&
         isExplicitNewNoteRequest(job.content);
+      let usedFallbackAutoSave = false;
       if (explicitNewNote && autoSavedNotes.length === 0) {
         let draft = parseStructuredNote(finalText);
         if (!draft) {
@@ -1078,14 +1079,16 @@ async function runGenerationJob(
         if (!created.memo) throw new AiChatError('note_save_failed', 'Pocket Diary could not save the new note.', 500);
         autoApprovedProposalIds.push(proposal.id);
         autoSavedNotes.push({ id: created.memo.id, title: created.memo.title });
+        usedFallbackAutoSave = true;
         publishEvent(liveJob, 'note_saved', {
           proposalId: proposal.id, memoId: created.memo.id,
           title: created.memo.title, autoApproved: true,
         });
       }
-      // Never show a provider's misleading "you must paste it manually" text
-      // after the SERVER has already confirmed an actual new note in the DB.
+      // Never show a provider's misleading "you must paste it manually" text or
+      // ungrounded pre-fallback chatter after the SERVER saved a new note.
       if (autoSavedNotes.length > 0 && (
+        usedFallbackAutoSave ||
         !finalText ||
         /(?:cannot write|not connected|copy the section|paste it manually|must paste|don't have (?:the )?(?:ability|tool) to save)/i.test(finalText)
       )) {
