@@ -13,6 +13,7 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   scroll-behavior: smooth;
+  scroll-padding-top: 84px;
 }
 
 body {
@@ -25,6 +26,24 @@ body {
   line-height: 1.5;
   transition: background-color var(--transition-normal), color var(--transition-normal);
   overflow-x: hidden;
+}
+
+h1, h2, h3, h4, .brand-logo-text, .modal-title {
+  font-family: var(--font-display, var(--font-sans));
+  letter-spacing: -0.015em;
+}
+
+/* Global accessible focus ring (UI/UX Pro Max baseline) */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--border-color-focus, #4f46e5);
+  outline-offset: 2px;
+  box-shadow: var(--focus-ring, 0 0 0 3px rgba(79, 70, 229, 0.22));
 }
 
 /* Custom Scrollbar */
@@ -1447,4 +1466,15 @@ body {
 }
 @media (min-width: 1025px) {
   #top-navbar > .mobile-menu-toggle { display: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

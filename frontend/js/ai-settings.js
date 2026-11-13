@@ -19,11 +19,37 @@ import { t, tEsc } from './i18n.js';
 import { showToast, openModal, closeModal, showConfirmDialog } from './utils.js';
 
 const PROVIDERS = [
+  {
+    id: 'antigravity_cli',
+    label: 'Google Subscription (Antigravity CLI)',
+    keyless: true,
+    models: ['gemini-4-argon-medium', 'gemini-4-hydrogen-medium', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low', 'claude-sonnet-5-5-medium', 'claude-opus-5-5-medium', 'gpt-oss-120b-medium'],
+  },
   { id: 'openai', label: 'OpenAI', models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini'] },
   { id: 'gemini', label: 'Google Gemini', models: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'] },
   { id: 'deepseek', label: 'DeepSeek', models: ['deepseek-chat', 'deepseek-reasoner'] },
   { id: 'nvidia_nim', label: 'NVIDIA NIM', models: ['nvidia/llama-3.1-nemotron-70b-instruct', 'nvidia/llama-3.1-nemotron-ultra-253b-v1', 'nvidia/nemotron-4-340b-instruct', 'mistralai/mistral-large-2-instruct', 'meta/llama-3.2-90b-vision-instruct', 'deepseek-ai/deepseek-v4.1-flash', 'openai/gpt-oss-20b'] },
+  { id: 'anthropic', label: 'Anthropic (Claude)', models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'] },
+  { id: 'mistral', label: 'Mistral AI', models: ['mistral-large-latest', 'mistral-small-latest', 'open-mistral-7b', 'open-mixtral-8x7b'] },
+  { id: 'groq', label: 'Groq', models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'] },
+  { id: 'openrouter', label: 'OpenRouter', models: ['openrouter/auto', 'openrouter/anthropic/claude-3.5-sonnet', 'openrouter/google/gemini-pro-1.5', 'openrouter/meta-llama/llama-3.1-405b'] },
+  { id: 'ollama', label: 'Ollama (Local)', keyless: true, models: [] },
 ];
+
+function isKeylessProvider(providerId) {
+  return Boolean(PROVIDERS.find((p) => p.id === providerId)?.keyless);
+}
+
+function syncKeylessUi(providerId) {
+  const keyless = isKeylessProvider(providerId);
+  const keyWrap = qs('ai-config-key-wrap');
+  const note = qs('ai-config-keyless-note');
+  if (keyWrap) keyWrap.style.display = keyless ? 'none' : '';
+  if (note) {
+    note.style.display = keyless ? 'block' : 'none';
+    note.textContent = providerId === 'ollama' ? t('ai.ollamaKeylessNote') : t('ai.agyKeylessNote');
+  }
+}
 
 /** Prefer a known tool-capable chat model when the catalog offers many. */
 function preferModelId(ids) {
@@ -48,6 +74,214 @@ let modelFetchTimer = null;
 let modelFetchGeneration = 0;
 let savedConfigs = [];
 let formDirty = false;
+let agyActiveSessionId = null;
+let agySessionExpiresAt = 0;
+let agyCountdownTimer = null;
+
+function setAgyFeedback(message, state = '') {
+  const el = qs('agy-auth-feedback');
+  if (!el) return;
+  el.textContent = message || '';
+  el.className = `agy-auth-feedback ${state}`.trim();
+}
+
+function stopAgyCountdown() {
+  if (agyCountdownTimer) {
+    clearInterval(agyCountdownTimer);
+    agyCountdownTimer = null;
+  }
+  const cd = qs('agy-countdown');
+  if (cd) cd.textContent = '';
+}
+
+function updateAgyCountdown() {
+  const cd = qs('agy-countdown');
+  if (!cd || !agySessionExpiresAt) return;
+  const remaining = Math.max(0, Math.ceil((agySessionExpiresAt - Date.now()) / 1000));
+  if (remaining <= 0) {
+    cd.textContent = t('ai.agyCodeExpired');
+    stopAgyCountdown();
+    setAgyFeedback(t('ai.agyCodeExpiredHint'), 'error');
+    const panel = qs('agy-challenge-panel');
+    if (panel) panel.style.display = 'none';
+    agyActiveSessionId = null;
+    agySessionExpiresAt = 0;
+    return;
+  }
+  cd.textContent = `${remaining}s`;
+}
+
+function showAgyChallenge(session) {
+  agyActiveSessionId = session.sessionId;
+  agySessionExpiresAt = Number(session.expiresAt) || (Date.now() + 58_000);
+  const codeEl = qs('agy-login-code');
+  const linkEl = qs('agy-open-url-btn');
+  const inputEl = qs('agy-token-input');
+  const panel = qs('agy-challenge-panel');
+  const pill = qs('agy-status-pill');
+
+  if (codeEl) codeEl.textContent = session.loginCode || '--------';
+  if (linkEl) linkEl.href = session.authUrl || '#';
+  if (inputEl) inputEl.value = '';
+  if (panel) panel.style.display = 'flex';
+  if (pill) {
+    pill.textContent = t('ai.agyStatusWaiting');
+    pill.className = 'agy-status-pill pending';
+  }
+  setAgyFeedback(t('ai.agyChallengeReady'));
+  stopAgyCountdown();
+  updateAgyCountdown();
+  agyCountdownTimer = setInterval(updateAgyCountdown, 1000);
+  inputEl?.focus();
+}
+
+async function loadAntigravityStatus() {
+  const card = qs('agy-auth-card');
+  const pill = qs('agy-status-pill');
+  const startBtn = qs('agy-login-start-btn');
+  const logoutBtn = qs('agy-logout-btn');
+  const panel = qs('agy-challenge-panel');
+  const sub = qs('agy-auth-subtitle');
+  if (!card || !pill) return;
+
+  const res = await apiCall('/api/v1/ai/antigravity/status');
+  if (!res.ok) {
+    pill.textContent = t('ai.agyStatusUnknown');
+    pill.className = 'agy-status-pill';
+    return;
+  }
+
+  const data = res.data;
+  if (!data.installed) {
+    pill.textContent = t('ai.agyNotInstalled');
+    pill.className = 'agy-status-pill unavailable';
+    if (startBtn) startBtn.disabled = true;
+    if (logoutBtn) logoutBtn.style.display = 'none';
+    if (panel) panel.style.display = 'none';
+    setAgyFeedback(t('ai.agyNotInstalledHint'), 'error');
+    return;
+  }
+
+  if (startBtn) startBtn.disabled = false;
+
+  if (data.authenticated) {
+    stopAgyCountdown();
+    agyActiveSessionId = null;
+    pill.textContent = data.email ? `${t('ai.agyConnected')} · ${data.email}` : t('ai.agyConnected');
+    pill.className = 'agy-status-pill connected';
+    if (logoutBtn) logoutBtn.style.display = '';
+    if (startBtn) startBtn.textContent = t('ai.agyReconnect');
+    if (panel) panel.style.display = 'none';
+    if (sub && data.authMethod) sub.textContent = data.authMethod;
+    setAgyFeedback('');
+  } else if (data.activeSession && data.activeSession.status === 'waiting') {
+    if (logoutBtn) logoutBtn.style.display = 'none';
+    if (startBtn) startBtn.textContent = t('ai.agyGenerateLogin');
+    showAgyChallenge(data.activeSession);
+  } else {
+    stopAgyCountdown();
+    agyActiveSessionId = null;
+    pill.textContent = t('ai.agyNotConnected');
+    pill.className = 'agy-status-pill';
+    if (logoutBtn) logoutBtn.style.display = 'none';
+    if (startBtn) startBtn.textContent = t('ai.agyGenerateLogin');
+    if (panel) panel.style.display = 'none';
+    setAgyFeedback(data.activeSession?.error || '');
+  }
+}
+
+async function handleStartAgyLogin() {
+  const startBtn = qs('agy-login-start-btn');
+  if (startBtn) startBtn.disabled = true;
+  setAgyFeedback(t('ai.agyStarting'));
+  const res = await apiCall('/api/v1/ai/antigravity/login/start', { method: 'POST' });
+  if (startBtn) startBtn.disabled = false;
+  if (!res.ok) {
+    setAgyFeedback(res.data?.message || t('ai.agyStartFailed'), 'error');
+    showToast(res.data?.message || t('ai.agyStartFailed'), 'error');
+    return;
+  }
+  showAgyChallenge(res.data);
+}
+
+async function handleSubmitAgyLogin() {
+  const tokenInput = qs('agy-token-input');
+  const submitBtn = qs('agy-login-submit-btn');
+  const token = tokenInput?.value.trim() ?? '';
+  if (!agyActiveSessionId) {
+    setAgyFeedback(t('ai.agyGenerateFirst'), 'error');
+    return;
+  }
+  if (!token) {
+    setAgyFeedback(t('ai.agyPasteTokenFirst'), 'error');
+    tokenInput?.focus();
+    return;
+  }
+  if (submitBtn) submitBtn.disabled = true;
+  setAgyFeedback(t('ai.agyVerifying'));
+  const res = await apiCall('/api/v1/ai/antigravity/login/submit', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId: agyActiveSessionId, token }),
+  });
+  if (submitBtn) submitBtn.disabled = false;
+  if (!res.ok) {
+    setAgyFeedback(res.data?.message || t('ai.agyVerifyFailed'), 'error');
+    showToast(res.data?.message || t('ai.agyVerifyFailed'), 'error');
+    return;
+  }
+
+  stopAgyCountdown();
+  agyActiveSessionId = null;
+  showToast(t('ai.agyConnectedToast'), 'success');
+  await loadAntigravityStatus();
+
+  // Auto-provision an antigravity_cli provider entry if none exists yet so the user can chat right away.
+  if (!savedConfigs.some((c) => c.provider === 'antigravity_cli')) {
+    const modelsRes = await apiCall('/api/v1/ai/providers/models-preview', {
+      method: 'POST',
+      body: JSON.stringify({ provider: 'antigravity_cli' }),
+    });
+    const defaultModel = modelsRes.ok && modelsRes.data.models?.[0]?.id
+      ? modelsRes.data.models[0].id
+      : 'gemini-4-hydrogen-high';
+    const created = await apiCall('/api/v1/ai/providers', {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: 'antigravity_cli',
+        label: res.data?.email ? `Google (${res.data.email})` : 'Google Subscription',
+        modelId: defaultModel,
+        isDefault: savedConfigs.length === 0,
+      }),
+    });
+    if (created.ok) {
+      document.dispatchEvent(new CustomEvent('pd:ai-configs-changed'));
+    }
+  }
+
+  await loadConfigs();
+  const provSelect = qs('ai-config-provider');
+  if (provSelect) {
+    provSelect.value = 'antigravity_cli';
+    syncKeylessUi('antigravity_cli');
+    void fetchModelsForForm({ silent: true });
+  }
+}
+
+async function handleAgyLogout() {
+  const logoutBtn = qs('agy-logout-btn');
+  if (logoutBtn) logoutBtn.disabled = true;
+  const res = await apiCall('/api/v1/ai/antigravity/logout', { method: 'POST' });
+  if (logoutBtn) logoutBtn.disabled = false;
+  if (res.ok) {
+    showToast(t('ai.agyDisconnectedToast'), 'success');
+    await loadAntigravityStatus();
+    if (qs('ai-config-provider')?.value === 'antigravity_cli') {
+      showModelWaiting('', t('ai.agyLoginFirst'));
+    }
+  } else {
+    showToast(res.data?.message || t('ai.errorSave'), 'error');
+  }
+}
 
 function setModelStatus(message, state = '') {
   const status = qs('ai-config-model-status');
@@ -82,6 +316,7 @@ export function openAiSettingsDialog() {
   // Always start from a clean form: a previous "Edit" must never leak into a
   // later "Add configuration" (that silently updated the old config instead).
   resetForm();
+  void loadAntigravityStatus();
   void loadConfigs();
 }
 
@@ -116,11 +351,19 @@ async function loadConfigs() {
   if (!editingConfigId && !formDirty && configs.length > 0) {
     const def = configs.find((c) => c.isDefault) ?? configs[0];
     qs('ai-config-provider').value = def.provider;
+    syncKeylessUi(def.provider);
     updateModelSuggestions();
     showModelWaiting(def.modelId, t('ai.modelsLoading'));
     void fetchModelsForForm({ silent: true, savedConfigId: def.id });
   } else if (!editingConfigId && !formDirty && configs.length === 0) {
-    showModelWaiting();
+    const currentProv = qs('ai-config-provider')?.value || 'antigravity_cli';
+    syncKeylessUi(currentProv);
+    if (isKeylessProvider(currentProv)) {
+      showModelWaiting('', t('ai.modelsLoading'));
+      void fetchModelsForForm({ silent: true });
+    } else {
+      showModelWaiting();
+    }
   }
 }
 
@@ -151,7 +394,11 @@ function renderConfigCard(config) {
 
   const key = document.createElement('div');
   key.className = 'ai-config-key';
-  key.textContent = `${t('ai.keyMasked')} •••• ${config.keyLast4}`;
+  if (config.hasKey === false || isKeylessProvider(config.provider)) {
+    key.textContent = config.provider === 'antigravity_cli' ? t('ai.oauthBadge') : t('ai.localKeylessBadge');
+  } else {
+    key.textContent = `${t('ai.keyMasked')} •••• ${config.keyLast4}`;
+  }
   card.appendChild(key);
 
   const status = document.createElement('div');
@@ -320,8 +567,9 @@ async function fetchModelsForForm({ silent = false, savedConfigId = null } = {})
   const preferred = currentModelValue();
   const generation = ++modelFetchGeneration;
   const configId = typedKey ? null : (savedConfigId ?? editingConfigId);
-  // Always use the user's typed or saved key for model discovery.
-  if (!configId && typedKey.length < 8) {
+  const keyless = isKeylessProvider(providerId);
+  // Always use the user's typed or saved key for BYOK model discovery; keyless providers authenticate via CLI OAuth or local host.
+  if (!keyless && !configId && typedKey.length < 8) {
     setModelStatus(t('ai.enterKeyFirst'));
     if (!silent) showToast(t('ai.enterKeyFirst'), 'error');
     return;
@@ -372,6 +620,7 @@ function startEdit(config) {
   if (!form) return;
   qs('ai-config-provider').value = config.provider;
   qs('ai-config-provider').disabled = true;
+  syncKeylessUi(config.provider);
   qs('ai-config-label').value = config.label;
   qs('ai-config-key').value = '';
   qs('ai-config-key').placeholder = t('ai.keyReplaceOptional');
@@ -391,15 +640,17 @@ function resetForm() {
   formDirty = false;
   const form = qs('ai-config-form');
   if (!form) return;
-  qs('ai-config-provider').value = 'openai';
+  const defaultProvider = 'antigravity_cli';
+  qs('ai-config-provider').value = defaultProvider;
   qs('ai-config-provider').disabled = false;
+  syncKeylessUi(defaultProvider);
   qs('ai-config-label').value = '';
   qs('ai-config-key').value = '';
   qs('ai-config-key').placeholder = t('ai.keyPlaceholder');
   qs('ai-config-submit').textContent = t('ai.addConfig');
   qs('ai-config-cancel-edit').style.display = 'none';
   qs('ai-config-editing-banner')?.style.setProperty('display', 'none');
-  showModelWaiting();
+  showModelWaiting('', isKeylessProvider(defaultProvider) ? t('ai.modelsWaitingKeyless') : t('ai.enterKeyFirst'));
   updateModelSuggestions();
 }
 
@@ -407,12 +658,13 @@ async function submitConfig() {
   const provider = qs('ai-config-provider')?.value;
   const label = qs('ai-config-label')?.value.trim();
   const modelId = currentModelValue();
-  const apiKey = qs('ai-config-key')?.value.trim();
+  const keyless = isKeylessProvider(provider);
+  const apiKey = keyless ? '' : (qs('ai-config-key')?.value.trim() ?? '');
   if (!modelId) {
     showToast(t('ai.modelRequired'), 'error');
     return;
   }
-  if (!editingConfigId && (!apiKey || apiKey.length < 8)) {
+  if (!editingConfigId && !keyless && (!apiKey || apiKey.length < 8)) {
     showToast(t('ai.keyRequired'), 'error');
     return;
   }
@@ -428,7 +680,9 @@ async function submitConfig() {
     savedConfigId = editingConfigId;
     savedProvider = qs('ai-config-provider')?.value ?? provider;
   } else {
-    res = await apiCall('/api/v1/ai/providers', { method: 'POST', body: JSON.stringify({ provider, label: label || providerLabel(provider), modelId, apiKey }) });
+    const payload = { provider, label: label || providerLabel(provider), modelId };
+    if (apiKey) payload.apiKey = apiKey;
+    res = await apiCall('/api/v1/ai/providers', { method: 'POST', body: JSON.stringify(payload) });
     savedConfigId = res.ok ? res.data.config?.id : null;
   }
   if (submitBtn) submitBtn.disabled = false;
@@ -454,8 +708,38 @@ export function initAiSettings() {
   if (initialized) return;
   initialized = true;
 
-  qs('modal-ai-settings-close-btn')?.addEventListener('click', () => closeModal('modal-ai-settings'));
-  qs('modal-ai-settings-done-btn')?.addEventListener('click', () => closeModal('modal-ai-settings'));
+  qs('modal-ai-settings-close-btn')?.addEventListener('click', () => {
+    stopAgyCountdown();
+    closeModal('modal-ai-settings');
+  });
+  qs('modal-ai-settings-done-btn')?.addEventListener('click', () => {
+    stopAgyCountdown();
+    closeModal('modal-ai-settings');
+  });
+  qs('agy-login-start-btn')?.addEventListener('click', () => void handleStartAgyLogin());
+  qs('agy-login-submit-btn')?.addEventListener('click', () => void handleSubmitAgyLogin());
+  qs('agy-logout-btn')?.addEventListener('click', () => void handleAgyLogout());
+  qs('agy-token-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void handleSubmitAgyLogin();
+    }
+  });
+  qs('agy-copy-code-btn')?.addEventListener('click', async () => {
+    const codeText = qs('agy-login-code')?.textContent?.trim();
+    if (!codeText || codeText === '--------') return;
+    try {
+      await navigator.clipboard.writeText(codeText);
+      const btn = qs('agy-copy-code-btn');
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = t('ai.copied');
+        setTimeout(() => { btn.textContent = orig; }, 1400);
+      }
+    } catch {
+      showToast(t('ai.copyFailed'), 'error');
+    }
+  });
   qs('ai-config-submit')?.addEventListener('click', (e) => {
     e.preventDefault();
     void submitConfig();
@@ -466,16 +750,22 @@ export function initAiSettings() {
     ++modelFetchGeneration;
     clearTimeout(modelFetchTimer);
     updateModelSuggestions();
-    showModelManual('');
     const provider = qs('ai-config-provider').value;
+    syncKeylessUi(provider);
+    showModelManual('');
     // A key entered for provider A must NEVER be sent to provider B after
     // changing this selector. User can reenter the proper key, or use that
     // provider's own saved encrypted configuration.
     const keyInput = qs('ai-config-key');
     if (keyInput) keyInput.value = '';
     const matching = savedConfigs.find((c) => c.provider === provider);
-    if (matching) void fetchModelsForForm({ silent: true, savedConfigId: matching.id });
-    else setModelStatus(t('ai.enterKeyFirst'));
+    if (matching) {
+      void fetchModelsForForm({ silent: true, savedConfigId: matching.id });
+    } else if (isKeylessProvider(provider)) {
+      void fetchModelsForForm({ silent: true });
+    } else {
+      setModelStatus(t('ai.enterKeyFirst'));
+    }
   });
   qs('ai-config-fetch-models')?.addEventListener('click', () => {
     const matching = savedConfigs.find((c) => c.provider === qs('ai-config-provider')?.value);

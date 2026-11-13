@@ -11,20 +11,20 @@
   <link rel="apple-touch-icon" sizes="192x192" href="icons/logo-192.png">
   <title>Pocket Diary</title>
 
-  <!-- Google Font: Inter -->
+  <!-- Google Fonts: Plus Jakarta Sans + Inter + JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- Application Stylesheets -->
-  <link rel="stylesheet" href="assets/v20261108-glm-thinking/css/tokens.css">
-  <link rel="stylesheet" href="assets/v20261108-glm-thinking/css/layout.css">
-  <link rel="stylesheet" href="assets/v20261108-glm-thinking/css/components.css">
-  <link rel="stylesheet" href="assets/v20261108-glm-thinking/css/landing.css">
-  <link rel="stylesheet" href="assets/v20261108-glm-thinking/css/auth.css">
-  <link rel="stylesheet" href="assets/v20261108-glm-thinking/css/editor.css">
-  <link rel="stylesheet" href="assets/v20261108-glm-thinking/css/attachments.css">
-  <link rel="stylesheet" href="assets/v20261108-glm-thinking/css/ai-chat.css">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/landing.css">
+  <link rel="stylesheet" href="css/auth.css">
+  <link rel="stylesheet" href="css/editor.css">
+  <link rel="stylesheet" href="css/attachments.css">
+  <link rel="stylesheet" href="css/ai-chat.css">
 
   <!-- No inline <script>: the strict CSP (script-src 'self') requires all
        scripts to be same-origin files. js/api.js defaults the API base to ''
@@ -2347,6 +2347,9 @@
           <button class="btn btn-ghost btn-icon-only" id="ai-settings-btn" aria-label="AI settings" data-i18n-aria-label="ai.settings" title="AI settings" data-i18n-title="ai.settings">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
           </button>
+          <button class="btn btn-ghost btn-icon-only" id="ai-expand-btn" aria-label="Expand chat" data-i18n-aria-label="ai.expand" title="Expand chat" data-i18n-title="ai.expand" aria-pressed="false">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+          </button>
           <button class="btn btn-ghost btn-icon-only" id="ai-drawer-close-btn" aria-label="Close AI chat" data-i18n-aria-label="ai.close" title="Close" data-i18n-title="ai.close">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
@@ -2356,13 +2359,20 @@
       <div class="ai-drawer-messages" id="ai-drawer-messages" aria-live="polite" aria-label="AI conversation" data-i18n-aria-label="ai.conversation"></div>
       <div class="ai-drawer-composer">
         <div class="ai-thinking-row">
-          <label class="ai-thinking-label" for="ai-thinking-select" data-i18n="ai.thinkingLabel">🧠 Thinking</label>
+          <label class="ai-thinking-label" for="ai-thinking-select">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.04z"></path><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.04z"></path></svg>
+            <span data-i18n="ai.thinkingLabel">Thinking</span>
+          </label>
           <select id="ai-thinking-select" class="ai-thinking-select" aria-describedby="ai-thinking-hint">
             <option value="auto" data-i18n="ai.thinkingAuto">Auto</option>
             <option value="low" data-i18n="ai.thinkingLow">Low</option>
             <option value="medium" data-i18n="ai.thinkingMedium">Medium</option>
             <option value="high" data-i18n="ai.thinkingHigh">High</option>
           </select>
+          <button type="button" id="ai-full-control-toggle" class="ai-full-control-btn active" aria-pressed="true" title="Allow AI to manage notes, calendar reminders, folders, tags & trash">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2L15 8l6 .9-4.3 4.2 1 6-5.7-3-5.7 3 1-6L3 8.9 9 8z"></path></svg>
+            <span data-i18n="ai.fullControlOn">Full control</span>
+          </button>
           <span id="ai-thinking-hint" class="ai-thinking-hint" data-i18n="ai.thinkingHint">Reasoning-capable models only. Higher levels can be slower and use more tokens.</span>
         </div>
         <div class="ai-privacy-warning" id="ai-privacy-warning" role="alert" data-i18n="ai.secretWarning">This looks like a credential. Chat messages are sent to the selected AI provider — remove it unless you intend to share it.</div>
@@ -2377,7 +2387,10 @@
         </div>
       </div>
       <div class="ai-drawer-footer">
-        <button type="button" class="btn btn-ghost btn-xs" id="ai-search-mode-btn" data-i18n="ai.findNote">🔍 Find a note / AI Search</button>
+        <button type="button" class="btn btn-ghost btn-xs" id="ai-search-mode-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <span data-i18n="ai.findNote">Find a note / AI Search</span>
+        </button>
         <button type="button" class="btn btn-ghost btn-xs" id="ai-summarize-note-btn" data-i18n="ai.summarizeNote">Summarize this note</button>
         <button type="button" class="btn btn-ghost btn-xs" id="ai-improve-note-btn" data-i18n="ai.improveNote">Improve writing</button>
         <button type="button" class="btn btn-ghost btn-xs" id="ai-save-transcript-btn" data-i18n="ai.saveTranscript">Save conversation as note</button>
@@ -2387,7 +2400,7 @@
     <!-- Pocket Diary AI — provider settings (separate dialog: #modal-profile
          already contains a <form>, so nothing is nested inside it). -->
     <div class="modal-backdrop" id="modal-ai-settings" role="dialog" aria-modal="true" aria-labelledby="modal-ai-settings-title">
-      <div class="modal-content" style="max-width: 560px; max-height: 85vh; overflow-y: auto;">
+      <div class="modal-content" style="max-width: 600px; max-height: 88vh; overflow-y: auto;">
         <div class="modal-header">
           <h3 class="modal-title" id="modal-ai-settings-title" data-i18n="ai.settingsTitle">AI Settings</h3>
           <button type="button" class="modal-close-btn" id="modal-ai-settings-close-btn" aria-label="Close" data-i18n-aria-label="common.close">
@@ -2395,22 +2408,70 @@
           </button>
         </div>
         <div class="modal-body">
-          <p style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="ai.settingsIntro">Bring your own key. Keys are encrypted with AES-256-GCM on the server and are never displayed again. All provider requests run from the Pocket Diary backend — never from your browser.</p>
+          <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem;" data-i18n="ai.settingsIntro">Use your Google Subscription (Antigravity CLI) or bring your own API key. Keys are encrypted with AES-256-GCM on the server and are never displayed again.</p>
           <div id="ai-vault-warning" style="display: none; font-size: 0.78rem; color: #b45309; border: 1px solid rgba(245,158,11,.4); background: rgba(245,158,11,.08); border-radius: 8px; padding: 0.5rem 0.6rem; margin-bottom: 0.6rem;" data-i18n="ai.vaultWarning">AI credentials are disabled on this server (missing AI_CREDENTIAL_ENCRYPTION_KEY). Ask the operator to configure it.</div>
+
+          <!-- Google Subscription (Antigravity CLI) OAuth card -->
+          <section class="agy-auth-card" id="agy-auth-card" aria-labelledby="agy-auth-title">
+            <div class="agy-auth-header">
+              <div class="agy-auth-title-wrap">
+                <span class="agy-auth-badge-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path></svg>
+                </span>
+                <div>
+                  <div class="agy-auth-title" id="agy-auth-title" data-i18n="ai.agyTitle">Google Subscription (Antigravity CLI)</div>
+                  <div class="agy-auth-sub" id="agy-auth-subtitle" data-i18n="ai.agySubtitle">Chat with Gemini &amp; Claude models using your Google plan — no API key required.</div>
+                </div>
+              </div>
+              <span class="agy-status-pill" id="agy-status-pill" data-i18n="ai.loading">Loading…</span>
+            </div>
+
+            <div class="agy-auth-actions">
+              <button type="button" class="btn btn-primary btn-sm" id="agy-login-start-btn" data-i18n="ai.agyGenerateLogin">Generate Login Code &amp; Link</button>
+              <button type="button" class="btn btn-outline btn-sm" id="agy-logout-btn" style="display: none;" data-i18n="ai.agyDisconnect">Disconnect Google Account</button>
+            </div>
+
+            <div class="agy-challenge-panel" id="agy-challenge-panel" style="display: none;">
+              <div class="agy-step-label" data-i18n="ai.agyStep1">1. Open Google Sign-In and verify this login code matches:</div>
+              <div class="agy-code-display">
+                <code class="agy-code-value" id="agy-login-code">--------</code>
+                <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                  <span class="agy-countdown" id="agy-countdown"></span>
+                  <button type="button" class="btn btn-ghost btn-xs" id="agy-copy-code-btn" data-i18n="ai.agyCopyCode">Copy code</button>
+                  <a class="btn btn-outline btn-xs" id="agy-open-url-btn" href="#" target="_blank" rel="noopener noreferrer" data-i18n="ai.agyOpenGoogle">Open Google Sign-In</a>
+                </div>
+              </div>
+              <label class="agy-step-label" for="agy-token-input" data-i18n="ai.agyStep2">2. Paste the authorization code (or full redirect URL) from Google:</label>
+              <div class="agy-paste-row">
+                <input type="text" class="agy-token-input" id="agy-token-input" autocomplete="off" spellcheck="false" data-i18n-placeholder="ai.agyTokenPlaceholder" placeholder="4/0A… or https://antigravity.google/oauth-callback?code=…">
+                <button type="button" class="btn btn-primary btn-sm" id="agy-login-submit-btn" data-i18n="ai.agyVerifyConnect">Verify &amp; Connect</button>
+              </div>
+            </div>
+
+            <div class="agy-auth-feedback" id="agy-auth-feedback" role="status" aria-live="polite"></div>
+          </section>
+
           <div id="ai-config-list"></div>
           <hr style="border: none; border-top: 1px solid var(--border-color); margin: 0.8rem 0;">
           <div id="ai-config-form">
             <h4 style="margin: 0 0 0.5rem; font-size: 0.9rem;" data-i18n="ai.addProvider">Add or update a provider</h4>
-            <div id="ai-config-editing-banner" style="display: none; font-size: 0.76rem; color: var(--color-blue, #2563eb); border: 1px dashed var(--border-color); border-radius: 8px; padding: 0.35rem 0.55rem; margin-bottom: 0.5rem;">
-            ✏️ <span data-i18n="ai.editingBanner">Editing a saved configuration — pressing save updates it (key optional)</span>
-          </div>
-          <div class="ai-config-form-grid">
+            <div id="ai-config-editing-banner" style="display: none; font-size: 0.76rem; color: var(--color-primary-600, #4f46e5); border: 1px dashed var(--border-color); border-radius: 8px; padding: 0.35rem 0.55rem; margin-bottom: 0.5rem;">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px; margin-right: 4px;" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+              <span data-i18n="ai.editingBanner">Editing a saved configuration — pressing save updates it (key optional)</span>
+            </div>
+            <div class="ai-config-form-grid">
               <label><span data-i18n="ai.provider">Provider</span>
                 <select id="ai-config-provider">
+                  <option value="antigravity_cli">Google Subscription (Antigravity CLI)</option>
                   <option value="openai">OpenAI</option>
                   <option value="gemini">Google Gemini</option>
+                  <option value="anthropic">Anthropic (Claude)</option>
                   <option value="deepseek">DeepSeek</option>
                   <option value="nvidia_nim">NVIDIA NIM</option>
+                  <option value="mistral">Mistral AI</option>
+                  <option value="groq">Groq</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="ollama">Ollama (Local)</option>
                 </select>
               </label>
               <label><span data-i18n="ai.label">Label</span>
@@ -2423,9 +2484,10 @@
                 <input type="text" id="ai-config-model" maxlength="160" list="ai-config-model-list" style="display: none;" data-i18n-placeholder="ai.modelIdPlaceholder" placeholder="Enter model ID manually" autocomplete="off">
                 <datalist id="ai-config-model-list"></datalist>
               </label>
-              <label style="grid-column: 1 / -1;"><span data-i18n="ai.apiKey">API key</span>
+              <label id="ai-config-key-wrap" style="grid-column: 1 / -1;"><span data-i18n="ai.apiKey">API key</span>
                 <input type="password" id="ai-config-key" autocomplete="off" spellcheck="false" data-i18n-placeholder="ai.keyPlaceholder" placeholder="sk-… (typed once, stored encrypted)">
               </label>
+              <div id="ai-config-keyless-note" class="ai-keyless-note" style="display: none;" data-i18n="ai.agyKeylessNote">Uses your connected Google Subscription via Antigravity CLI — no API key needed.</div>
             </div>
             <div style="display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; align-items: center;">
               <button type="button" class="btn btn-primary btn-sm" id="ai-config-submit" data-i18n="ai.addConfig">Add configuration</button>
@@ -2484,6 +2546,6 @@
   </div>
 
   <!-- Main JavaScript Application Bootstrap -->
-  <script type="module" src="assets/v20261108-glm-thinking/js/app.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

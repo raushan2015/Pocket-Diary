@@ -14,9 +14,9 @@
  * vetted official endpoint and cannot be redirected by user or model input.
  */
 
-export type ProviderId = 'openai' | 'gemini' | 'deepseek' | 'nvidia_nim';
+export type ProviderId = 'openai' | 'gemini' | 'deepseek' | 'nvidia_nim' | 'anthropic' | 'mistral' | 'groq' | 'openrouter' | 'ollama' | 'antigravity_cli';
 
-export const PROVIDER_IDS: readonly ProviderId[] = ['openai', 'gemini', 'deepseek', 'nvidia_nim'];
+export const PROVIDER_IDS: readonly ProviderId[] = ['openai', 'gemini', 'deepseek', 'nvidia_nim', 'anthropic', 'mistral', 'groq', 'openrouter', 'ollama', 'antigravity_cli'];
 
 export function isProviderId(value: unknown): value is ProviderId {
   return typeof value === 'string' && (PROVIDER_IDS as readonly string[]).includes(value);
@@ -27,6 +27,12 @@ export const PROVIDER_LABELS: Record<ProviderId, string> = {
   gemini: 'Google Gemini',
   deepseek: 'DeepSeek',
   nvidia_nim: 'NVIDIA NIM',
+  anthropic: 'Anthropic (Claude)',
+  mistral: 'Mistral AI',
+  groq: 'Groq',
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama (Local)',
+  antigravity_cli: 'Google Subscription (Antigravity CLI)',
 };
 
 /** Normalized chat message handed to an adapter. */
@@ -45,6 +51,8 @@ export interface AdapterTool {
 export interface AdapterConfig {
   modelId: string;
   apiKey: string;
+  /** Pocket Diary user ID (used by local CLI/OAuth adapters such as antigravity_cli). */
+  userId?: string;
 }
 
 export interface AdapterChatRequest {
@@ -65,7 +73,7 @@ export type ProviderStreamEvent =
   | { type: 'text'; delta: string }
   /** Incremental or complete tool call. `index` groups argument deltas. */
   | { type: 'tool_call'; index: number; id?: string; name?: string; argumentsDelta?: string; arguments?: string }
-  | { type: 'usage'; inputTokens?: number; outputTokens?: number }
+  | { type: 'usage'; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number }
   | { type: 'done'; finishReason?: string }
   | { type: 'error'; code: ProviderErrorCode; message: string };
 
@@ -94,11 +102,13 @@ export interface AdapterTestResult {
 
 export interface ProviderAdapter {
   readonly id: ProviderId;
+  readonly label: string;
+  readonly supportsStreaming: boolean;
+  readonly supportsTools: boolean;
+  readonly supportsModelListing: boolean;
   chat(req: AdapterChatRequest): AsyncGenerator<ProviderStreamEvent, void, unknown>;
   listModels(config: AdapterConfig): Promise<AdapterModelInfo[]>;
   testConnection(config: AdapterConfig): Promise<AdapterTestResult>;
-  /** Whether the adapter can list models remotely (otherwise manual entry only). */
-  readonly supportsModelListing: boolean;
 }
 
 /**
@@ -113,7 +123,14 @@ export function testBaseUrlOverride(provider: ProviderId): string | undefined {
     gemini: 'AI_GEMINI_BASE_URL',
     deepseek: 'AI_DEEPSEEK_BASE_URL',
     nvidia_nim: 'AI_NVIDIA_BASE_URL',
+    anthropic: 'AI_ANTHROPIC_BASE_URL',
+    mistral: 'AI_MISTRAL_BASE_URL',
+    groq: 'AI_GROQ_BASE_URL',
+    openrouter: 'AI_OPENROUTER_BASE_URL',
+    ollama: 'AI_OLLAMA_BASE_URL',
+    antigravity_cli: '',
   }[provider];
+  if (!envName) return undefined;
   const value = process.env[envName]?.trim();
   if (!value) return undefined;
   if (!/^https?:\/\//i.test(value)) {

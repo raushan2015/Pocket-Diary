@@ -61,7 +61,10 @@ function buildRequestBody(req: AdapterChatRequest): string {
         functionDeclarations: req.tools.map((tool) => ({
           name: tool.name,
           description: tool.description,
-          parameters: tool.parameters,
+          // v1beta `parameters` rejects standard JSON Schema keywords like
+          // `additionalProperties`, `default`, `minimum`, `maxItems`, and
+          // empty `properties: {}`; `parametersJsonSchema` accepts them.
+          parametersJsonSchema: tool.parameters,
         })),
       },
     ];
@@ -200,8 +203,11 @@ async function testConnection(config: { modelId: string; apiKey: string }): Prom
 
 export const geminiAdapter: ProviderAdapter = {
   id: 'gemini',
+  label: 'Google Gemini',
+  supportsStreaming: true,
+  supportsTools: true,
+  supportsModelListing: true,
   chat,
   listModels,
   testConnection,
-  supportsModelListing: true,
 };

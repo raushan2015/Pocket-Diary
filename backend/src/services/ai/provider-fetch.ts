@@ -99,21 +99,38 @@ export async function providerFetchStream(options: ProviderFetchOptions): Promis
   if (!res.ok) {
     clearTimeout(timeoutId);
     options.signal?.removeEventListener('abort', onExternalAbort);
-    // Drain a small part of the body for classification only — never returned raw.
+    // Drain a small part of the body for classification/diagnostics only — never returned raw.
     let firstBytes = '';
     try {
       const reader = res.body?.getReader();
       if (reader) {
         const { value } = await reader.read();
-        if (value) firstBytes = Buffer.from(value).toString('utf8').slice(0, 200);
+        if (value) firstBytes = Buffer.from(value).toString('utf8').slice(0, 600);
         reader.cancel().catch(() => {});
       }
     } catch { /* classification only */ }
-    void firstBytes;
+    let safeDetail = '';
+    if (firstBytes) {
+      try {
+        const parsed = JSON.parse(firstBytes) as { error?: { message?: string }; message?: string };
+        const rawMsg = parsed?.error?.message || parsed?.message || '';
+        if (typeof rawMsg === 'string' && rawMsg.trim()) {
+          safeDetail = scrubKeyMaterial(rawMsg.trim(), options.secretsToScrub);
+        }
+      } catch {
+        // Non-JSON upstream error body — avoid surfacing raw HTML/dumps.
+      }
+    }
     const { classifyHttpFailure } = await import('./provider-types.js');
     const code = classifyHttpFailure(res.status, url.host);
-    // The status code itself is safe and actionable; response bodies never are.
-    throw new ProviderRequestError(code, providerFailureMessage(res.status));
+    if (safeDetail) {
+      console.error(`[ai] upstream HTTP ${res.status} (${url.host}): ${safeDetail}`);
+    }
+    const baseMsg = providerFailureMessage(res.status);
+    const fullMsg = (res.status === 400 || res.status === 404) && safeDetail
+      ? `${baseMsg} (${safeDetail})`
+      : baseMsg;
+    throw new ProviderRequestError(code, fullMsg);
   }
 
   if (!res.body) {

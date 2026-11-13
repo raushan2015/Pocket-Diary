@@ -192,8 +192,11 @@ async function testConnection(config: { modelId: string; apiKey: string }): Prom
 
 export const deepseekAdapter: ProviderAdapter = {
   id: 'deepseek',
+  label: 'DeepSeek',
+  supportsStreaming: true,
+  supportsTools: true,
+  supportsModelListing: true,
   chat,
   listModels,
   testConnection,
-  supportsModelListing: true,
 };

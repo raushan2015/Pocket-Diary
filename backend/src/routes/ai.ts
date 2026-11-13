@@ -40,6 +40,14 @@ import {
   vaultStatus,
 } from '../services/ai/provider-config.service.js';
 import { getAdapter } from '../services/ai/registry.js';
+import { PROVIDER_IDS } from '../services/ai/provider-types.js';
+import {
+  AntigravityCliError,
+  getAntigravityStatus,
+  startAntigravityLogin,
+  submitAntigravityLogin,
+  logoutAntigravity,
+} from '../services/ai/antigravity-cli.service.js';
 import { scrubKeyMaterial } from '../services/ai/provider-fetch.js';
 import {
   isAiAccessState,
@@ -178,6 +186,16 @@ function mapServiceError(err: unknown): { statusCode: number; body: { error: str
   if (err instanceof AiConfigError) {
     return { statusCode: err.statusCode, body: { error: 'Bad Request', message: err.message, code: err.code } };
   }
+  if (err instanceof AntigravityCliError) {
+    return {
+      statusCode: err.statusCode,
+      body: {
+        error: err.statusCode === 401 ? 'Unauthorized' : err.statusCode === 503 ? 'Service Unavailable' : 'Bad Request',
+        message: scrubKeyMaterial(err.message),
+        code: err.code,
+      },
+    };
+  }
   if (err instanceof ProposalError) {
     return {
       statusCode: err.statusCode,
@@ -237,12 +255,12 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
     schema: {
       body: {
         type: 'object',
-        required: ['provider', 'modelId', 'apiKey'],
+        required: ['provider', 'modelId'],
         properties: {
-          provider: { type: 'string', enum: ['openai', 'gemini', 'deepseek', 'nvidia_nim'] },
+          provider: { type: 'string', enum: [...PROVIDER_IDS] },
           label: { type: 'string', maxLength: 80 },
           modelId: { type: 'string', minLength: 1, maxLength: 160 },
-          apiKey: { type: 'string', minLength: 8, maxLength: 4096 },
+          apiKey: { type: 'string', minLength: 0, maxLength: 4096 },
           isDefault: { type: 'boolean' },
         },
         additionalProperties: false,
@@ -334,7 +352,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
       const adapter = getAdapter(row.provider);
       if (!adapter) throw new AiConfigError('invalid_provider', 'Unknown provider');
       const apiKey = decryptConfigKey(fastify.dbCtx, row, request.user!.id);
-      const result = await adapter.testConnection({ modelId: row.model_id, apiKey });
+      const result = await adapter.testConnection({ modelId: row.model_id, apiKey, userId: request.user!.id });
       // Never echo the key or raw headers; messages are scrubbed server-side.
       return { ok: result.ok, message: scrubKeyMaterial(result.message), latencyMs: result.latencyMs };
     } catch (err) {
@@ -363,7 +381,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
         return { models: [], manualEntryOnly: true };
       }
       const apiKey = decryptConfigKey(fastify.dbCtx, row, request.user!.id);
-      const models = await adapter.listModels({ modelId: row.model_id, apiKey });
+      const models = await adapter.listModels({ modelId: row.model_id, apiKey, userId: request.user!.id });
       return { models, manualEntryOnly: false };
     } catch (err) {
       const mapped = mapServiceError(err);
@@ -387,7 +405,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
         type: 'object',
         required: ['provider'],
         properties: {
-          provider: { type: 'string', enum: ['openai', 'gemini', 'deepseek', 'nvidia_nim'] },
+          provider: { type: 'string', enum: [...PROVIDER_IDS] },
           apiKey: { type: 'string', minLength: 0, maxLength: 4096 },
         },
         additionalProperties: false,
@@ -405,7 +423,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
       if (!adapter || !adapter.supportsModelListing) {
         return { models: [], manualEntryOnly: true };
       }
-      const models = await adapter.listModels({ modelId: '', apiKey: apiKey ?? '' });
+      const models = await adapter.listModels({ modelId: '', apiKey: apiKey ?? '', userId: request.user!.id });
       return { models, manualEntryOnly: false };
     } catch (err) {
       const mapped = mapServiceError(err);
@@ -564,6 +582,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
           searchGrantIds: { type: 'array', maxItems: 10, items: { type: 'string', maxLength: 64 } },
           providerConfigId: { type: ['string', 'null'], maxLength: 64 },
           thinking: { type: 'string', enum: ['auto', 'low', 'medium', 'high'] },
+          fullControl: { type: 'boolean' },
         },
         additionalProperties: false,
       },
@@ -588,6 +607,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
         searchGrantIds?: string[];
         providerConfigId?: string | null;
         thinking?: 'auto' | 'low' | 'medium' | 'high';
+        fullControl?: boolean;
       };
       if (body.mode !== undefined && !CHAT_MODES.includes(body.mode)) {
         return reply.status(400).send({ error: 'Bad Request', message: 'Invalid mode' });
@@ -602,6 +622,7 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
         searchGrantIds: body.searchGrantIds ?? [],
         providerConfigId: body.providerConfigId ?? null,
         thinking: body.thinking ?? 'auto',
+        fullControl: body.fullControl === true,
       });
       return reply.status(202).send(result);
     } catch (err) {
@@ -1194,6 +1215,158 @@ export const aiRoutes: FastifyPluginAsync = async (fastify) => {
       const { id } = request.params as { id: string };
       const proposal = rejectProposal(fastify.dbCtx, id, request.user!.id);
       return { proposal: { id: proposal.id, status: proposal.status } };
+    } catch (err) {
+      const mapped = mapServiceError(err);
+      return reply.status(mapped.statusCode).send(mapped.body);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Antigravity CLI (`agy`) Google Subscription OAuth management
+  // -------------------------------------------------------------------------
+
+  fastify.get('/antigravity/status', {
+    ...authenticated,
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    schema: {
+      ...aiMeta(
+        'Get Antigravity CLI authentication status',
+        'Reports whether Antigravity CLI is installed, whether this user has an active Google Subscription OAuth token, and any active pending login challenge.',
+        {
+          code: 200,
+          schema: {
+            type: 'object',
+            required: ['installed', 'version', 'authenticated', 'email', 'authMethod', 'activeSession'],
+            properties: {
+              installed: { type: 'boolean' },
+              version: { type: ['string', 'null'] },
+              authenticated: { type: 'boolean' },
+              email: { type: ['string', 'null'] },
+              authMethod: { type: ['string', 'null'] },
+              activeSession: {
+                type: ['object', 'null'],
+                properties: {
+                  sessionId: { type: 'string' },
+                  authUrl: { type: 'string' },
+                  loginCode: { type: 'string' },
+                  expiresAt: { type: 'integer' },
+                  status: { type: 'string', enum: ['waiting', 'exchanging', 'failed', 'expired'] },
+                  error: { type: 'string' },
+                },
+              },
+            },
+          },
+          description: 'Antigravity CLI OAuth status for the current user.',
+        }
+      ),
+    },
+  }, async (request, reply) => {
+    try {
+      return await getAntigravityStatus(request.user!.id);
+    } catch (err) {
+      const mapped = mapServiceError(err);
+      return reply.status(mapped.statusCode).send(mapped.body);
+    }
+  });
+
+  fastify.post('/antigravity/login/start', {
+    ...authenticated,
+    config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+    schema: {
+      ...aiMeta(
+        'Start Antigravity CLI Google Subscription OAuth login',
+        'Spawns an isolated interactive Antigravity CLI login challenge and returns the Google authorization URL plus a displayable verification login code.',
+        {
+          code: 200,
+          schema: {
+            type: 'object',
+            required: ['sessionId', 'authUrl', 'loginCode', 'expiresAt'],
+            properties: {
+              sessionId: { type: 'string' },
+              authUrl: { type: 'string' },
+              loginCode: { type: 'string' },
+              expiresAt: { type: 'integer' },
+            },
+          },
+          description: 'Active Google OAuth login challenge.',
+        }
+      ),
+    },
+  }, async (request, reply) => {
+    try {
+      return await startAntigravityLogin(request.user!.id);
+    } catch (err) {
+      const mapped = mapServiceError(err);
+      return reply.status(mapped.statusCode).send(mapped.body);
+    }
+  });
+
+  fastify.post('/antigravity/login/submit', {
+    ...authenticated,
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['sessionId', 'token'],
+        properties: {
+          sessionId: { type: 'string', minLength: 1, maxLength: 128 },
+          token: { type: 'string', minLength: 4, maxLength: 4096 },
+        },
+        additionalProperties: false,
+      },
+      ...aiMeta(
+        'Submit pasted Google authorization code or callback URL to Antigravity CLI',
+        'Forwards the authorization code or redirected callback URL into the active Antigravity CLI PTY session to complete PKCE login for the current user.',
+        {
+          code: 200,
+          schema: {
+            type: 'object',
+            required: ['ok', 'authenticated', 'email', 'authMethod'],
+            properties: {
+              ok: { type: 'boolean' },
+              authenticated: { type: 'boolean' },
+              email: { type: ['string', 'null'] },
+              authMethod: { type: ['string', 'null'] },
+            },
+          },
+          description: 'Google Subscription OAuth completion result.',
+        }
+      ),
+    },
+  }, async (request, reply) => {
+    try {
+      const { sessionId, token } = request.body as { sessionId: string; token: string };
+      return await submitAntigravityLogin(request.user!.id, sessionId, token);
+    } catch (err) {
+      const mapped = mapServiceError(err);
+      return reply.status(mapped.statusCode).send(mapped.body);
+    }
+  });
+
+  fastify.post('/antigravity/logout', {
+    ...authenticated,
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    schema: {
+      ...aiMeta(
+        'Disconnect Antigravity CLI Google Subscription OAuth',
+        'Deletes the current user’s stored Antigravity OAuth token file from their isolated CLI home.',
+        {
+          code: 200,
+          schema: {
+            type: 'object',
+            required: ['ok'],
+            properties: {
+              ok: { type: 'boolean' },
+            },
+          },
+          description: 'Logout confirmation.',
+        }
+      ),
+    },
+  }, async (request, reply) => {
+    try {
+      logoutAntigravity(request.user!.id);
+      return { ok: true };
     } catch (err) {
       const mapped = mapServiceError(err);
       return reply.status(mapped.statusCode).send(mapped.body);

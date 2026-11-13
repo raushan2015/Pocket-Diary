@@ -7,7 +7,7 @@
  * outlive the assets it references.
  */
 
-const CACHE_NAME = 'notes-v12-glm-thinking';
+const CACHE_NAME = 'notes-v15-full-control';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',

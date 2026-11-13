@@ -5,6 +5,12 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tokens": "node scripts/generate-tokens.js"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
   }
 }

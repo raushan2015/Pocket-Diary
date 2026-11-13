@@ -57,6 +57,39 @@ describe('AI thinking effort is forwarded to the actual provider', () => {
     });
   }
 
+  it('sends Gemini tool declarations using parametersJsonSchema for JSON Schema compatibility', async () => {
+    server.clearRecorded();
+    const adapter = getAdapter('gemini');
+    expect(adapter).toBeTruthy();
+    for await (const _event of adapter!.chat({
+      config: { modelId: 'gemini-3.8-flash', apiKey: 'AIza-test-only-never-log' },
+      systemPrompt: 'Helpful assistant',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [
+        {
+          name: 'list_workspaces',
+          description: 'List workspaces',
+          parameters: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        {
+          name: 'search_notes',
+          description: 'Search notes',
+          parameters: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, default: 25 } }, required: ['limit'], additionalProperties: false },
+        },
+      ],
+    })) { /* consume mock streamed response */ }
+    const recorded = await server.getRecorded();
+    expect(recorded.length).toBeGreaterThan(0);
+    const body = JSON.parse(recorded[0].body);
+    expect(body.tools[0].functionDeclarations[0].parameters).toBeUndefined();
+    expect(body.tools[0].functionDeclarations[0].parametersJsonSchema).toEqual({
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    });
+    expect(body.tools[0].functionDeclarations[1].parametersJsonSchema).toBeDefined();
+  });
+
   it('does not send a fake reasoning control to non-reasoning models', () => {
     expect(resolveThinkingEffort('nvidia_nim', 'meta/llama-3.3-70b-instruct', 'auto')).toBeNull();
     expect(() => resolveThinkingEffort('nvidia_nim', 'meta/llama-3.3-70b-instruct', 'high')).toThrow(ThinkingUnavailableError);

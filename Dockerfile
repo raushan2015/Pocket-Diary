@@ -23,6 +23,31 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ----------------------------------------------------
+# Stage 1b: Build frontend with Vite
+# ----------------------------------------------------
+FROM node:24.22.1-bookworm-slim AS frontend-builder
+WORKDIR /build/frontend
+
+COPY frontend/package*.json ./
+RUN npm ci
+
+COPY frontend/vite.config.ts ./
+COPY frontend/index.html ./
+COPY frontend/design-tokens.json ./
+COPY frontend/scripts ./scripts
+COPY frontend/css ./css
+COPY frontend/js ./js
+COPY frontend/assets ./assets
+COPY frontend/icons ./icons
+COPY frontend/manifest.json ./
+COPY frontend/server.js ./
+
+RUN npm run build
+
+# Copy server.js to the dist folder for production
+RUN cp server.js dist/
+
+# ----------------------------------------------------
 # Stage 2: Final runtime container
 # ----------------------------------------------------
 FROM node:24.22.1-bookworm-slim AS runner
@@ -33,11 +58,17 @@ LABEL version="1.0.0"
 
 WORKDIR /app
 
-# Install runtime utilities (curl for container health checks)
+# Install runtime utilities (curl for health checks, python3 for PTY OAuth bridge)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Antigravity CLI (`agy`) system-wide for Google Subscription AI chat
+RUN HOME=/tmp/agy-install-home bash -c 'curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin' \
+    && rm -rf /tmp/agy-install-home \
+    && chmod 755 /usr/local/bin/agy
 
 ENV NODE_ENV=production \
     PORT=8080 \
@@ -49,15 +80,16 @@ ENV NODE_ENV=production \
 # point INSIDE the /app/data volume — the default relative path previously
 # resolved to /data/attachments outside it, silently losing uploads when
 # the container was recreated)
-RUN mkdir -p /app/data /app/data/attachments && chmod 755 /app/data /app/data/attachments
+RUN mkdir -p /app/data /app/data/attachments /app/data/agy-homes /app/data/agy-sandbox \
+    && chmod 755 /app/data /app/data/attachments /app/data/agy-homes /app/data/agy-sandbox
 
 # Copy backend distribution and production node_modules
 COPY --from=backend-builder /build/backend/dist /app/backend/dist
 COPY --from=backend-builder /build/backend/node_modules /app/backend/node_modules
 COPY backend/package.json /app/backend/package.json
 
-# Copy frontend assets and proxy server
-COPY frontend /app/frontend
+# Copy built frontend from frontend-builder
+COPY --from=frontend-builder /build/frontend/dist /app/frontend
 
 # Copy entrypoint orchestration script
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh

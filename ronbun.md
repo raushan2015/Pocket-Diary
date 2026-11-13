@@ -2,16 +2,17 @@
 ## ― SQLite とマルチテナントアクセス制御に基づく軽量ノートアプリケーションの事例研究 ―
 
 **著者:** TECHSHAN AI Office
-**バージョン:** 1.0
-**日付:** 2025年
+**バージョン:** 2.0
+**日付:** 2026年
+**リポジトリ:** [https://github.com/raushan2015/Pocket-Diary](https://github.com/raushan2015/Pocket-Diary)
 
 ---
 
 ## 要旨
 
-本論文では、個人および小規模チーム向けに開発されたセルフホスト型ノート管理システム「Pocket Diary」のアーキテクチャ設計、実装、およびセキュリティ対策について述べる。本システムは、Node.js 上の Fastify フレームワークと SQLite データベースを中核とし、フロントエンドにはフレームワークを用いない軽量な JavaScript・HTML・CSS を採用している。本論文では、(1) ワークスペース単位のマルチテナントデータアクセス制御、(2) Argon2 によるパスワードハッシュ化と SHA-256 ハッシュ保存型セッション Cookie を用いた認証基盤、(3) WAL モードの SQLite における一貫性保証を伴うオンラインバックアップ機構、(4) OpenAPI 仕様と実装の同期を検証で保証するドキュメント自動生成、(5) Playwright によるエンドツーエンド回帰試験、の 5 点を主要な設計決定として取り上げ、その妥当性と限界を考察する。本システムは、単一インスタンスでの垂直スケーリングを前提とすることで、運用コストを低減しつつ、数千件規模のノートデータに対する十分な応答性能を達成した。
+本論文では、個人および小規模チーム向けに開発されたセルフホスト型ノート管理システム「Pocket Diary」のアーキテクチャ設計、実装、およびセキュリティ対策について述べる。本システムは、Node.js 上の Fastify フレームワークと SQLite データベースを中核とし、フロントエンドには Vite でバンドルされた軽量な JavaScript・HTML・CSS を採用している。本論文では、(1) ワークスペース単位のマルチテナントデータアクセス制御、(2) Argon2id によるパスワードハッシュ化と SHA-256 ハッシュ保存型セッション Cookie を用いた認証基盤、(3) WAL モードの SQLite における一貫性保証を伴うオンラインバックアップ機構、(4) OpenAPI 仕様と実装の同期を検証で保証するドキュメント自動生成、(5) Playwright によるエンドツーエンド回帰試験、および (6) サーバ側認可・AES-256-GCM 鍵保護・2段階ローカル検索・RBAC 強制型ツール実行を備えたプライバシー優先型 AI アシスタント基盤（BYOK 8 種＋ローカル Ollama＋コンテナ内蔵 Antigravity CLI `agy` 対応）、の 6 点を主要な設計決定として取り上げ、その妥当性と限界を考察する。本システムは、単一インスタンスでの垂直スケーリングを前提とすることで、運用コストを低減しつつ、数千件規模のノートデータおよび安全な AI ワークスペース運用に対する十分な応答性能と制御性を達成した。
 
-**キーワード:** セルフホスティング、マルチテナント、SQLite、Fastify、アクセス制御、セッション管理、Playwright、E2E テスト、WAL モード、データバックアップ
+**キーワード:** セルフホスティング、マルチテナント、SQLite、Fastify、アクセス制御、セッション管理、AI アシスタント、プライバシー保護、RBAC ツール実行、AES-256-GCM、Antigravity CLI、Playwright、E2E テスト、WAL モード、データバックアップ
 
 ---
 
@@ -39,6 +40,7 @@
 - **G2: マルチテナント安全性** ― ワークスペース単位でデータを分離し、ロールベースアクセス制御(RBAC)を提供する。
 - **G3: 堅牢な認証** ― 業界標準のパスワードハッシュとサーバ側ハッシュ保存型セッションを実装する。
 - **G4: 検証可能な品質** ― ユニットテスト、統合テスト、E2E テストの 3 層で動作を保証する。
+- **G5: プライバシー優先の AI 統合** ― モデル出力やブラウザ入力を信用せず、サーバ強制型のノート閲覧ポリシー(`blocked` / `current_only` / `search_allowed`)、鍵暗号化、および RBAC 保護下の Full Control ツール実行を提供する。
 
 本論文の貢献は以下の通りである。
 
@@ -46,10 +48,11 @@
 2. テナント境界違反を防ぐ**アクセス制御ミドルウェア**の実装方式(セクション 4.2)
 3. 実 API レスポンスを OpenAPI スキーマと突き合わせる**ドキュメント回帰テスト**の手法(セクション 5.4)
 4. SQLite の運用限界を認めた上での**バックアップおよびレプリケーション戦略**(セクション 6)
+5. プロンプトインジェクションと秘密情報漏洩を構造的に抑止する**プライバシー優先型 AI アシスタントおよび Full Control ツール基盤**の実装方式(セクション 3.8, 4.7)
 
 ### 1.3 本論文の構成
 
-セクション 2 では関連技術と関連研究を概観する。セクション 3 でシステム全体アーキテクチャと主要フローを、セクション 4 で実装の詳細を述べる。セクション 5 はテスト戦略、セクション 6 は運用とバックアップ、セクション 7 で脅威分析・パフォーマンス特性を含む評価と考察を行い、セクション 8 で結論を述べる。
+セクション 2 では関連技術と関連研究を概観する。セクション 3 でシステム全体アーキテクチャと AI 統合を含む主要フローを、セクション 4 で認証・ノート・リマインダ・AI アシスタントの実装詳細を述べる。セクション 5 はテスト戦略、セクション 6 は運用とバックアップ、セクション 7 で脅威分析(STRIDE)・パフォーマンス特性を含む評価と考察を行い、セクション 8 で結論を述べる。
 
 ---
 
@@ -59,12 +62,14 @@
 
 | レイヤ | 技術 | 選定理由 |
 | --- | --- | --- |
-| 実行環境 | Node.js 22 | LTS、ネイティブアドオン(better-sqlite3)のビルドチェーンが整備 |
+| 実行環境 | Node.js 22 / 24 | ネイティブアドオン(`better-sqlite3`)の安定動作、Web 標準 API 互換 |
 | Web フレームワーク | Fastify 5 | JSON スキーマベースの検証・シリアライズによる高速化、Swagger 統合 |
-| データベース | SQLite (better-sqlite3) | サーバレス RDBMS、WAL モードで並列読み取り可能、単一ファイル |
+| フロントエンド構築 | Vite + バニラ JS/HTML/CSS | フレームワーク非依存の軽量 SPA 構成とプロダクションアセット最適化 |
+| データベース | SQLite (`better-sqlite3`) | サーバレス RDBMS、WAL モードで並列読み取り可能、単一ファイル + FTS5 全文検索 |
 | ORM | Drizzle ORM | 型安全なクエリビルド、SQLite スキーマからの型生成 |
-| パスワードハッシュ | Argon2id | OWASP 推奨のメモリハード関数 |
-| E2E テスト | Playwright | モダンブラウザ自動化、複数タブ・ネットワークモック対応 |
+| パスワードハッシュ・鍵暗号化 | Argon2id / AES-256-GCM | OWASP 推奨パスワードハッシュと AI API 鍵の認証付き暗号化(Vault) |
+| AI ランタイム統合 | 10 プロバイダアダプタ + `agy` CLI | BYOK REST API(8種)、ローカル Ollama、Google Subscription CLI(`antigravity_cli`) |
+| E2E / 単体テスト | Vitest + Playwright | 29 スイートのバックエンド検証および複数タブ・SSE を含むブラウザ自動化 |
 
 ### 2.2 セルフホスト型ノートアプリとの比較
 
@@ -109,20 +114,21 @@ HTTP Cookie を用いたサーバ側セッション管理は、JWT を用いた�
 │  │  アプリコンテナ │      │  データボリューム │  │
 │  │ ┌───────────┐ │      │  /app/data     │  │
 │  │ │ Frontend  │ │      │  ├ memo_manager │  │
-│  │ │ (SPA/静的) │ │      │  │  .db (SQLite)│  │
+│  │ │ (Vite/PWA)│ │      │  │  .db (SQLite)│  │
 │  │ ├───────────┤ │      │  ├ attachments/ │  │
-│  │ │  Reverse  │ │ ──▶  │  └ backups/     │  │
-│  │ │  Proxy    │ │      │                │  │
-│  │ ├───────────┤ │      └────────────────┘  │
-│  │ │ Backend   │ │                          │
-│  │ │ (Fastify) │ │   外部: SMTP / Web Push   │
-│  │ └───────────┘ │      (オプション)          │
+│  │ │  Reverse  │ │ ──▶  │  ├ backups/     │  │
+│  │ │  Proxy    │ │      │  ├ agy-homes/   │  │
+│  │ ├───────────┤ │      │  └ agy-sandbox/ │  │
+│  │ │ Backend   │ │      └────────────────┘  │
+│  │ │ (Fastify) │ │                          │
+│  │ │  + agy CLI│ │   外部: SMTP / Web Push   │
+│  │ └───────────┘ │      AI プロバイダ (任意)  │
 │  └───────────────┘                          │
 └─────────────────────────────────────────────┘
 ```
 
-- **frontend/** ― SPA(単一ページアプリケーション)。静的 HTML・CSS・JavaScript で構成され、ビルドステップを持たない。PWA としてマニフェスト(`manifest.json`)とサービスワーカー(`sw.js`)を備える。
-- **backend/** ― Fastify サーバ。REST API を提供し、`/docs` で OpenAPI 仕様を公開する。
+- **frontend/** ― Vite ビルドを用いた SPA(単一ページアプリケーション)。PWA としてマニフェスト(`manifest.json`)とサービスワーカー(`sw.js`)に加え、AI チャット・設定・プライバシー制御モジュール(`ai-chat.js`, `ai-settings.js`, `ai-privacy.js`)を備える。
+- **backend/** ― Fastify サーバ。REST API と `/api/v1/ai` AI サブシステム(SSE ストリーミング、ジョブ復旧、ツール実行エンジン)を提供し、`/docs` で OpenAPI 仕様を公開する。コンテナ内にはビルド時に `/usr/local/bin/agy` (Antigravity CLI) を同梱する。
 - **tests/** ― Playwright E2E 回帰スイート。
 
 ### 3.2 データモデル
@@ -133,8 +139,9 @@ HTTP Cookie を用いたサーバ側セッション管理は、JWT を用いた�
 - **Workspace** ― テナントの単位。メンバーシップ(User と N:N)とロール(owner / admin / editor / viewer)を持つ。
 - **Note** ― ワークスペース配下のノート。タイトル、本文(Markdown)、ステータス、優先度、期限、チェックリスト、ピン留め、配色を属性に持つ。
 - **Folder / Category / Label** ― 階層的・横断的な整理手段。
-- **Attachment** ― 画像添付ファイル。ファイルシステム上の `/app/data/attachments` に実体を置く。
+- **Attachment** ― 添付ファイル。ファイルシステム上の `/app/data/attachments` に実体を置く。
 - **Invitation** ― メールアドレスによる招待。共有リンクとしての払い出し・失効が可能。
+- **AI Subsystem Entities (Migration v5 / `PRAGMA user_version = 5`)** ― `memos.ai_access` ポリシー列に加え、`ai_provider_configs`(AES-256-GCM 暗号化済み鍵)、`ai_conversations` / `ai_messages` / `ai_requests`(永続会話と SSE ジョブ管理)、`ai_action_proposals`、`ai_note_grants`(短命・版数束縛型グラント)、`ai_note_protected_sections`(ソルト付きハッシュ)、および `ai_access_audit`(監査ログ) を保持する。
 
 ### 3.3 テナント分離の原則
 
@@ -186,6 +193,15 @@ HTTP Cookie を用いたサーバ側セッション管理は、JWT を用いた�
 ### 3.7 リバースプロキシとデプロイ構成
 
 推奨構成では、単一コンテナがフロントエンドの静的資産を配信するとともに、アプリケーション API リクエストを同一コンテナ内のバックエンドへリバースプロキシする。これにより、ブラウザから見えるオリジンは常に 1 つであり、CORS や Cookie の属性の扱いが単純化される。OpenAPI ドキュメントも `/docs` として同一オリジンで提供され、開発環境と本番環境で同じ URL となる。
+
+### 3.8 プライバシー優先型 AI アーキテクチャ
+
+AI サブシステムは「**モデル出力もブラウザ送信値も認可境界としない**」というゼロトラスト原則に基づき、以下の 4 層をサーバ側で分離して構成する。
+
+1. **暗号化 Vault と固定エンドポイント分離** ― ユーザが登録する外部 API キーは `AI_CREDENTIAL_ENCRYPTION_KEY` をマスター鍵として AES-256-GCM で暗号化し、関連データ(AAD)にユーザ ID・設定 ID・プロバイダ種別を束縛する。本番環境ではプロバイダの接続先 URL をコンパイル時定数へ固定し、モデルや入力による SSRF を防ぐ。
+2. **ノート単位の 3 段階プライバシーと来歴検証** ― 各ノートは `blocked`(外部 AI とツール閲覧の双方から完全遮断)・`current_only`(既定: 明示的な現在ノート操作時のみ 15 分 TTL の版数束縛グラントで許可)・`search_allowed`(2 段階検索の Stage B 承認後に許可) を持つ。会話履歴の再送信時には寄与グラントの生存性を再検証し(`isMessageContextStillValid`)、失効・`blocked` 化・ノート改訂後は自動的に新規モデル文脈から除外する。
+3. **非信頼データ扱いと 2 段階ローカル検索** ― Stage A では FTS5 全文検索をローカル実行してブラウザにのみ結果を返し、LLM へ件数・タイトル・本文を渡さない。送信時は常に DB 再読込 → ポリシー判定 → `[REDACTED]` 置換（検出不能時は fail-closed で全文送信中止）→ 秘密情報スキャンのパイプラインを通過する。
+4. **Full Control ツール実行ゲート** ― ワークスペース変更や削除等の破壊的操作は `isWriteToolInvocation` と `verifyWorkspaceMembership` の二重ゲートを通り、`viewer` ロールは常に読み取り専用に制限される。
 
 ---
 
@@ -249,6 +265,23 @@ API 仕様は Fastify のルートスキーマから自動生成され、Swagger
 - 生仕様は `/docs/json`、`/docs/yaml` から取得でき、クライアントコード生成に利用できる。
 - `DOCS_ENABLED=false` でインスタンス単位の無効化が可能(API 自体は継続動作)。
 
+### 4.7 AI アシスタント・プロバイダ統合および Full Control ツール群
+
+AI サブシステム(`backend/src/services/ai/`)は、ノート管理機能から疎結合されたアダプタ層とツール実行エンジンで構成される。
+
+1. **マルチプロバイダ統合 (`registry.ts`, 10 種類)** ― BYOK API プロバイダ 8 種(**OpenAI**, **Google Gemini**, **DeepSeek**, **NVIDIA NIM**, **Anthropic (Claude)**, **Mistral AI**, **Groq**, **OpenRouter**)に加え、API キー不要の **Ollama (Local)** および **Google Subscription (`antigravity_cli`)** を統一インタフェースで扱う。`AI_CREDENTIAL_ENCRYPTION_KEY` 未設定時は資格情報エンドポイントが HTTP 503 を返し、ノート機能自体は一切影響を受けない。
+2. **コンテナ内蔵 Antigravity CLI とヘッドレス OAuth (`antigravity-cli.service.ts`)** ― `Dockerfile` ビルド時に `/usr/local/bin/agy` をシステムワイドへ導入し、実行時は Python PTY ブリッジ経由で `agy` の対話型 Google OAuth URL / 確認コードを抽出して UI 上に提示し、ユーザが貼り付けた認可コードまたはコールバック URL を PTY へ書き戻してトークン交換を完了する。資格情報はユーザ ID ごとの隔離ホーム(`/app/data/agy-homes/<userId>`)に保存され、別アカウント間の資格情報混在を防止する。さらに、ストリームチャンク分割に耐える `ToolStreamSplitter` により、CLI の標準出力から `<<<PD_TOOL>>>` ブロックを抽出してネイティブ API と同様のマルチラウンド関数呼び出しを実行する。
+3. **Thinking Effort 制御とトークン使用量可視化 (`thinking.service.ts`, `chat.service.ts`)** ― OpenAI (`gpt-5*`/`o*`)、Gemini (`2.5`/`3+`)、DeepSeek、NVIDIA NIM (GLM-5.3 等)、および `antigravity_cli` に対し、`Auto` / `Low` / `Medium` / `High` の推論強度選択を検証・適用する(非対応モデルでは送信前に HTTP 400 で拒否し、無言の無視を防ぐ)。SSE ストリーム終了後、全ツールラウンドを合算した累積トークン消費量(`inputTokens`, `outputTokens`, `cacheReadTokens`, `rounds`)を `ai_messages.meta` に永続化し、チャット UI バッジとして表示する。
+4. **人間承認型ドラフトと Full Control ツール実行エンジン (`tools.service.ts`)** ― 既定では `draft_new_note` / `draft_note_update` によるレビュー・承認型ドラフトを提供する一方、UI の **Full Control** トグルまたは明示的な操作指示時には `BUILTIN_TOOLS` を通じてワークスペース全般を直接操作できる。
+
+| カテゴリ | 提供ツール名 | 主な機能と RBAC・プライバシー境界 |
+| --- | --- | --- |
+| ノート・ゴミ箱 | `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note`, `delete_note`, `restore_note`, `empty_trash` | 一覧・検索・読取・作成・更新・ゴミ箱移動/完全削除・復元。`blocked` ノートの本文・検索スニペット・メタ情報は厳格に秘匿 |
+| カレンダ・通知 | `set_reminder`, `get_calendar_schedule`, `list_notifications`, `mark_notifications_read` | `dueDate` / `reminderTime` / `reminderLocation` の設定・解除、スケジュール照会、通知既読化 |
+| 分類・整理 | `manage_folders`, `manage_categories`, `manage_tags` | 作成・一覧・更新/改名・削除(書き込み系アクションは `isWriteToolInvocation` で保護) |
+| ワークスペース・招待 | `manage_workspaces`, `manage_invites` | 一覧・作成・改名・バイト単位ストレージ計測・メンバー/活動履歴(`blocked` タイトル伏せ字)・脱退・権限変更・所有権譲渡・招待作成/失効(`owner`/`admin` 専用)。任意の所属 `workspaceId` 指定に対応 |
+| 履歴・添付・出力 | `manage_note_extras`, `manage_attachments`, `export_data` | 版履歴(`versions`, `blocked` は拒否)、並び替え(`reorder`)、SSRF 防御済み `link_preview`、`storage_path` 非開示の添付管理、`workspace_json` および RFC-5545 `calendar_ics` 出力 |
+
 ---
 
 ## 5. テスト戦略と品質保証
@@ -257,13 +290,13 @@ API 仕様は Fastify のルートスキーマから自動生成され、Swagger
 
 | 層 | 対象 | 実行方法 |
 | --- | --- | --- |
-| ユニット/統合テスト | サービス層、スキーマ、バックアップ、認証 | Vitest(`backend/test/`) |
+| ユニット/統合テスト | サービス層、スキーマ、バックアップ、認証、AI プライバシー/ツール実行 | Vitest(`backend/test/`、全 29 ファイル・233 テスト) |
 | ドキュメント回帰テスト | OpenAPI 仕様と実レスポンスの整合 | `backend/test/docs.test.ts` |
-| E2E テスト | UI を含む利用者行程全体 | Playwright(`tests/e2e/`) |
+| E2E テスト | UI を含む利用者行程全体(AI アシスタント行程含む) | Playwright(`tests/e2e/`) |
 
 ### 5.2 E2E スイートの構成
 
-E2E スイートは独立した行程(journey)ファイル群に分割されている。各ファイルは隔離された Chromium インスタンスを起動し、タイムスタンプ付きのテストアカウントを自律登録する。最大 4 ファイルが並列実行される。特に `01-alice-core-journey.test.js` は 9 行程を単一ブラウザ内の連続した物語として実行し、登録からノート作成、共有、リマインダ、設定までの包括的な流れを検証する。共有ヘルパ(ブラウザ起動、スクリーンショット管理、インメモリ ZIP ビルダ)は `tests/e2e/_helpers.js` に集約される。
+E2E スイートは独立した行程(journey)ファイル群に分割されている。各ファイルは隔離された Chromium インスタンスを起動し、タイムスタンプ付きのテストアカウントを自律登録する。最大 4 ファイルが並列実行される。特に `01-alice-core-journey.test.js` は 9 行程を単一ブラウザ内の連続した物語として実行し、登録からノート作成、共有、リマインダ、設定までの包括的な流れを検証する。AI 機能については、バックエンド側の 9 つの専門テストスイート(`ai-chat.test.ts`, `ai-full-control.test.ts`, `ai-migration.test.ts`, `ai-privacy-regressions.test.ts`, `ai-privacy-security.test.ts`, `ai-proposals.test.ts`, `ai-providers.test.ts`, `ai-search.test.ts`, `ai-thinking.test.ts`)に加え、`22-ai-assistant.test.js` でフロントエンド統合動作を検証する。共有ヘルパ(ブラウザ起動、スクリーンショット管理、インメモリ ZIP ビルダ)は `tests/e2e/_helpers.js` に集約される。
 
 さらに `21-openapi-docs.test.js` はリバースプロキシ経由で `/docs` を読み込み、全エンドポイント一覧の描画を検証する。**スイートはテストアカウントとノートを作成・改変するため、本番インスタンスへは決して向けてはならない。**
 
@@ -311,18 +344,20 @@ SQLite のオンラインスナップショットを**デフォルト 24 時間�
 
 | 目標 | 達成状況 |
 | --- | --- |
-| G1 ゼロコンフィギュレーション | Docker Compose 単体で起動、外部 DB 不要。SMTP/VAPID はオプションで未設定時もアプリ内通知に劣化 |
-| G2 マルチテナント安全性 | 4 ロール RBAC、招待制メンバ追加、テナント境界検証 |
+| G1 ゼロコンフィギュレーション | Docker Compose 単体で起動、外部 DB 不要。`agy` はイメージビルド時に同梱され、SMTP/VAPID/AI は未設定時もグレースフルデグレード |
+| G2 マルチテナント安全性 | 4 ロール RBAC、招待制メンバ追加、テナント境界検証(クロスワークスペース AI ツール含む) |
 | G3 堅牢な認証 | Argon2id、SHA-256 ハッシュ保存 Cookie、パスワード変更時全セッション失効 |
-| G4 検証可能な品質 | Vitest 統合、ドキュメント回帰、Playwright E2E、バックアップ復元テスト |
+| G4 検証可能な品質 | Vitest 統合(29 ファイル/233 テスト)、ドキュメント回帰、Playwright E2E、バックアップ復元テスト |
+| G5 プライバシー優先 AI | AES-256-GCM Vault、`blocked`/`current_only`/`search_allowed`、`[REDACTED]` fail-closed、RBAC 強制 Full Control ツール |
 
 ### 7.2 限界
 
 1. **単一インスタンス制約** ― SQLite とローカル添付ストレージのため、レプリカ数による水平スケーリングはできない。数千件規模のノートでは十分だが、大規模組織向けには PostgreSQL 移行が前提となる。
-2. **認証方式の限定** ― Email/パスワードとセッション Cookie のみであり、OAuth 等のソーシャルサインインは未統合(UI からプレースホルダは除去済み)。
+2. **アプリ本体認証方式の限定** ― Pocket Diary 本体のサインインは Email/パスワードとセッション Cookie のみである(Google OAuth は AI プロバイダ `antigravity_cli` 接続専用として隔離運用されている)。
 3. **パスワードリカバリの SMTP 依存** ― SMTP 未設定時はインスタンス管理者(初回登録アカウント)による支援が必要。
-4. **添付ストレージのローカル性** ― オブジェクトストレージ・ワークスペース単位のクォータ管理は既定で未構成。
-5. **開発中のプロジェクト** ― リビジョン間で API と挙動が変化しうる。
+4. **添付ストレージのローカル性** ― オブジェクトストレージは未構成(ただしワークスペース単位のバイト精度使用量計測と `STORAGE_QUOTA_GB` 上限計算は実装済み)。
+5. **外部 AI 依存操作の限界** ― 端末ネイティブ OS アラーム鳴動、外部 Google/Outlook カレンダへの直接自動同期(`.ics` ファイル生成のみ)、および任意 Web ブラウジングやメール/SMS 送信は対象外とする。
+6. **開発中のプロジェクト** ― リビジョン間で API と挙動が変化しうる。
 
 ### 7.3 セキュリティ脅威モデル(STRIDE 分析)
 
@@ -330,12 +365,12 @@ SQLite のオンラインスナップショットを**デフォルト 24 時間�
 
 | 分類 | 脅威 | 対策 |
 | --- | --- | --- |
-| **S**(なりすまし) | セッション Cookie の盗用・推測 | HttpOnly Cookie、SHA-256 ハッシュ保存、高エントロピー COOKIE_SECRET による署名 |
-| **T**(改竄) | リクエスト/レスポンスの改竄 | すべての API 境界での JSON スキーマ検証、テナント境界のサーバ側強制 |
-| **R**(否認) | 操作の否認 | 招待の失効記録、監査可能なセッション一覧・デバイス単位サインアウト |
-| **I**(情報漏洩) | 越境アクセス(IDOR)、DB ファイル漏洩 | ワークスペース結合の強制、Cookie 原値の非保存、アップロード検証 |
-| **D**(サービス拒否) | ブルートフォース、リクエスト洪水 | グローバルレートリミット、Argon2id の計算コストによる試行の高価化 |
-| **E**(権限昇格) | viewer による書き込み、admin の管理権限簒奪 | ロール別ルートガード、管理ロール付与の owner 専権 |
+| **S**(なりすまし) | セッション Cookie の盗用・推測、OAuth 資格情報の他ユーザ参照 | HttpOnly Cookie、SHA-256 ハッシュ保存、高エントロピー `COOKIE_SECRET`、ユーザ別 `agy-homes/<userId>` 分離 |
+| **T**(改竄) | リクエスト/レスポンスの改竄、プロンプトインジェクションによる意図しない書換 | 全 API 境界での JSON スキーマ検証、テナント境界のサーバ側強制、システムプロンプトでの非信頼データ分離と書き込みゲート |
+| **R**(否認) | 操作や AI アクセスの否認 | 招待の失効記録、セッション一覧・デバイス単位サインアウト、`ai_access_audit` による AI 閲覧・ツール実行監査ログ |
+| **I**(情報漏洩) | 越境アクセス(IDOR)、DB 漏洩、AI 経由の機密ノート/API 鍵漏洩 | ワークスペース結合強制、AES-256-GCM 暗号化 Vault(AAD 束縛)、`blocked` 遮断・`[REDACTED]` fail-closed・秘密情報スキャン、`storage_path` 非開示 |
+| **D**(サービス拒否) | ブルートフォース、リクエスト洪水、リンクプレビュー経由の SSRF | グローバルレートリミット、Argon2id、`assertPublicHttpUrl` + `guardedFetch` による内部 IP 遮断およびレスポンス長・タイムアウト制限 |
+| **E**(権限昇格) | `viewer` による書換・削除、`admin` の権限簒奪、AI ツールによる越権操作 | ロール別ルートガード、管理ロール付与の `owner` 専権、`verifyWorkspaceMembership` と `isWriteToolInvocation` による二重検査 |
 
 ### 7.4 パフォーマンス特性
 
@@ -366,9 +401,9 @@ SQLite のオンラインスナップショットを**デフォルト 24 時間�
 
 ## 8. おわりに
 
-本論文では、セルフホスト型ノート管理システム Pocket Diary の設計と実装について報告した。Fastify と SQLite WAL モードに基づく単一インスタンス アーキテクチャ、ワークスペース単位のロールベース アクセス制御、Argon2 とハッシュ保存 Cookie による認証基盤、オンラインバックアップとオフホストレプリケーション、そして 3 層のテスト戦略を述べた。
+本論文では、セルフホスト型ノート管理システム Pocket Diary の設計と実装について報告した。Fastify と SQLite WAL モードに基づく単一インスタンス アーキテクチャ、ワークスペース単位のロールベース アクセス制御、Argon2id とハッシュ保存 Cookie による認証基盤、オンラインバックアップとオフホストレプリケーション、そして AES-256-GCM 鍵暗号化・コンテナ内蔵 Antigravity CLI (`agy`)・2 段階ローカル検索・RBAC 強制 Full Control ツール実行を備えたプライバシー優先型 AI アシスタント基盤、および 3 層のテスト戦略を述べた。
 
-将来の課題として、(1) PostgreSQL アダプタへの移行による水平スケーリング対応、 OAuth 等 IdP 統合、 添付ファイルのオブジェクトストレージ化とワークスペース単位クォータ、 オフライン編集と競合解決、が挙げられる。これらは現在のエディションでは意図的な非目標としつつ、移行パスを文書化してある。
+将来の課題として、(1) PostgreSQL アダプタへの移行による水平スケーリング対応、(2) アプリ本体ログインへの OAuth 等 IdP 統合、(3) 添付ファイルのオブジェクトストレージ化、(4) オフライン編集と競合解決、(5) 外部カレンダとの双方向自動同期、が挙げられる。これらは現在のエディションでは意図的な非目標としつつ、移行パスを文書化してある。
 
 ---
 
@@ -382,10 +417,11 @@ SQLite のオンラインスナップショットを**デフォルト 24 時間�
 6. Drizzle Team, "Drizzle ORM Documentation"
 7. RFC 6265 ― HTTP State Management Mechanism(Cookie)
 8. RFC 8291 ― Web Push Encryption、RFC 8292 ― VAPID
-9. Google, "Google Takeout ― データエクスポート形式(Keep)"
-10. Ferraiolo, D., Sandhu, R., Gavrila, S., Kuhn, R., Chandramouli, R., "Proposed NIST Standard for Role-Based Access Control", ACM TISSEC, 2001
-11. Shostack, A., "Threat Modeling: Designing for Security", Wiley, 2014(STRIDE 分類)
-12. Raushan, "Pocket Diary Repository", https://github.com/raushan2015/Pocket-Diary
+9. RFC 5545 ― Internet Calendaring and Scheduling Core Object Specification (iCalendar)
+10. Google, "Google Takeout ― データエクスポート形式(Keep)"
+11. Ferraiolo, D., Sandhu, R., Gavrila, S., Kuhn, R., Chandramouli, R., "Proposed NIST Standard for Role-Based Access Control", ACM TISSEC, 2001
+12. Shostack, A., "Threat Modeling: Designing for Security", Wiley, 2014(STRIDE 分類)
+13. Raushan, "Pocket Diary Repository", [https://github.com/raushan2015/Pocket-Diary](https://github.com/raushan2015/Pocket-Diary)
 
 ---
 
@@ -394,8 +430,10 @@ SQLite のオンラインスナップショットを**デフォルト 24 時間�
 | 変数 | 必須 | 既定 | 説明 |
 | --- | --- | --- | --- |
 | `COOKIE_SECRET` | Yes | なし | セッション Cookie 署名用の秘密鍵(32 文字以上推奨) |
+| `AI_CREDENTIAL_ENCRYPTION_KEY` | No (AI 鍵保存時は必須) | なし | AI プロバイダ API キー暗号化用の AES-256-GCM マスター鍵(`NEW,OLD` ローテーション対応) |
 | `PORT` | No | 8080 | Web UI 用の公開ホストポート |
 | `DATABASE_PATH` | (Compose) | `/app/data/memo_manager.db` | SQLite DB ファイルパス |
+| `STORAGE_QUOTA_GB` | No | `10` | ワークスペース単位の容量計算基準(GB) |
 | `BACKUP_REPLICATION_DIR` | No | なし | オフホスト レプリケーション先ディレクトリ |
 | `BACKUP_REPLICATION_RETENTION` | No | 既定世代数 | レプリカ保持世代数 |
 | `DOCS_ENABLED` | No | true | `/docs`(Swagger UI)の有効/無効 |
@@ -406,10 +444,12 @@ SQLite のオンラインスナップショットを**デフォルト 24 時間�
 
 | パス | 目的 |
 | --- | --- |
-| `frontend/` | SPA、CSS、クライアント状態、API クライアント、Markdown レンダリング |
+| `frontend/` | Vite ビルド SPA、CSS、クライアント状態、AI チャット/設定/プライバシー UI、Markdown レンダリング |
 | `backend/src/` | Fastify サーバ、認証・認可、ワークスペース、DB スキーマ/マイグレーション、API ルート |
-| `tests/e2e/` | Playwright E2E 回帰スイート(独立行程ファイル+共有ヘルパ) |
-| `Dockerfile` | マルチステージ コンテナビルド |
+| `backend/src/services/ai/` | 10 プロバイダアダプタ、AES-256-GCM Vault、Antigravity CLI OAuth/PTY 連携、プライバシー・ツール実行基盤 |
+| `docs/ai-assistant/` | AI アシスタントの設計・セキュリティ仕様ドキュメント |
+| `tests/e2e/` | Playwright E2E 回帰スイート(独立行程ファイル+共有ヘルパ、`22-ai-assistant.test.js` 含む) |
+| `Dockerfile` | マルチステージ コンテナビルド(Node バックエンド、Vite フロントエンド、`agy` CLI 導入) |
 | `docker-compose.yml` | セルフホスト デプロイ構成 |
 
 ---

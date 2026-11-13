@@ -16,7 +16,7 @@ export FRONTEND_PORT="${FRONTEND_PORT:-$PORT}"
 export BACKEND_URL="http://${BACKEND_HOST}:${BACKEND_PORT}"
 export DATABASE_PATH="${DATABASE_PATH:-${APP_DIR}/data/memo_manager.db}"
 export ATTACHMENTS_DIR="${ATTACHMENTS_DIR:-${APP_DIR}/data/attachments}"
-mkdir -p "${ATTACHMENTS_DIR}"
+mkdir -p "${ATTACHMENTS_DIR}" "${APP_DIR}/data/agy-homes" "${APP_DIR}/data/agy-sandbox"
 export NODE_ENV="${NODE_ENV:-production}"
 
 echo "========================================================"

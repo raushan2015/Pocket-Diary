@@ -198,8 +198,11 @@ async function testConnection(config: { modelId: string; apiKey: string }): Prom
 
 export const nvidiaNimAdapter: ProviderAdapter = {
   id: 'nvidia_nim',
+  label: 'NVIDIA NIM',
+  supportsStreaming: true,
+  supportsTools: true,
+  supportsModelListing: true,
   chat,
   listModels,
   testConnection,
-  supportsModelListing: true,
 };

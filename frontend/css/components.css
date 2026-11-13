@@ -12,21 +12,26 @@
   gap: 0.5rem;
   font-family: var(--font-sans);
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
+  font-weight: var(--font-weight-semibold);
   padding: 0.6rem 1.25rem;
   border-radius: var(--radius-full);
   border: 1px solid transparent;
   cursor: pointer;
   text-decoration: none;
-  transition: all var(--transition-fast);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
   line-height: 1.2;
   white-space: nowrap;
   user-select: none;
 }
 
+.btn svg {
+  flex-shrink: 0;
+}
+
 .btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
+  transform: none !important;
 }
 
 .btn-primary {

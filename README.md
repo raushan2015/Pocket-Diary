@@ -91,27 +91,20 @@ Repository: [github.com/raushan2015/Pocket-Diary](https://github.com/raushan2015
 - Optional email delivery (SMTP) and Web Push (VAPID) so reminders reach users
   outside the app; both degrade gracefully to in-app notifications when unconfigured.
 
-### AI assistant (privacy-first, optional)
+### AI assistant (privacy-first, optional with Full Control mode)
 
-- Bring-your-own keys for **OpenAI, Google Gemini, DeepSeek and NVIDIA NIM** — multiple
-  configurations per provider, connection tests, and model selection. Keys are
-  encrypted at rest with AES-256-GCM (`AI_CREDENTIAL_ENCRYPTION_KEY`) and are never
-  returned by the API or stored in the browser/mobile device.
-- Persistent AI chat in the top navbar (web) and a dedicated AI tab (mobile);
-  conversations are stored per user + workspace and survive closing the panel,
-  refreshing, or signing in from another device.
-- General brainstorming with **no notes shared**; "create a note from this
-  conversation" drafts a structured note that you review and approve before it is
-  saved (optional per-conversation auto-save for explicit requests only).
-- Per-note AI privacy: **Never share with AI (blocked)**, **Only when I ask
-  (default)**, and **May be used in AI Search** — plus protected passages that are
-  replaced with `[REDACTED]` before anything leaves the server.
-- Two-stage AI search: the model only helps refine your query; the search runs locally
-  on SQLite FTS (thousands of notes) and results stay in your browser until you
-  preview and approve specific AI-searchable notes for reading.
-- All authorization is enforced server-side; model output is never trusted. See
-  [the AI assistant guide](docs/ai-assistant/README.md) for the full security model,
-  API list and verification status.
+- **10 supported AI providers** ([`registry.ts`](backend/src/services/ai/registry.ts)):
+  - **Bring-your-own API key (BYOK):** **OpenAI**, **Google Gemini**, **DeepSeek**, **NVIDIA NIM**, **Anthropic (Claude)**, **Mistral AI**, **Groq**, and **OpenRouter** — multiple configurations per provider, connection tests, and model selection. Keys are encrypted at rest with AES-256-GCM (`AI_CREDENTIAL_ENCRYPTION_KEY`) and are never returned by the API or stored in the browser.
+  - **Keyless / Subscription options:** **Ollama (Local)** and **Google Subscription via Antigravity CLI (`agy`)**. The `agy` binary is pre-installed into `/usr/local/bin/agy` during the Docker image build (`Dockerfile`), with a headless OAuth sign-in flow built into AI Settings (displays the Google login URL/code so users paste the callback/authorization code back into the UI) and per-user isolated credential homes (`/app/data/agy-homes/<userId>`).
+- **Persistent multi-device AI chat & token telemetry:** Conversations are stored per user + workspace on the server, stream via SSE (`Last-Event-ID` reconnect), support selectable **Thinking Effort** (`Auto`, `Low`, `Medium`, `High`) on supported reasoning models, and record cumulative per-message token usage (`inputTokens`, `outputTokens`, `cacheReadTokens`, tool rounds) displayed directly on assistant replies.
+- **Full Workspace Control mode (`tools.service.ts`):** Alongside default proposal-based drafting (`draft_new_note`, `draft_note_update`), users can toggle **Full Control** in chat (or issue explicit action requests) so the assistant can directly operate Pocket Diary features across any workspace they belong to (`workspaceId`), enforced server-side by RBAC (`viewer` remains strictly read-only):
+  - **Notes & Trash:** `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note`, `delete_note` (soft-delete or permanent), `restore_note`, `empty_trash`.
+  - **Calendar, Reminders & Notifications:** `set_reminder`, `get_calendar_schedule`, `list_notifications`, `mark_notifications_read`.
+  - **Organization:** `manage_folders`, `manage_categories`, `manage_tags`.
+  - **Workspaces, Members & Invites:** `manage_workspaces` (`list`, `create`, `rename`, `storage`, `members`, `activities`, `leave`, `change_role`, `remove_member`, `transfer_ownership`) and `manage_invites` (`list`, `create`, `revoke`).
+  - **Revisions, Ordering, Previews, Attachments & Exports:** `manage_note_extras` (`versions`, `reorder`, SSRF-safe `link_preview`), `manage_attachments` (`list`, `delete`), and `export_data` (`workspace_json` backup and RFC-5545 `calendar_ics` schedule export).
+- **Per-note AI privacy & redaction pipeline:** Notes default to **Only when I ask (`current_only`)** and can be set to **Never share with AI (`blocked`)** or **May be used in AI Search (`search_allowed`)**, with optional protected passages replaced by `[REDACTED]` before any provider call. Notes marked `blocked` remain unreadable across reads, searches, revision history, attachments, activity feeds, and AI exports.
+- **Two-stage local search:** Discovery searches run locally on SQLite FTS without leaking note content; reading notes externally requires Stage B approval and short-lived, version-bound grants. See [the AI assistant guide](docs/ai-assistant/README.md) for the security architecture and API endpoints.
 
 ### Operations
 
@@ -132,13 +125,13 @@ The project is organized into three main areas:
 
 | Path | Purpose |
 | --- | --- |
-| `frontend/` | Single-page web interface, CSS, client-side state, API client, editor enhancements, and Markdown rendering. |
-| `backend/` | Fastify server, authentication, authorization, workspace logic, note services, database schema/migrations, and API routes. |
+| `frontend/` | Single-page web interface (Vite build + Node static/proxy server), CSS, client-side state, API client, editor enhancements, AI chat/settings UI, and Markdown rendering. |
+| `backend/` | Fastify server, authentication, authorization, workspace logic, note services, AI assistant engine (`backend/src/services/ai/`), database schema/migrations, and API routes. |
 | `tests/` | Playwright e2e regression suite, split into independent journey files under `tests/e2e/` plus the shared harness in `tests/e2e/_helpers.js`. |
-| `Dockerfile` | Multi-stage container build for the application. |
+| `Dockerfile` | Multi-stage container build (backend TypeScript build, Vite frontend build, and system-wide Antigravity CLI `agy` installation). |
 | `docker-compose.yml` | Local and self-hosted container deployment. |
 
-The backend uses **Node.js**, **TypeScript**, **Fastify**, and **SQLite**. Drizzle ORM is included for database access/schema work, with `better-sqlite3` as the SQLite driver. The frontend is plain JavaScript, HTML, and CSS. Browser end-to-end tests use Playwright.
+The backend uses **Node.js**, **TypeScript**, **Fastify**, and **SQLite**. Drizzle ORM is included for database access/schema work, with `better-sqlite3` as the SQLite driver. The frontend uses JavaScript, HTML, and CSS built with Vite. Backend tests use Vitest (`backend/test/`, 29 test files / 233 tests), and browser end-to-end tests use Playwright.
 
 The application container serves the frontend and proxies application API requests to the backend. SQLite and uploaded attachments are stored under the persistent application data directory.
 
@@ -253,10 +246,12 @@ loads `/docs` through the reverse proxy and checks the full endpoint inventory r
 
 ### Frontend
 
-The frontend is served by the application container in the recommended setup. A lightweight development server is also available:
+The frontend is built with Vite and served by the application container in the recommended setup. For local development:
 
 ```bash
 cd frontend
+npm ci
+npm run build
 npm run dev
 ```
 
@@ -301,7 +296,7 @@ The Compose service configures `DATABASE_PATH=/app/data/memo_manager.db` and the
 
 ## Data and file storage
 
-Docker Compose creates a named volume called `memo_manager_data` and mounts it at `/app/data`. This directory contains the SQLite database and attachment files.
+Docker Compose creates a named volume called `memo_manager_data` and mounts it at `/app/data`. This directory contains the SQLite database (`memo_manager.db`), attachment files (`/app/data/attachments`), SQLite snapshots (`/app/data/backups`), and per-user isolated Antigravity CLI credential homes & sandbox directories (`/app/data/agy-homes`, `/app/data/agy-sandbox`).
 
 - Keep the volume persistent when upgrading or recreating the container.
 - Back up the database and attachments together, using a consistent backup procedure.
@@ -363,8 +358,7 @@ This documentation is not a security certification. Review the implementation an
 
 - This deployment is a **self-hosted community edition**: every feature is
   enabled and there is no billing backend or paid tier.
-- Authentication is email/password with session cookies. Social/OAuth provider
-  sign-in is not integrated; the placeholder buttons were removed from the UI.
+- Pocket Diary account authentication is email/password with session cookies (social/OAuth provider sign-in is not used for app login; optional Google OAuth via Antigravity CLI is scoped strictly to the AI provider connection).
 - Password recovery requires SMTP (`SMTP_HOST`) to be configured so reset
   emails can be delivered. Without SMTP, users should ask the instance
   administrator for help (the first registered account is the instance admin).

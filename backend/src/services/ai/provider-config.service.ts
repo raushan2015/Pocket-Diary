@@ -48,6 +48,10 @@ export interface ProviderConfigDto {
 
 const MAX_CONFIGS_PER_USER = 20;
 
+export function isKeylessProvider(provider: string): boolean {
+  return provider === 'antigravity_cli' || provider === 'ollama';
+}
+
 function rowToDto(row: any): ProviderConfigDto {
   return {
     id: row.id,
@@ -55,7 +59,7 @@ function rowToDto(row: any): ProviderConfigDto {
     label: row.label,
     modelId: row.model_id,
     keyLast4: row.key_last4 ?? '',
-    hasKey: true,
+    hasKey: !isKeylessProvider(row.provider),
     isDefault: Boolean(row.is_default),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -78,17 +82,24 @@ function assertVaultAvailable(): void {
 export function createConfig(
   dbCtx: DatabaseContext,
   userId: string,
-  input: { provider: string; label: string; modelId: string; apiKey: string; isDefault?: boolean }
+  input: { provider: string; label: string; modelId: string; apiKey?: string; isDefault?: boolean }
 ): ProviderConfigDto {
-  assertVaultAvailable();
   if (!isProviderId(input.provider)) {
     throw new AiConfigError('invalid_provider', `Provider must be one of: ${PROVIDER_IDS.join(', ')}`);
+  }
+  const keyless = isKeylessProvider(input.provider);
+  if (!keyless) {
+    assertVaultAvailable();
   }
   const label = String(input.label ?? '').trim().slice(0, 80) || PROVIDER_LABELS[input.provider];
   const modelId = String(input.modelId ?? '').trim().slice(0, 160);
   if (!modelId) throw new AiConfigError('invalid_model', 'A model id is required');
-  const apiKey = String(input.apiKey ?? '').trim();
-  if (apiKey.length < 8 || apiKey.length > 4096) {
+  let apiKey = String(input.apiKey ?? '').trim();
+  if (keyless) {
+    if (!apiKey) {
+      apiKey = input.provider === 'antigravity_cli' ? 'oauth-cli' : 'local-cli';
+    }
+  } else if (apiKey.length < 8 || apiKey.length > 4096) {
     throw new AiConfigError('invalid_key', 'API key must be between 8 and 4096 characters');
   }
 
@@ -99,7 +110,12 @@ export function createConfig(
 
   const id = crypto.randomUUID();
   const now = Date.now();
-  const encrypted = encryptSecret(userId, id, input.provider, apiKey);
+  const encrypted = isVaultConfigured()
+    ? encryptSecret(userId, id, input.provider, apiKey)
+    : { ciphertext: '', nonce: '', authTag: '', keyVersion: 0 };
+  const last4 = keyless
+    ? (input.provider === 'antigravity_cli' ? 'OAuth' : 'Local')
+    : maskKeyLast4(apiKey);
 
   dbCtx.db.transaction(() => {
     // Only one default per user: demote others when this one becomes default,
@@ -114,7 +130,7 @@ export function createConfig(
          (id, user_id, provider, label, model_id, key_ciphertext, key_nonce, key_auth_tag, encryption_key_version, key_last4, is_default, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, userId, input.provider, label, modelId, encrypted.ciphertext, encrypted.nonce, encrypted.authTag, encrypted.keyVersion, maskKeyLast4(apiKey), makeDefault ? 1 : 0, now, now);
+      .run(id, userId, input.provider, label, modelId, encrypted.ciphertext, encrypted.nonce, encrypted.authTag, encrypted.keyVersion, last4, makeDefault ? 1 : 0, now, now);
   });
 
   const row = dbCtx.sqlite.prepare('SELECT * FROM ai_provider_configs WHERE id = ? AND user_id = ?').get(id, userId);
@@ -133,22 +149,26 @@ export function updateConfig(
   userId: string,
   input: { label?: string; modelId?: string; apiKey?: string; isDefault?: boolean }
 ): ProviderConfigDto {
-  assertVaultAvailable();
   const row = getOwnedConfig(dbCtx, configId, userId);
+  if (!isKeylessProvider(row.provider)) {
+    assertVaultAvailable();
+  }
   const now = Date.now();
 
   let { key_ciphertext: ciphertext, key_nonce: nonce, key_auth_tag: authTag, encryption_key_version: keyVersion, key_last4: last4 } = row;
-  if (input.apiKey !== undefined) {
+  if (input.apiKey !== undefined && (!isKeylessProvider(row.provider) || String(input.apiKey ?? '').trim().length > 0)) {
     const apiKey = String(input.apiKey ?? '').trim();
-    if (apiKey.length < 8 || apiKey.length > 4096) {
+    if (!isKeylessProvider(row.provider) && (apiKey.length < 8 || apiKey.length > 4096)) {
       throw new AiConfigError('invalid_key', 'API key must be between 8 and 4096 characters');
     }
-    const encrypted = encryptSecret(userId, configId, row.provider, apiKey);
-    ciphertext = encrypted.ciphertext;
-    nonce = encrypted.nonce;
-    authTag = encrypted.authTag;
-    keyVersion = encrypted.keyVersion;
-    last4 = maskKeyLast4(apiKey);
+    if (isVaultConfigured()) {
+      const encrypted = encryptSecret(userId, configId, row.provider, apiKey);
+      ciphertext = encrypted.ciphertext;
+      nonce = encrypted.nonce;
+      authTag = encrypted.authTag;
+      keyVersion = encrypted.keyVersion;
+    }
+    last4 = isKeylessProvider(row.provider) ? last4 : maskKeyLast4(apiKey);
   }
 
   dbCtx.db.transaction(() => {
@@ -205,6 +225,9 @@ export function setDefault(dbCtx: DatabaseContext, configId: string, userId: str
 
 /** Decrypt for adapter use ONLY (never returned to a client). */
 export function decryptConfigKey(dbCtx: DatabaseContext, row: any, userId: string): string {
+  if (Number(row.encryption_key_version) === 0 && isKeylessProvider(row.provider)) {
+    return '';
+  }
   return decryptSecret(userId, row.id, row.provider, {
     keyCiphertext: row.key_ciphertext,
     keyNonce: row.key_nonce,

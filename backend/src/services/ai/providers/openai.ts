@@ -188,8 +188,11 @@ async function testConnection(config: { modelId: string; apiKey: string }): Prom
 
 export const openAiAdapter: ProviderAdapter = {
   id: 'openai',
+  label: 'OpenAI',
+  supportsStreaming: true,
+  supportsTools: true,
+  supportsModelListing: true,
   chat,
   listModels,
   testConnection,
-  supportsModelListing: true,
 };

@@ -60,6 +60,8 @@ export function resolveThinkingEffort(
         return selected;
       }
       break;
+    case 'antigravity_cli':
+      return selected;
   }
   throw new ThinkingUnavailableError(
     'The selected model has no verified thinking-effort control in Pocket Diary. Choose a reasoning-capable model in AI Settings or select Auto.'

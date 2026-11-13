@@ -183,6 +183,20 @@ export function buildApp(options: AppOptions = {}): FastifyInstance {
     if (request.url.startsWith('/api/') || request.url.startsWith('/health')) {
       reply.header('Cache-Control', 'no-store');
     }
+    // CSP for frontend routes (non-API, non-docs)
+    if (!request.url.startsWith('/api/') && !request.url.startsWith('/health') && !request.url.startsWith('/docs')) {
+      reply.header('Content-Security-Policy', [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' data: https://fonts.gstatic.com",
+        "img-src 'self' data:",
+        "connect-src 'self'",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'"
+      ].join('; '));
+    }
     return payload;
   });
 

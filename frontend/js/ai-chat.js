@@ -31,9 +31,29 @@ import { initAiSettings, openAiSettingsDialog } from './ai-settings.js';
 const DRAFT_KEY = 'pd_ai_draft';
 const CONV_KEY = 'pd_ai_conversation';
 const THINKING_KEY = 'pd_ai_thinking_effort';
+const FULL_CONTROL_KEY = 'pd_ai_full_control';
+
+function isFullControlEnabled() {
+  try {
+    return localStorage.getItem(FULL_CONTROL_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+function syncFullControlButton() {
+  const btn = qs('ai-full-control-toggle');
+  if (!btn) return;
+  const active = isFullControlEnabled();
+  btn.classList.toggle('active', active);
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  const label = btn.querySelector('span');
+  if (label) label.textContent = t(active ? 'ai.fullControlOn' : 'ai.fullControlOff');
+}
 
 let initialized = false;
 let drawerOpen = false;
+const EXPAND_KEY = 'pd_ai_expanded';
 let currentConversationId = null;
 let conversationLoadVersion = 0;
 let ensureConversationPromise = null;
@@ -122,6 +142,9 @@ function restoreDraft() {
   if (!input) return;
   try { input.value = sessionStorage.getItem(DRAFT_KEY) ?? ''; } catch { /* ignore */ }
   maybeShowSecretWarning();
+  // Keep a restored long draft fully visible instead of clipped.
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, 220)}px`;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +183,19 @@ function updateThinkingHint() {
   hint.textContent = t('ai.thinkingHint');
 }
 
+const PROVIDER_SHORT_LABELS = {
+  antigravity_cli: 'Google Plan',
+  openai: 'OpenAI',
+  gemini: 'Gemini',
+  anthropic: 'Claude',
+  deepseek: 'DeepSeek',
+  nvidia_nim: 'NVIDIA',
+  mistral: 'Mistral',
+  groq: 'Groq',
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama',
+};
+
 function renderProviderSelector() {
   const select = qs('ai-provider-select');
   if (!select) return;
@@ -171,17 +207,20 @@ function renderProviderSelector() {
     select.appendChild(opt);
     select.disabled = true;
     updateThinkingHint();
+    renderEmptyStateIfNeeded();
     return;
   }
   select.disabled = false;
   for (const config of providerConfigs) {
     const opt = document.createElement('option');
     opt.value = config.id;
-    opt.textContent = `${config.provider === 'nvidia_nim' ? 'NVIDIA' : config.provider === 'gemini' ? 'Gemini' : config.provider === 'openai' ? 'OpenAI' : 'DeepSeek'} · ${config.modelId}`;
+    const shortName = PROVIDER_SHORT_LABELS[config.provider] || config.provider;
+    opt.textContent = `${shortName} · ${config.modelId}`;
     if (config.id === selectedProviderConfigId) opt.selected = true;
     select.appendChild(opt);
   }
   updateThinkingHint();
+  renderEmptyStateIfNeeded();
 }
 
 // ---------------------------------------------------------------------------
@@ -384,6 +423,7 @@ async function loadConversation({ force = false, reconnect = true } = {}) {
   }
   if (hadMessages && !wasNearBottom && container) container.scrollTop = previousScroll;
   else scrollToBottom();
+  renderEmptyStateIfNeeded();
   if (reconnect) await reconnectIfGenerating(res.data.activeRequestId ?? null);
 }
 
@@ -411,9 +451,77 @@ function messagesContainer() {
   return qs('ai-drawer-messages');
 }
 
+function removeEmptyState() {
+  document.getElementById('ai-empty-state')?.remove();
+}
+
+function renderEmptyStateIfNeeded() {
+  const container = messagesContainer();
+  if (!container) return;
+  const hasRealContent = Array.from(container.children).some((el) => el.id !== 'ai-empty-state');
+  if (hasRealContent) {
+    removeEmptyState();
+    return;
+  }
+  removeEmptyState();
+  const empty = document.createElement('div');
+  empty.className = 'ai-empty-state';
+  empty.id = 'ai-empty-state';
+
+  const icon = document.createElement('div');
+  icon.className = 'ai-empty-icon';
+  icon.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path></svg>';
+  empty.appendChild(icon);
+
+  const title = document.createElement('div');
+  title.className = 'ai-empty-title';
+  title.textContent = t('ai.emptyTitle');
+  empty.appendChild(title);
+
+  const sub = document.createElement('div');
+  sub.className = 'ai-empty-subtitle';
+  sub.textContent = providerConfigs.length === 0 ? t('ai.emptySubtitleNoProvider') : t('ai.emptySubtitleReady');
+  empty.appendChild(sub);
+
+  if (providerConfigs.length === 0) {
+    const setupBtn = document.createElement('button');
+    setupBtn.type = 'button';
+    setupBtn.className = 'btn btn-primary btn-sm';
+    setupBtn.textContent = t('ai.emptyConnectBtn');
+    setupBtn.addEventListener('click', () => openAiSettingsDialog());
+    empty.appendChild(setupBtn);
+  } else {
+    const chips = document.createElement('div');
+    chips.className = 'ai-starter-prompts';
+    const starters = [
+      { label: t('ai.starterGoalsLabel'), prompt: t('ai.starterGoalsPrompt') },
+      { label: t('ai.starterOutlineLabel'), prompt: t('ai.starterOutlinePrompt') },
+      { label: t('ai.starterBrainstormLabel'), prompt: t('ai.starterBrainstormPrompt') },
+    ];
+    for (const item of starters) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ai-starter-chip';
+      btn.textContent = item.label;
+      btn.addEventListener('click', () => {
+        const input = qs('ai-composer-input');
+        if (input) {
+          input.value = item.prompt;
+          void sendMessage();
+        }
+      });
+      chips.appendChild(btn);
+    }
+    empty.appendChild(chips);
+  }
+
+  container.appendChild(empty);
+}
+
 function clearMessages() {
   const container = messagesContainer();
   if (container) container.innerHTML = '';
+  renderEmptyStateIfNeeded();
 }
 
 function scrollToBottom() {
@@ -434,6 +542,12 @@ function savedNoteButton(note, parent) {
 function appendMessage(message) {
   const container = messagesContainer();
   if (!container) return null;
+  removeEmptyState();
+  // Idempotent: SSE delivery and a concurrent conversation reload can both
+  // carry the same message — render it exactly once.
+  if (message.id && container.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`)) {
+    return container.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`);
+  }
   const wrap = document.createElement('div');
   wrap.className = `ai-msg ${message.role}`;
   wrap.dataset.messageId = message.id ?? '';
@@ -443,17 +557,55 @@ function appendMessage(message) {
       wrap.classList.add('ai-msg-failed');
       const status = document.createElement('span');
       status.className = 'ai-msg-status';
-      status.textContent = `⚠ ${message.errorCode || 'error'} — ${t('ai.tryAgain')}`;
+      status.textContent = `${message.errorCode || 'error'} — ${t('ai.tryAgain')}`;
       wrap.appendChild(status);
     } else if (message.status === 'interrupted') {
       wrap.classList.add('ai-msg-interrupted');
       const status = document.createElement('span');
       status.className = 'ai-msg-status';
-      status.textContent = `⏸ ${t('ai.interruptedNotice')}`;
+      status.textContent = t('ai.interruptedNotice');
       wrap.appendChild(status);
     }
     for (const note of (Array.isArray(message.meta?.autoSavedNotes) ? message.meta.autoSavedNotes : [])) {
       savedNoteButton(note, wrap);
+    }
+    if ((message.content || '').trim() && message.status !== 'failed') {
+      const actions = document.createElement('div');
+      actions.className = 'ai-msg-actions';
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'ai-msg-copy-btn';
+      copyBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+      const copyLabel = document.createElement('span');
+      copyLabel.textContent = t('ai.copyReply');
+      copyBtn.appendChild(copyLabel);
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(message.content || '');
+          copyBtn.classList.add('copied');
+          copyLabel.textContent = t('ai.copied');
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+            copyLabel.textContent = t('ai.copyReply');
+          }, 1400);
+        } catch {
+          showToast(t('ai.copyFailed'), 'error');
+        }
+      });
+      actions.appendChild(copyBtn);
+      const usage = message.meta?.usage;
+      if (usage && (typeof usage.inputTokens === 'number' || typeof usage.outputTokens === 'number')) {
+        const fmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+        const inTok = Number(usage.inputTokens ?? 0);
+        const outTok = Number(usage.outputTokens ?? 0);
+        const cachedTok = Number(usage.cacheReadTokens ?? 0);
+        const usageEl = document.createElement('span');
+        usageEl.className = 'ai-msg-usage';
+        usageEl.textContent = `${fmt(inTok)} ${t('ai.tokensIn')} · ${fmt(outTok)} ${t('ai.tokensOut')}`;
+        usageEl.title = `${inTok.toLocaleString()} ${t('ai.tokensIn')} / ${outTok.toLocaleString()} ${t('ai.tokensOut')}${cachedTok ? ` / ${cachedTok.toLocaleString()} ${t('ai.tokensCached')}` : ''}`;
+        actions.appendChild(usageEl);
+      }
+      wrap.appendChild(actions);
     }
   } else {
     wrap.textContent = message.content; // user messages: plain text, no markdown
@@ -465,6 +617,7 @@ function appendMessage(message) {
 function appendTyping() {
   const container = messagesContainer();
   if (!container) return;
+  removeEmptyState();
   removeTyping();
   const el = document.createElement('div');
   el.className = 'ai-typing';
@@ -627,7 +780,9 @@ async function openNoteFromAssistant(memoId, closeDrawer) {
     if (!result?.memo) throw new Error('Note not found');
     const { navigateTo } = await import('./navigation.js');
     await navigateTo('editor', { memo: result.memo });
-    if (closeDrawer) setDrawerOpen(false);
+    // The chat is a docked panel on desktop: navigating keeps it open so the
+    // conversation continues. Only the mobile sheet auto-closes.
+    if (closeDrawer && window.matchMedia('(max-width: 720px)').matches) setDrawerOpen(false);
   } catch (error) {
     showToast(error?.message || t('ai.errorLoad'), 'error');
   }
@@ -662,10 +817,11 @@ function renderSearchResults(data) {
   const container = messagesContainer();
   const workspace = state.get('activeWorkspace');
   if (!container || !workspace) return;
+  removeEmptyState();
   const panel = document.createElement('div');
   panel.className = 'ai-search-results';
   const heading = document.createElement('h5');
-  heading.textContent = `🔍 ${t('ai.searchResultsLocal')}`;
+  heading.textContent = t('ai.searchResultsLocal');
   panel.appendChild(heading);
   const results = document.createElement('div');
   panel.appendChild(results);
@@ -781,6 +937,7 @@ function renderSearchResults(data) {
 function showSearchPrivacyPreview(data, workspaceId) {
   const container = messagesContainer();
   if (!container) return;
+  removeEmptyState();
   const panel = document.createElement('div');
   panel.className = 'ai-search-results';
   const heading = document.createElement('h5');
@@ -923,6 +1080,7 @@ async function sendMessage(options = {}) {
     mode,
     providerConfigId: requestedProvider,
     thinking: requestedThinking,
+    fullControl: isFullControlEnabled(),
   };
   if (mode === 'note_task') {
     const grant = await grantCurrentNote(conversation.id);
@@ -1063,6 +1221,12 @@ function handleSseEvent(rawEvent) {
       }
       void broadcastMemosChanged();
       break;
+    case 'workspace_changed':
+      void broadcastMemosChanged();
+      break;
+    case 'notifications_changed':
+      void import('./notifications.js').then((m) => m.loadNotifications?.()).catch(() => {});
+      break;
     case 'message':
       finishStreamingBubble();
       removeTyping();
@@ -1114,12 +1278,30 @@ async function pollToCompletion(requestId) {
 // Drawer open/close (hide ≠ delete; generation continues server-side)
 // ---------------------------------------------------------------------------
 
+function applyExpandedPreference() {
+  let expanded = false;
+  try { expanded = localStorage.getItem(EXPAND_KEY) === '1'; } catch { expanded = false; }
+  const drawer = qs('ai-chat-drawer');
+  const btn = qs('ai-expand-btn');
+  if (drawer) drawer.classList.toggle('expanded', expanded);
+  if (btn) btn.setAttribute('aria-pressed', String(expanded));
+}
+
+function toggleExpanded() {
+  let expanded = false;
+  try { expanded = localStorage.getItem(EXPAND_KEY) === '1'; } catch { expanded = false; }
+  expanded = !expanded;
+  try { localStorage.setItem(EXPAND_KEY, expanded ? '1' : '0'); } catch { /* private mode */ }
+  applyExpandedPreference();
+}
+
 function setDrawerOpen(open) {
   drawerOpen = open;
   const drawer = qs('ai-chat-drawer');
   const backdrop = qs('ai-drawer-backdrop');
   const btn = qs('nav-ai-btn');
   if (!drawer) return;
+  applyExpandedPreference();
   drawer.classList.toggle('open', open);
   backdrop?.classList.toggle('visible', open);
   if (btn) btn.setAttribute('aria-expanded', String(open));
@@ -1142,6 +1324,14 @@ function setDrawerOpen(open) {
 
 function onDrawerKeydown(e) {
   if (e.key === 'Escape' && drawerOpen) {
+    // Escape never throws away work: while the composer holds a draft, the
+    // first Escape only blurs it; a second Escape (empty composer) closes.
+    const composer = qs('ai-composer-input');
+    if (e.target === composer && composer.value.trim()) {
+      composer.blur();
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
     setDrawerOpen(false);
   }
@@ -1194,9 +1384,17 @@ export function initAiChat() {
     });
   }
 
+  syncFullControlButton();
+  qs('ai-full-control-toggle')?.addEventListener('click', () => {
+    const next = !isFullControlEnabled();
+    try { localStorage.setItem(FULL_CONTROL_KEY, next ? 'true' : 'false'); } catch { /* ignore */ }
+    syncFullControlButton();
+  });
+
   qs('nav-ai-btn')?.addEventListener('click', () => setDrawerOpen(!drawerOpen));
   qs('ai-drawer-backdrop')?.addEventListener('click', () => setDrawerOpen(false));
   qs('ai-drawer-close-btn')?.addEventListener('click', () => setDrawerOpen(false));
+  qs('ai-expand-btn')?.addEventListener('click', () => toggleExpanded());
   qs('ai-new-chat-btn')?.addEventListener('click', async () => {
     stopEventStream();
     activeRequestId = null;
@@ -1238,8 +1436,13 @@ export function initAiChat() {
   qs('ai-improve-note-btn')?.addEventListener('click', () => void startNoteTask(t('ai.improvePrompt')));
 
   const composerInput = qs('ai-composer-input');
+  const autosizeComposer = () => {
+    if (!composerInput) return;
+    composerInput.style.height = 'auto';
+    composerInput.style.height = `${Math.min(composerInput.scrollHeight, 220)}px`;
+  };
   if (composerInput) {
-    composerInput.addEventListener('input', () => { saveDraft(); maybeShowSecretWarning(); });
+    composerInput.addEventListener('input', () => { saveDraft(); maybeShowSecretWarning(); autosizeComposer(); });
     composerInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
