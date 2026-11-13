@@ -200,7 +200,15 @@ const server = http.createServer((req, res) => {
 
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {
-      // SPA fallback: extensionless routes and missing files serve index.html.
+      // Missing static assets (.js, .css, images, etc.) must return 404 instead
+      // of index.html so browsers never receive text/html for script/style/SW requests.
+      const reqExt = path.extname(normalizedPath).toLowerCase();
+      if (reqExt && reqExt !== '.html') {
+        res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
+        res.end('Not Found');
+        return;
+      }
+      // SPA fallback: extensionless routes and .html serve index.html.
       const fallbackPath = path.join(__dirname, 'index.html');
       return fs.stat(fallbackPath, (fallbackErr, fallbackStats) => {
         if (fallbackErr) {

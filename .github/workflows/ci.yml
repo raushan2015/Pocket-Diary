@@ -197,6 +197,9 @@ jobs:
             REMINDER_SCAN_INTERVAL_MS=10000 \
             AI_CREDENTIAL_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
             AI_OPENAI_BASE_URL=http://127.0.0.1:9971 \
+            AI_GEMINI_BASE_URL=http://127.0.0.1:9971 \
+            AI_DEEPSEEK_BASE_URL=http://127.0.0.1:9971 \
+            AI_NVIDIA_BASE_URL=http://127.0.0.1:9971 \
             node dist/index.js > /tmp/notes-e2e/backend.log 2>&1
           ) &
           BACKEND_PID=$!

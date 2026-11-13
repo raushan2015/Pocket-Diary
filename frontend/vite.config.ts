@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
+import { copyFileSync, cpSync, existsSync } from 'node:fs';
 import { resolve } from 'path';
 
 export default defineConfig({
   root: '.',
-  publicDir: 'assets',
+  publicDir: false,
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -56,6 +57,20 @@ export default defineConfig({
         return html
           .replace(/assets\/v[^/]+\/css\//g, 'css/')
           .replace(/assets\/v[^/]+\/js\//g, 'js/');
+      }
+    },
+    {
+      name: 'copy-pwa-assets',
+      closeBundle() {
+        const distDir = resolve(__dirname, 'dist');
+        for (const file of ['sw.js', 'manifest.json']) {
+          const src = resolve(__dirname, file);
+          if (existsSync(src)) copyFileSync(src, resolve(distDir, file));
+        }
+        const iconsSrc = resolve(__dirname, 'icons');
+        if (existsSync(iconsSrc)) {
+          cpSync(iconsSrc, resolve(distDir, 'icons'), { recursive: true });
+        }
       }
     }
   ]

@@ -37,9 +37,9 @@ COPY frontend/design-tokens.json ./
 COPY frontend/scripts ./scripts
 COPY frontend/css ./css
 COPY frontend/js ./js
-COPY frontend/assets ./assets
 COPY frontend/icons ./icons
 COPY frontend/manifest.json ./
+COPY frontend/sw.js ./
 COPY frontend/server.js ./
 
 RUN npm run build
