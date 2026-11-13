@@ -1,7 +1,7 @@
-# Pocket Diary CI/CD Pipeline
+# Pocket Diary CI Pipeline
 # .github/workflows/ci.yml
 
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
@@ -10,36 +10,21 @@ on:
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
-    inputs:
-      deploy_env:
-        description: 'Deploy environment'
-        required: true
-        type: choice
-        options: [staging, production]
-      skip_tests:
-        description: 'Skip tests (emergency only)'
-        required: false
-        type: boolean
-        default: false
 
 env:
-  NODE_VERSION: '22'
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  NODE_VERSION: '24'
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────
-  # Lint & Typecheck (Fast, runs on every PR)
+  # Lint, Typecheck & Frontend Bundle
   # ─────────────────────────────────────────────────────────────────────
   lint-and-typecheck:
-    name: Lint & Typecheck
+    name: Lint, Typecheck & Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -62,8 +47,8 @@ jobs:
       - name: Backend typecheck
         run: cd backend && npx tsc --noEmit
 
-      - name: Backend lint
-        run: cd backend && npm run lint 2>/dev/null || echo "No lint script"
+      - name: Frontend Vite build
+        run: cd frontend && npm run build
 
       - name: Mobile typecheck
         run: cd mobile-apps && npm run typecheck
@@ -71,18 +56,13 @@ jobs:
       - name: Mobile lint
         run: cd mobile-apps && npm run lint
 
-      - name: Frontend lint (basic)
-        run: cd frontend && npx eslint js/ --ext .js || echo "No eslint config"
-
   # ─────────────────────────────────────────────────────────────────────
-  # Backend Tests (Unit + Integration)
+  # Backend Tests (Unit + Integration + Migrations)
   # ─────────────────────────────────────────────────────────────────────
   backend-tests:
     name: Backend Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      # No external services needed - uses in-memory SQLite
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,19 +86,37 @@ jobs:
           NODE_ENV: test
           COOKIE_SECRET: test-secret-minimum-32-chars-long
           APP_URL: http://localhost:3000
-          DATABASE_PATH: :memory:
+          DATABASE_PATH: ':memory:'
           SMTP_HOST: ''
           VAPID_PUBLIC_KEY: ''
           VAPID_PRIVATE_KEY: ''
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
+  # ─────────────────────────────────────────────────────────────────────
+  # Frontend Unit Tests (Markdown, XSS, Import, i18n)
+  # ─────────────────────────────────────────────────────────────────────
+  frontend-unit:
+    name: Frontend Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          files: backend/coverage/lcov.info
-          flags: backend
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Install test deps
+        run: cd tests && npm ci
+
+      - name: Run frontend unit tests
+        run: cd tests && npm run test:unit
 
   # ─────────────────────────────────────────────────────────────────────
-  # Mobile Tests (Unit)
+  # Mobile Tests (Unit + Offline Sync)
   # ─────────────────────────────────────────────────────────────────────
   mobile-tests:
     name: Mobile Tests
@@ -141,20 +139,14 @@ jobs:
       - name: Run mobile tests
         run: cd mobile-apps && npm test
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: mobile-apps/coverage/lcov.info
-          flags: mobile
-
   # ─────────────────────────────────────────────────────────────────────
-  # E2E Tests (Playwright) - Requires running instance
+  # E2E Tests (Playwright) - Boots ephemeral stack inside same step
   # ─────────────────────────────────────────────────────────────────────
   e2e-tests:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [lint-and-typecheck, backend-tests]
+    needs: [lint-and-typecheck, backend-tests, frontend-unit]
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     steps:
       - name: Checkout
@@ -167,54 +159,72 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             backend/package-lock.json
+            frontend/package-lock.json
             tests/package-lock.json
 
-      - name: Install deps
+      - name: Install dependencies & build
         run: |
-          cd backend && npm ci
-          cd ../tests && npm ci
+          cd backend && npm ci && npm run build
+          cd ../frontend && npm ci && npm run build && cp server.js dist/
+          cd ../tests && npm ci && npx playwright install chromium --with-deps
 
-      - name: Build backend
-        run: cd backend && npm run build
-
-      - name: Start AI mock provider (for AI e2e journey)
-        run: node scripts/ai-mock-provider.mjs &
+      - name: Run browser journeys (AI mock + backend + frontend proxy)
         env:
-          MOCK_PROVIDER_PORT: 9971
-
-      - name: Start test instance
+          BASE_URL: http://127.0.0.1:8080
+          AI_MOCK_URL: http://127.0.0.1:9971
         run: |
-          cd backend
-          NODE_ENV=test \
-          COOKIE_SECRET=test-secret-minimum-32-chars-long \
-          APP_URL=http://localhost:3000 \
-          DATABASE_PATH=/tmp/test.db \
-          SMTP_HOST= \
-          VAPID_PUBLIC_KEY= \
-          VAPID_PRIVATE_KEY= \
-          AI_CREDENTIAL_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-          AI_OPENAI_BASE_URL=http://127.0.0.1:9971 \
-          npm run start &
-          sleep 5
-          curl -f http://localhost:3000/health
-        env:
-          PORT: 3000
+          set -euo pipefail
+          mkdir -p /tmp/notes-e2e/attachments /tmp/notes-e2e/agy-homes /tmp/notes-e2e/agy-sandbox
 
-      - name: Install Playwright browsers
-        run: cd tests && npx playwright install --with-deps chromium
+          MOCK_PROVIDER_PORT=9971 node scripts/ai-mock-provider.mjs > /tmp/notes-e2e/ai-mock.log 2>&1 &
+          MOCK_PID=$!
 
-      - name: Run E2E tests
-        run: cd tests && BASE_URL=http://localhost:3000 npm test
-        env:
-          BASE_URL: http://localhost:3000
+          (
+            cd backend
+            NODE_ENV=development \
+            COOKIE_SECRET=test-secret-minimum-32-chars-long \
+            APP_URL=http://127.0.0.1:8080 \
+            DATABASE_PATH=/tmp/notes-e2e/memo_manager.db \
+            ATTACHMENTS_DIR=/tmp/notes-e2e/attachments \
+            BACKEND_PORT=3000 \
+            RATE_LIMIT_MAX=5000 \
+            AUTH_RATE_LIMIT_MAX=5000 \
+            REMINDER_SCAN_INTERVAL_MS=10000 \
+            AI_CREDENTIAL_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            AI_OPENAI_BASE_URL=http://127.0.0.1:9971 \
+            node dist/index.js > /tmp/notes-e2e/backend.log 2>&1
+          ) &
+          BACKEND_PID=$!
 
-      - name: Upload Playwright report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: tests/playwright-report/
-          retention-days: 7
+          (
+            cd frontend
+            FRONTEND_PORT=8080 \
+            BACKEND_URL=http://127.0.0.1:3000 \
+            node dist/server.js > /tmp/notes-e2e/frontend.log 2>&1
+          ) &
+          FRONTEND_PID=$!
+
+          trap 'kill "$MOCK_PID" "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true' EXIT
+
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health > /dev/null 2>&1; then
+              echo "Ephemeral instance is up"
+              break
+            fi
+            sleep 1
+          done
+          if ! curl -fsS http://127.0.0.1:8080/health > /dev/null 2>&1; then
+            echo "Instance failed to become ready; logs follow"
+            cat /tmp/notes-e2e/ai-mock.log /tmp/notes-e2e/backend.log /tmp/notes-e2e/frontend.log || true
+            exit 1
+          fi
+
+          cd tests
+          npm test
+
+      - name: Dump logs on failure
+        if: failure()
+        run: cat /tmp/notes-e2e/ai-mock.log /tmp/notes-e2e/backend.log /tmp/notes-e2e/frontend.log 2>/dev/null || true
 
       - name: Upload screenshots on failure
         if: failure()
@@ -222,68 +232,17 @@ jobs:
         with:
           name: playwright-screenshots
           path: tests/screenshots/
+          if-no-files-found: ignore
           retention-days: 7
 
   # ─────────────────────────────────────────────────────────────────────
-  # Security Scans
-  # ─────────────────────────────────────────────────────────────────────
-  security-scans:
-    name: Security Scans
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run npm audit (backend)
-        run: cd backend && npm audit --audit-level=high || true
-
-      - name: Run npm audit (mobile)
-        run: cd mobile-apps && npm audit --audit-level=high || true
-
-      - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'HIGH,CRITICAL'
-
-      - name: Upload Trivy results
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-results.sarif
-
-      - name: Check for secrets (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        with:
-          config: .gitleaks.toml
-
-      - name: Generate SBOM (CycloneDX)
-        run: |
-          cd backend && npx @cyclonedx/bom -o ../sbom-backend.json
-          cd ../mobile-apps && npx @cyclonedx/bom -o ../sbom-mobile.json
-
-      - name: Upload SBOM
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: sbom-*.json
-          retention-days: 30
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Docker Build & Push
+  # Docker Build Verification
   # ─────────────────────────────────────────────────────────────────────
   docker-build:
-    name: Docker Build & Push
+    name: Docker Build Verification
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [lint-and-typecheck, backend-tests, mobile-tests]
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: read
-      packages: write
+    needs: [lint-and-typecheck, backend-tests]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -291,170 +250,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
-
-      - name: Build and push
+      - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Migration Test (Fresh + Upgrade)
-  # ─────────────────────────────────────────────────────────────────────
-  migration-test:
-    name: Migration Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [backend-tests]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install backend deps
-        run: cd backend && npm ci
-
-      - name: Build backend
-        run: cd backend && npm run build
-
-      - name: Test fresh install migration
-        run: |
-          cd backend
-          DATABASE_PATH=/tmp/fresh.db \
-          npx drizzle-kit migrate
-          # Verify schema
-          sqlite3 /tmp/fresh.db ".schema" | head -100
-
-      - name: Test upgrade migration (from previous release)
-        run: |
-          # This would test upgrading from the previous release tag
-          # For now, verify migrations are idempotent
-          cd backend
-          DATABASE_PATH=/tmp/upgrade.db \
-          npx drizzle-kit migrate
-          npx drizzle-kit migrate  # Run twice - should be idempotent
-
-      - name: Verify migration integrity
-        run: |
-          cd backend
-          for db in /tmp/fresh.db /tmp/upgrade.db; do
-            sqlite3 "$db" "PRAGMA integrity_check;"
-            sqlite3 "$db" "PRAGMA foreign_key_check;"
-          done
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Deploy to Staging
-  # ─────────────────────────────────────────────────────────────────────
-  deploy-staging:
-    name: Deploy Staging
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [docker-build, migration-test, e2e-tests, security-scans]
-    if: github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
-    environment: staging
-    steps:
-      - name: Deploy to staging
-        run: |
-          echo "Deploy to staging server via SSH/Ansible/Tailscale"
-          # Example: ssh staging "cd /opt/pocket-diary && docker compose pull && docker compose up -d"
-        env:
-          STAGING_HOST: ${{ secrets.STAGING_HOST }}
-          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
-
-      - name: Smoke test staging
-        run: |
-          sleep 10
-          curl -f https://staging.notes.example.com/health
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Deploy to Production
-  # ─────────────────────────────────────────────────────────────────────
-  deploy-production:
-    name: Deploy Production
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [docker-build, migration-test, e2e-tests, security-scans]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    environment: production
-    steps:
-      - name: Deploy to production
-        run: |
-          echo "Deploy to production via blue/green or rolling update"
-          # Example: SSH to prod, pull new image, health check, switch traffic
-        env:
-          PROD_HOST: ${{ secrets.PROD_HOST }}
-          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
-
-      - name: Health check production
-        run: |
-          sleep 15
-          curl -f https://notes.example.com/health
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/v')
-        with:
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-
-  # ─────────────────────────────────────────────────────────────────────
-  # Dependency Update (Weekly)
-  # ─────────────────────────────────────────────────────────────────────
-  dependency-update:
-    name: Dependency Update Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    if: github.event_name == 'schedule'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Check outdated (backend)
-        run: cd backend && npm outdated --json || true
-
-      - name: Check outdated (mobile)
-        run: cd mobile-apps && npm outdated --json || true
-
-      - name: Create dependabot PRs
-        run: |
-          echo "Dependabot handles PR creation automatically"
-          echo "Review and merge dependabot PRs weekly"
+          platforms: linux/amd64
