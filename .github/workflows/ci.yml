@@ -44,8 +44,8 @@ jobs:
           cd ../mobile-apps && npm ci
           cd ../tests && npm ci
 
-      - name: Backend typecheck
-        run: cd backend && npx tsc --noEmit
+      - name: Backend typecheck & build
+        run: cd backend && npm run build
 
       - name: Frontend Vite build
         run: cd frontend && npm run build
@@ -131,7 +131,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: mobile-apps/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            mobile-apps/package-lock.json
+
+      - name: Build backend (required by mobile real-backend tests)
+        run: cd backend && npm ci && npm run build
 
       - name: Install mobile deps
         run: cd mobile-apps && npm ci
